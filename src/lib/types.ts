@@ -35,4 +35,67 @@ export type FeedRow = {
   created_at: string;
   department: { name: string; accent_color: string | null } | null;
   app_user: { full_name: string } | null;
+  receiving_line?: { qty: number | null; unit_cost: number | null }[];
+};
+
+export type Vendor = {
+  id: string;
+  department_id: string | null;
+  name: string;
+  rep_name: string | null;
+  phone: string | null;
+  email: string | null;
+  products_we_carry: string | null;
+  default_terms: string | null;
+  status: string;
+  notes: string | null;
+  department?: { name: string; accent_color: string | null } | null;
+};
+
+export type PurchaseOrder = {
+  id: string;
+  vendor_id: string | null;
+  department_id: string | null;
+  season_year: number | null;
+  order_amount: number | null;
+  ship_date: string | null;
+  delivery_commit: string | null;
+  status: string;
+  notes: string | null;
+};
+
+export type Invoice = {
+  id: string;
+  vendor_id: string | null;
+  invoice_number: string | null;
+  amount: number | null;
+  hst_amount: number | null;
+  terms: string | null;
+  due_date: string | null;
+  status: string;
+  vendor?: { name: string } | null;
+};
+
+export type Payment = {
+  id: string;
+  invoice_id: string | null;
+  amount: number | null;
+  method: string | null;
+  paid_date: string | null;
+};
+
+export type Item = {
+  id: string;
+  department_id: string | null;
+  name: string;
+  uom: string | null;
+  retail_price: number | null;
+  sku: string | null;
+  department?: { name: string; accent_color: string | null } | null;
+};
+
+export type TaxRule = {
+  region: string;
+  rate: number;
+  label: string | null;
 };
