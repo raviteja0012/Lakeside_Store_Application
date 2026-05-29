@@ -82,3 +82,4 @@ Keep this as one skill for now. Split only if a piece grows past what fits clean
 - references/data-model.md, the entity list and database conventions.
 - references/design-tokens.md, the exact color values, status mapping, and form rules.
 - robinsons_store_build_spec.md in the repo, the full plan with evidence, pricing, and caveats.
+- docs/SOURCES.md in the repo, the Google Drive links for the real source files and how to load them into Claude Code.

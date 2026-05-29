@@ -12,7 +12,11 @@ Stack: Next.js App Router on Vercel, Supabase Postgres (database, auth, storage,
 ## Quick start in Claude Code
 1. Open this folder in Claude Code. The skill loads automatically.
 2. Have ready: Supabase URL and anon key, Anthropic API key, the current Sonnet model id.
-3. Tell Claude Code to read robinsons_store_build_spec.md and the skill, then set up and run the project. Or do the manual steps below.
+3. Paste this as your first message, or follow the manual steps below:
+
+```
+Read .claude/skills/robinsons-store, robinsons_store_build_spec.md, and docs/ARCHITECTURE.md. Then get the repo running (install, create .env.local from .env.example, start the dev server), walk me through the Supabase setup (create the project in a Canadian region, run supabase/schema.sql then supabase/seed.sql, create a public Storage bucket named documents), and once it runs we test the capture loop with a real invoice from source_data. Follow the skill's output rules and do not change the locked architecture.
+```
 
 ## Manual setup
 1. Supabase: create a project in ca-central (Toronto). In the SQL editor run supabase/schema.sql, then supabase/seed.sql. In Storage create a public bucket named documents.
