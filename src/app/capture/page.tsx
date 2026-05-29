@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
+import { formatCAD, round2 } from "@/lib/format";
 import type { AppUser, Department, Draft, LineItem } from "@/lib/types";
+
+type VendorLite = { id: string; name: string; department_id: string | null; default_terms: string | null };
+type POLite = { vendor_id: string | null; order_amount: number | null };
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((res, rej) => {
@@ -20,12 +24,16 @@ export default function Capture() {
   const router = useRouter();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
+  const [vendors, setVendors] = useState<VendorLite[]>([]);
+  const [pos, setPos] = useState<POLite[]>([]);
+  const [taxRate, setTaxRate] = useState(0.13);
   const [deptId, setDeptId] = useState("");
   const [userId, setUserId] = useState("");
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [ack, setAck] = useState(false);
 
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -37,10 +45,16 @@ export default function Capture() {
     (async () => {
       const { data: depts } = await supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
+      const { data: vs } = await supabase.from("vendor").select("id, name, department_id, default_terms");
+      const { data: po } = await supabase.from("purchase_order").select("vendor_id, order_amount");
+      const { data: tr } = await supabase.from("tax_rules").select("rate").eq("region", "Ontario").limit(1).maybeSingle();
       const ds = (depts as Department[]) || [];
       const usr = (us as AppUser[]) || [];
       setDepartments(ds);
       setUsers(usr);
+      setVendors((vs as VendorLite[]) || []);
+      setPos((po as POLite[]) || []);
+      if (tr && tr.rate != null) setTaxRate(Number(tr.rate));
       if (ds[0]) setDeptId(ds.find((d) => d.name === "Hardware")?.id || ds[0].id);
       if (usr[0]) setUserId(usr.find((u) => u.role === "staff")?.id || usr[0].id);
     })();
@@ -50,6 +64,7 @@ export default function Capture() {
     setError(null);
     setSaved(false);
     setDraft(null);
+    setAck(false);
     setFile(f);
     if (preview) URL.revokeObjectURL(preview);
     setPreview(f && f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
@@ -68,6 +83,7 @@ export default function Capture() {
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || data.error || "extraction failed");
+      setAck(false);
       setDraft({
         vendor: data.vendor || "",
         invoice_date: data.invoice_date || "",
@@ -104,8 +120,23 @@ export default function Capture() {
     setDraft({ ...draft, line_items: draft.line_items.filter((_, idx) => idx !== i) });
   }
 
+  // Totals (pre-tax subtotal, HST, total). Money is dollars in the demo.
+  const subtotal = draft ? round2(draft.line_items.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.unit_cost) || 0), 0)) : 0;
+  const hst = round2(subtotal * taxRate);
+  const total = round2(subtotal + hst);
+
+  // Match the typed vendor to a known vendor in this department, then look for an order to reconcile against.
+  const matchedVendor = draft
+    ? vendors.find((v) => v.department_id === deptId && v.name.trim().toLowerCase() === draft.vendor.trim().toLowerCase())
+    : undefined;
+  const matchedPO = matchedVendor ? pos.find((p) => p.vendor_id === matchedVendor.id && p.order_amount != null) : undefined;
+  const orderAmount = matchedPO?.order_amount ?? null;
+  const discrepancy = orderAmount != null ? round2(subtotal - orderAmount) : null;
+  const hasDiscrepancy = discrepancy != null && Math.abs(discrepancy) >= 0.01;
+
   async function save() {
     if (!draft || !file || !deptId || !userId) return;
+    if (hasDiscrepancy && !ack) return;
     setSaving(true);
     setError(null);
     try {
@@ -117,10 +148,12 @@ export default function Capture() {
         .from("receiving_event")
         .insert({
           department_id: deptId,
+          vendor_id: matchedVendor?.id ?? null,
           vendor_name: draft.vendor,
           received_date: draft.invoice_date || null,
           source_file_path: path,
           status: "confirmed",
+          discrepancy_ack: hasDiscrepancy ? ack : false,
           created_by: userId
         })
         .select("id")
@@ -143,9 +176,14 @@ export default function Capture() {
 
       await supabase.from("activity_log").insert({ actor_id: userId, action: "received", entity: "receiving_event", entity_id: eventId });
 
+      // Clear the form fields directly. Do not call pickFile(null) here: it resets `saved`
+      // to false in the same React batch, which would hide the confirmation card.
       setSaved(true);
       setDraft(null);
-      pickFile(null);
+      setFile(null);
+      if (preview) URL.revokeObjectURL(preview);
+      setPreview(null);
+      setAck(false);
       setTimeout(() => router.push("/"), 900);
     } catch (e: any) {
       setError(e.message);
@@ -202,6 +240,9 @@ export default function Capture() {
           </button>
           {file && <button className="btn-ghost" onClick={() => pickFile(null)}>Clear</button>}
         </div>
+        {!file && !draft && !saved && (
+          <p className="help" style={{ margin: 0 }}>The invoice photo fills the form for you. You confirm one screen, then save.</p>
+        )}
       </div>
 
       {error && (
@@ -224,6 +265,25 @@ export default function Capture() {
             <h2 style={{ fontSize: 17, margin: 0 }}>Confirm</h2>
             <span className="chip chip-progress">Fields in amber were uncertain, check them</span>
           </div>
+
+          {hasDiscrepancy && (
+            <div className="card" style={{ padding: 12, background: "var(--warning-tint)", borderColor: "var(--warning-base)" }}>
+              <span className="chip chip-warning">&#9888; Order vs invoiced</span>
+              <p className="help" style={{ marginTop: 8, color: "var(--text-primary)" }}>
+                Ordered {formatCAD(orderAmount)} vs invoiced {formatCAD(subtotal)} (pre-tax).{" "}
+                {discrepancy! < 0
+                  ? `Short by ${formatCAD(Math.abs(discrepancy!))}. Check for missing items.`
+                  : `Over by ${formatCAD(discrepancy!)}. Check for extra or unordered items.`}
+              </p>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, fontSize: 13 }}>
+                <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+                I checked this discrepancy
+              </label>
+            </div>
+          )}
+          {matchedVendor && !matchedPO && (
+            <p className="help">No order amount on file for {matchedVendor.name} to compare against.</p>
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
             <div>
@@ -258,15 +318,24 @@ export default function Capture() {
             <button className="btn-ghost" style={{ marginTop: 8 }} onClick={addLine}>Add line</button>
           </div>
 
+          <div style={{ maxWidth: 280, marginLeft: "auto", width: "100%" }}>
+            <div className="totals-row"><span className="help">Subtotal</span><span className="tabular">{formatCAD(subtotal)}</span></div>
+            <div className="totals-row"><span className="help">HST ({Math.round(taxRate * 100)}%)</span><span className="tabular">{formatCAD(hst)}</span></div>
+            <div className="totals-row total"><span>Total</span><span className="tabular">{formatCAD(total)}</span></div>
+          </div>
+
           <div>
             <label className="label">Notes</label>
             <textarea className="input" rows={2} value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
           </div>
 
           <div>
-            <button className="btn-primary" onClick={save} disabled={saving}>
+            <button className="btn-primary" onClick={save} disabled={saving || (hasDiscrepancy && !ack)}>
               {saving ? "Saving." : "Save to feed"}
             </button>
+            {hasDiscrepancy && !ack && (
+              <span className="help" style={{ marginLeft: 10 }}>Acknowledge the discrepancy to save.</span>
+            )}
           </div>
         </div>
       )}

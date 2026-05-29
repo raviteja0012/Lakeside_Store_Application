@@ -64,6 +64,7 @@ create table receiving_event (
   received_date date,
   source_file_path text,            -- the original invoice or photo in storage
   status text default 'confirmed' check (status in ('pending_document','parsed','validation_error','awaiting_arrival','partial_received','fully_received','disputed','confirmed','closed','cancelled')),
+  discrepancy_ack boolean default false,  -- set true when a human acknowledged an order-vs-invoiced difference
   created_by uuid references app_user(id),
   created_at timestamptz default now()
 );
@@ -173,6 +174,18 @@ create table activity_log (
   action text,
   entity text,
   entity_id uuid,
+  created_at timestamptz default now()
+);
+
+-- Tax rules keyed by province for portability. rate is the combined effective decimal.
+-- The app only ever multiplies a subtotal by the Ontario rate; the other rows are reference data.
+create table tax_rules (
+  id uuid primary key default gen_random_uuid(),
+  region text not null unique,
+  rate numeric not null,            -- combined effective rate as a decimal, e.g. 0.13 for Ontario
+  label text,                       -- e.g. "13% HST"
+  note text,
+  effective_date date,
   created_at timestamptz default now()
 );
 
