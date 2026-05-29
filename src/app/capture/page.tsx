@@ -47,7 +47,7 @@ export default function Capture() {
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
       const { data: vs } = await supabase.from("vendor").select("id, name, department_id, default_terms");
       const { data: po } = await supabase.from("purchase_order").select("vendor_id, order_amount");
-      const { data: tr } = await supabase.from("tax_rules").select("rate").eq("region", "Ontario").maybeSingle();
+      const { data: tr } = await supabase.from("tax_rules").select("rate").eq("region", "Ontario").limit(1).maybeSingle();
       const ds = (depts as Department[]) || [];
       const usr = (us as AppUser[]) || [];
       setDepartments(ds);
@@ -176,9 +176,14 @@ export default function Capture() {
 
       await supabase.from("activity_log").insert({ actor_id: userId, action: "received", entity: "receiving_event", entity_id: eventId });
 
+      // Clear the form fields directly. Do not call pickFile(null) here: it resets `saved`
+      // to false in the same React batch, which would hide the confirmation card.
       setSaved(true);
       setDraft(null);
-      pickFile(null);
+      setFile(null);
+      if (preview) URL.revokeObjectURL(preview);
+      setPreview(null);
+      setAck(false);
       setTimeout(() => router.push("/"), 900);
     } catch (e: any) {
       setError(e.message);

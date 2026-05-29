@@ -181,7 +181,7 @@ create table activity_log (
 -- The app only ever multiplies a subtotal by the Ontario rate; the other rows are reference data.
 create table tax_rules (
   id uuid primary key default gen_random_uuid(),
-  region text not null,
+  region text not null unique,
   rate numeric not null,            -- combined effective rate as a decimal, e.g. 0.13 for Ontario
   label text,                       -- e.g. "13% HST"
   note text,
