@@ -99,3 +99,14 @@ export type TaxRule = {
   rate: number;
   label: string | null;
 };
+
+export type KnowledgeNote = {
+  id: string;
+  department_id: string | null;
+  topic: string | null;
+  body: string | null;
+  tags: string[] | null;
+  created_at: string;
+  department?: { name: string; accent_color: string | null } | null;
+  app_user?: { full_name: string } | null;
+};
