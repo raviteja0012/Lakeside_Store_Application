@@ -1,33 +1,29 @@
 # Robinsons General Store, Store Operations Platform
 
-Phase 0 to 1 starter. A capture-first receiving app: drop a vendor invoice, a vision model extracts it, staff confirm one screen, and it posts to the department feed with author and time.
+Capture-first receiving app for Robinsons General Store, a Canadian general store in Dorset, Ontario. Staff drop a vendor invoice, a vision model extracts it, they confirm one screen, and it posts to the department feed with author and time. The owner sees everything remotely.
 
-Stack: Next.js (App Router) plus Supabase (Postgres, Auth, Storage) plus Claude Sonnet vision.
+Stack: Next.js App Router on Vercel, Supabase Postgres (database, auth, storage, pgvector) in a Canadian region, Claude Sonnet vision for reading invoices.
 
-## What is in this starter
-- supabase/schema.sql, the v1 data model with audit and a licence table
-- supabase/seed.sql, the departments and a few real vendors from the bookings sheet
-- The capture loop at /capture (upload, extract, confirm, save) and the home feed
-- /api/extract, the serverless vision call (handles images and PDF scans)
-- The color system from the design spec wired into globals.css
+## Documentation
+- docs/ARCHITECTURE.md, the architecture, the data flow, and how we work in Claude Code.
+- robinsons_store_build_spec.md, the full plan with evidence, schema, AI layer, Canada rules, phases, and caveats.
+- .claude/skills/robinsons-store-ops, the project skill that Claude Code loads automatically, with data-model and design-tokens references.
 
-## Setup
-1. Create a Supabase project in a Canadian region (ca-central, Toronto).
-2. In the Supabase SQL editor, run supabase/schema.sql, then supabase/seed.sql.
-3. In Storage, create a public bucket named documents.
-4. Copy .env.example to .env.local and fill in the Supabase URL and anon key, your Anthropic API key, and the model id.
-5. Install and run:
-   npm install
-   npm run dev
-6. Open http://localhost:3000. Click + Capture, drop a vendor invoice image or PDF, click Extract, fix any flagged field, then Save to feed.
+## Quick start in Claude Code
+1. Open this folder in Claude Code. The skill loads automatically.
+2. Have ready: Supabase URL and anon key, Anthropic API key, the current Sonnet model id.
+3. Tell Claude Code to read robinsons_store_build_spec.md and the skill, then set up and run the project. Or do the manual steps below.
 
-## Deploy
-Push to GitHub, import into Vercel, set the same environment variables, deploy.
+## Manual setup
+1. Supabase: create a project in ca-central (Toronto). In the SQL editor run supabase/schema.sql, then supabase/seed.sql. In Storage create a public bucket named documents.
+2. Copy .env.example to .env.local and fill in NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, ANTHROPIC_API_KEY, and ANTHROPIC_MODEL (the current Sonnet model id from docs.claude.com).
+3. npm install, then npm run dev. Open http://localhost:3000, click + Capture, drop an Orgill or ABBOT invoice, Extract, fix any flagged field, Save to feed.
+4. Deploy: import the repo at vercel.com/new, set the same environment variables, deploy. Use Node 20.
 
 ## Before production
-- The dev row-level security policies allow anonymous access so the demo runs without login. Replace them with Supabase Auth and per-role policies (staff, lead, manager, owner) before real use. See the comments in schema.sql.
+- The dev row-level security allows anonymous access so the demo runs without login. Replace it with Supabase Auth and per-role policies (staff, lead, manager, owner) before real use. See the comments in supabase/schema.sql.
 - Move document storage to signed URLs if invoices contain anything sensitive.
 - The confidence value is captured per line. Add a review threshold so low-confidence dollar fields require a human before they post.
 
-## Next
-Phase 2 adds pricing and inventory. Phase 3 adds orders, payments, and due-date alerts. See robinsons_store_build_spec.md for the full sequence.
+## Phases
+Phase 1 capture and receiving is in this starter. Next: Phase 2 pricing and inventory, Phase 3 vendor ledger and payments with due-date alerts, Phase 4 manager dashboard. See docs/ARCHITECTURE.md and the build spec.
