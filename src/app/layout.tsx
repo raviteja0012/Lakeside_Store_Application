@@ -7,7 +7,7 @@ const sans = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "
 const mono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: "Lakeside Dry Goods",
+  title: "Robinsons General Store",
   description: "Store operations, capture first"
 };
 
@@ -18,7 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header style={{ borderBottom: "1px solid var(--border)", background: "var(--panel)" }}>
           <div style={{ maxWidth: 980, margin: "0 auto", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <Link href="/" style={{ textDecoration: "none", color: "var(--text-primary)", fontWeight: 700, fontSize: 17 }}>
-              Lakeside Dry Goods
+              Robinsons General Store
             </Link>
             <Link href="/capture" className="btn-primary" style={{ textDecoration: "none" }}>
               + Capture

@@ -1,4 +1,4 @@
-# Lakeside Dry Goods, Store Operations Platform
+# Robinsons General Store, Store Operations Platform
 
 Phase 0 to 1 starter. A capture-first receiving app: drop a vendor invoice, a vision model extracts it, staff confirm one screen, and it posts to the department feed with author and time.
 
@@ -30,4 +30,4 @@ Push to GitHub, import into Vercel, set the same environment variables, deploy.
 - The confidence value is captured per line. Add a review threshold so low-confidence dollar fields require a human before they post.
 
 ## Next
-Phase 2 adds pricing and inventory. Phase 3 adds orders, payments, and due-date alerts. See lakeside_build_spec_v2.md for the full sequence.
+Phase 2 adds pricing and inventory. Phase 3 adds orders, payments, and due-date alerts. See robinsons_store_build_spec.md for the full sequence.

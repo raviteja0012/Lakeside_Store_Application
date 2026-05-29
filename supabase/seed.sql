@@ -1,8 +1,8 @@
--- Lakeside Dry Goods, seed data. Run after schema.sql.
+-- Robinsons General Store, seed data. Run after schema.sql.
 -- Fixed UUIDs so foreign keys resolve in one pass.
 
 insert into store (id, name, legal_entity, address) values
-  ('11111111-1111-1111-1111-111111111111', 'Lakeside Dry Goods', '1000476363 Ontario Inc. (confirm)', '1062 Main Street, Dorset, ON, P0A 1E0 (confirm)');
+  ('11111111-1111-1111-1111-111111111111', 'Robinsons General Store', '1000476363 Ontario Inc.', '1062 Main Street, Dorset, ON, P0A 1E0 (confirm address)');
 
 insert into department (id, store_id, name, parent_department_id, accent_color) values
   ('22222222-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Hardware', null, '#2F5FA8'),

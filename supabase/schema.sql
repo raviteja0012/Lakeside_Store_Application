@@ -1,4 +1,4 @@
--- Lakeside Dry Goods, v1 schema
+-- Robinsons General Store, v1 schema
 -- Run this first in the Supabase SQL editor, then seed.sql.
 -- Money is stored as numeric in dollars for the demo. Move to integer cents before production.
 
