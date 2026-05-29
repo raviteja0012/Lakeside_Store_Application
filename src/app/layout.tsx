@@ -23,10 +23,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/" style={{ textDecoration: "none", color: "var(--text-primary)", fontWeight: 700, fontSize: 17 }}>
                 Robinsons General Store
               </Link>
-              <nav style={{ display: "flex", gap: 14, fontSize: 14 }}>
+              <nav style={{ display: "flex", gap: 14, fontSize: 14, flexWrap: "wrap" }}>
                 <Link href="/" style={navLink}>Feed</Link>
+                <Link href="/dashboard" style={navLink}>Dashboard</Link>
                 <Link href="/vendors" style={navLink}>Vendors</Link>
                 <Link href="/overdue" style={navLink}>Overdue</Link>
+                <Link href="/knowledge" style={navLink}>Knowledge</Link>
                 <Link href="/price-signs" style={navLink}>Price signs</Link>
               </nav>
             </div>
