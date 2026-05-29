@@ -7,7 +7,7 @@ Stack: Next.js App Router on Vercel, Supabase Postgres (database, auth, storage,
 ## Documentation
 - docs/ARCHITECTURE.md, the architecture, the data flow, and how we work in Claude Code.
 - robinsons_store_build_spec.md, the full plan with evidence, schema, AI layer, Canada rules, phases, and caveats.
-- .claude/skills/robinsons-store-ops, the project skill that Claude Code loads automatically, with data-model and design-tokens references.
+- .claude/skills/robinsons-store, the project skill that Claude Code loads automatically, with data-model and design-tokens references.
 
 ## Quick start in Claude Code
 1. Open this folder in Claude Code. The skill loads automatically.
