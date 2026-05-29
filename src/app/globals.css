@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-bg: #F7F8FA;
+  --panel: #FFFFFF;
+  --border: #E2E6EB;
+  --text-primary: #1F2933;
+  --text-secondary: #5B6570;
+  --text-disabled: #9AA3AD;
+  --primary: #2F5FA8;
+  --primary-hover: #244B86;
+  --focus-halo: #B8CCE8;
+  --success-base: #1E8E5A;
+  --success-tint: #E6F4EC;
+  --progress-base: #2F5FA8;
+  --progress-tint: #EAF1FB;
+  --warning-base: #B7791F;
+  --warning-tint: #FBF1E1;
+  --error-base: #C0362C;
+  --error-tint: #FBEAE8;
+  --neutral-base: #6B7480;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--app-bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.tabular { font-family: var(--font-mono), monospace; font-variant-numeric: tabular-nums; }
+
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+
+.btn-primary { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 10px 16px; font-weight: 600; cursor: pointer; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-primary:disabled { background: var(--text-disabled); cursor: not-allowed; }
+
+.btn-ghost { background: var(--panel); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; font-weight: 500; cursor: pointer; }
+
+.label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-primary); }
+.input { width: 100%; border: 1px solid var(--border); background: #fff; border-radius: 8px; padding: 9px 11px; color: var(--text-primary); font-size: 14px; font-family: inherit; }
+.help { font-size: 12px; color: var(--text-secondary); }
+
+.chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 6px; }
+.chip-success { background: var(--success-tint); color: var(--success-base); }
+.chip-progress { background: var(--progress-tint); color: var(--progress-base); }
+.chip-warning { background: var(--warning-tint); color: var(--warning-base); }
+.chip-error { background: var(--error-tint); color: var(--error-base); }
+.chip-neutral { background: #EEF1F4; color: var(--neutral-base); }
+
+.field-flag { border-color: var(--warning-base); background: var(--warning-tint); }
