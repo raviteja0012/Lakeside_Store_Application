@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD } from "@/lib/format";
+import { useActiveStore } from "@/lib/store";
 import type { Item } from "@/lib/types";
 
 export default function PriceSigns() {
+  const { storeId, ready } = useActiveStore();
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -15,12 +17,16 @@ export default function PriceSigns() {
   const [printMode, setPrintMode] = useState(false);
 
   useEffect(() => {
+    if (!ready) return;
+    setLoading(true);
     (async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("item")
         .select("id, name, uom, retail_price, sku, department:department_id(name, accent_color)")
         .not("retail_price", "is", null)
         .order("name");
+      if (storeId) query = query.eq("store_id", storeId);
+      const { data, error } = await query;
       if (error) setError(error.message);
       else {
         const list = (data as unknown as Item[]) || [];
@@ -33,7 +39,7 @@ export default function PriceSigns() {
       }
       setLoading(false);
     })();
-  }, []);
+  }, [ready, storeId]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useActiveStore } from "@/lib/store";
 
 const EXAMPLES = [
   "Which gift vendors should we skip in 2026 and why?",
@@ -10,6 +11,7 @@ const EXAMPLES = [
 ];
 
 export default function Ask() {
+  const { storeId } = useActiveStore();
   const [q, setQ] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -26,7 +28,7 @@ export default function Ask() {
       const resp = await fetch("/api/ask", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: text })
+        body: JSON.stringify({ question: text, store_id: storeId })
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || data.error || "request failed");

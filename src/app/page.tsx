@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
 import { formatCAD, todayISO } from "@/lib/format";
+import { useActiveStore } from "@/lib/store";
 import type { FeedRow } from "@/lib/types";
 
 function thumb(path: string | null) {
@@ -25,6 +26,7 @@ function localISO(ts: string): string {
 const HOWTO_KEY = "rgs_seen_howto";
 
 export default function Home() {
+  const { storeId, ready } = useActiveStore();
   const [rows, setRows] = useState<FeedRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,17 +34,24 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window !== "undefined" && !localStorage.getItem(HOWTO_KEY)) setShowHowTo(true);
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    setLoading(true);
     (async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("receiving_event")
         .select("id, vendor_name, received_date, status, source_file_path, created_at, department:department_id(name, accent_color), app_user:created_by(full_name), receiving_line(qty, unit_cost)")
         .order("created_at", { ascending: false })
         .limit(40);
+      if (storeId) query = query.eq("store_id", storeId);
+      const { data, error } = await query;
       if (error) setError(error.message);
       else setRows((data as unknown as FeedRow[]) || []);
       setLoading(false);
     })();
-  }, []);
+  }, [ready, storeId]);
 
   function dismissHowTo() {
     setShowHowTo(false);

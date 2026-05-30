@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { todayISO } from "@/lib/format";
+import { useActiveStore } from "@/lib/store";
 import type { Department, AppUser, Item } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -16,6 +17,7 @@ type CountRow = {
 };
 
 export default function Inventory() {
+  const { storeId, ready } = useActiveStore();
   const [counts, setCounts] = useState<CountRow[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -31,32 +33,41 @@ export default function Inventory() {
   const [qty, setQty] = useState<Record<string, string>>({});
 
   async function load() {
-    const { data, error } = await supabase
+    let query = supabase
       .from("inventory_count")
       .select("id, counted_date, created_at, department:department_id(name, accent_color), inventory_count_line(counted_qty)")
       .order("created_at", { ascending: false })
       .limit(30);
+    if (storeId) query = query.eq("store_id", storeId);
+    const { data, error } = await query;
     if (error) setError(error.message);
     else setCounts((data as unknown as CountRow[]) || []);
   }
 
   useEffect(() => {
+    if (!ready) return;
+    setLoading(true);
     (async () => {
       await load();
-      const { data: ds } = await supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      if (storeId) dq = dq.eq("store_id", storeId);
+      const { data: ds } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
-      const { data: it } = await supabase.from("item").select("id, department_id, name, uom, retail_price, sku").order("name");
+      let iq = supabase.from("item").select("id, department_id, name, uom, retail_price, sku").order("name");
+      if (storeId) iq = iq.eq("store_id", storeId);
+      const { data: it } = await iq;
       const dList = (ds as Department[]) || [];
       const usr = (us as AppUser[]) || [];
       setDepartments(dList);
       setUsers(usr);
       setItems((it as unknown as Item[]) || []);
-      if (dList[0]) setDeptId(dList.find((d) => d.name === "Garden Center")?.id || dList[0].id);
+      setDeptId(dList.find((d) => d.name === "Garden Center")?.id || dList[0]?.id || "");
       const saved = typeof window !== "undefined" ? localStorage.getItem(ACTOR_KEY) : null;
       setActorId(saved || usr[0]?.id || "");
       setLoading(false);
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, storeId]);
 
   function setActor(uid: string) {
     setActorId(uid);
@@ -77,7 +88,7 @@ export default function Inventory() {
     setBusy(true);
     setError(null);
     try {
-      const c = await supabase.from("inventory_count").insert({ department_id: deptId, counted_date: countDate || null, created_by: actorId || null }).select("id").single();
+      const c = await supabase.from("inventory_count").insert({ store_id: storeId, department_id: deptId, counted_date: countDate || null, created_by: actorId || null }).select("id").single();
       if (c.error) throw new Error(c.error.message);
       const countId = c.data.id as string;
       const li = await supabase.from("inventory_count_line").insert(lines.map((l) => ({ ...l, inventory_count_id: countId })));

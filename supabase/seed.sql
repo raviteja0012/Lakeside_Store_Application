@@ -173,3 +173,108 @@ insert into knowledge_note (department_id, topic, body, tags, created_by) values
   ('22222222-0000-0000-0000-000000000003', 'Checkout vendors', 'RBH Tobacco and Imperial Tobacco order by email. Ice cream from Nestle and DGS Distribution. Coffee from Muskoka Roastery. Maple syrup from Emes Family.', '{checkout}', '33333333-0000-0000-0000-000000000001'),
   (null, 'Utility and service accounts', 'Hydro One for power, Vnet for internet, Bell for phone. Propane from Moor Propane. Pest control by Orkin Canada. Generator service by Generator Solution. POS data by Howell Data Systems.', '{utilities,maintenance,accounts}', '33333333-0000-0000-0000-000000000001'),
   ('22222222-0000-0000-0000-000000000001', 'Pesticide vendor licence', 'The store sells regulated pesticides under an Ontario Vendor Licence. Keep it current and be ready to show it at point of sale. Northland supplies the bug sprays.', '{compliance}', '33333333-0000-0000-0000-000000000001');
+
+-- Property and Maintenance assets. The building, refrigeration, and grounds we keep up, plus
+-- the operating service accounts from Utilities.docx and Vendorlist&InvoiceFilling.docx
+-- (DATA_SOURCES.md): Hydro One, Bell, Vnet, Moor Propane, Orkin, Generator Solution, Howell.
+insert into maintenance_asset (id, store_id, department_id, name, category, location, notes) values
+  ('88888888-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', null, 'Store building', 'building', '1062 Main Street, Dorset', 'Winter and summer prep, roof, eavestroughs.'),
+  ('88888888-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '22222222-0000-0000-0000-000000000003', 'Grocery refrigeration and coolers', 'refrigeration', 'Grocery and Meat', 'Walk-in cooler and display fridges. Check seals and temperatures.'),
+  ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', null, 'Parking lot and grounds', 'grounds', 'Exterior', 'Snow removal in winter, line painting and brush in summer.'),
+  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', '22222222-0000-0000-0000-000000000009', 'Propane tank exchange cage', 'safety', 'Garden Center', 'Gas tank exchange program. Keep cage stocked and locked.'),
+  ('88888888-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', null, 'Standby generator', 'equipment', 'Rear of building', 'Serviced by Generator Solution.'),
+  ('88888888-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', null, 'Hydro One account', 'building', 'Utility', 'Electricity supply. Account from Utilities.docx.'),
+  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', null, 'Bell phone account', 'building', 'Utility', 'Store phone line.'),
+  ('88888888-0000-0000-0000-000000000008', '11111111-1111-1111-1111-111111111111', null, 'Vnet internet account', 'building', 'Utility', 'Internet service.'),
+  ('88888888-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111', null, 'Moor Propane account', 'building', 'Utility', 'Propane supply for heating and the exchange program.'),
+  ('88888888-0000-0000-0000-000000000010', '11111111-1111-1111-1111-111111111111', null, 'Orkin Canada pest control', 'safety', 'Whole store', 'Scheduled pest control service.'),
+  ('88888888-0000-0000-0000-000000000011', '11111111-1111-1111-1111-111111111111', null, 'Howell Data Systems POS', 'equipment', 'Checkout', 'Point of sale hardware and data service.');
+
+-- Maintenance tasks. Real seasonal jobs from the store notes. Due dates are spread around the
+-- current 2026 season so the open / due soon / overdue / done grouping is visible in the screen.
+insert into maintenance_task (id, store_id, asset_id, title, detail, due_date, recurrence, status, assigned_to, completed_at, created_by) values
+  ('99999999-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000002', 'Refrigeration check', 'Check walk-in cooler seals, coils, and temperatures before peak summer.', '2026-06-03', 'monthly', 'open', '33333333-0000-0000-0000-000000000002', null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000001', 'Summer building prep', 'Open patio area, service screens and doors, check eavestroughs.', '2026-06-15', 'seasonal', 'open', null, null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000004', 'Restock gas tank exchange cage', 'Confirm exchange propane stock for the long weekend.', '2026-05-31', 'monthly', 'open', '33333333-0000-0000-0000-000000000002', null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000001', 'Roof check', 'Inspect roof and flashing after winter, before the busy season.', '2026-05-20', 'annual', 'open', null, null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000005', 'Generator service', 'Annual service by Generator Solution.', '2026-09-01', 'annual', 'open', null, null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000003', 'First-snow removal arrangement', 'Confirm the snow removal contractor for the coming winter.', '2026-11-01', 'seasonal', 'open', null, null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000001', 'Winter building prep', 'Shut down patio, service heat, check insulation and weather seals.', '2025-11-01', 'seasonal', 'done', '33333333-0000-0000-0000-000000000002', '2025-11-04T15:00:00Z', '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000008', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000010', 'Quarterly pest control visit', 'Orkin Canada scheduled service.', '2026-06-30', 'seasonal', 'in_progress', '33333333-0000-0000-0000-000000000002', null, '33333333-0000-0000-0000-000000000001');
+
+-- Insurance policies. ILLUSTRATIVE values only, not the store's real policies. Replace with
+-- the actual policies before relying on these for renewals.
+insert into insurance_policy (id, store_id, name, provider, policy_number, coverage, premium, renewal_date, notes) values
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Commercial property and liability', 'Illustrative Insurer', 'ILLUSTRATIVE-0001', 'Building, contents, general liability', 4800, '2026-06-20', 'ILLUSTRATIVE sample, not the real policy. Confirm with the broker.'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'Garage and fuel handling endorsement', 'Illustrative Insurer', 'ILLUSTRATIVE-0002', 'Propane exchange and fuel handling', 1200, '2026-12-01', 'ILLUSTRATIVE sample, not the real policy.');
+
+-- HR. ILLUSTRATIVE employees, pay rates, and shifts only, not real staff records. They hold
+-- PIPEDA personal data; see the privacy header in schema.sql. Shifts sit in the week of the
+-- current 2026 season so the schedule and the hours-and-pay summary show data. Replace with
+-- real records (with consent) before use.
+insert into employee (id, store_id, department_id, full_name, role, phone, email, hire_date, status, notes) values
+  ('bbbbbbbb-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '22222222-0000-0000-0000-000000000001', 'Sample Lead', 'Department lead', '705-555-0101', 'lead@example.com', '2024-05-01', 'active', 'ILLUSTRATIVE record.'),
+  ('bbbbbbbb-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '22222222-0000-0000-0000-000000000003', 'Sample Cashier', 'Seasonal floor staff', '705-555-0102', 'cashier@example.com', '2026-04-15', 'active', 'ILLUSTRATIVE record.'),
+  ('bbbbbbbb-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', '22222222-0000-0000-0000-000000000008', 'Sample Cook', 'Chip stand', '705-555-0103', null, '2025-06-01', 'active', 'ILLUSTRATIVE record.');
+
+insert into pay_rate (id, employee_id, rate, unit, effective_date) values
+  ('cccccccc-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001', 22.50, 'hour', '2024-05-01'),
+  ('cccccccc-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000001', 24.00, 'hour', '2026-01-01'),
+  ('cccccccc-0000-0000-0000-000000000003', 'bbbbbbbb-0000-0000-0000-000000000002', 17.20, 'hour', '2026-04-15'),
+  ('cccccccc-0000-0000-0000-000000000004', 'bbbbbbbb-0000-0000-0000-000000000003', 18.00, 'hour', '2025-06-01');
+
+insert into shift (id, employee_id, work_date, start_time, end_time, notes, created_by) values
+  ('dddddddd-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001', '2026-05-25', '09:00', '17:00', null, '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000001', '2026-05-27', '09:00', '17:00', null, '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000003', 'bbbbbbbb-0000-0000-0000-000000000001', '2026-05-30', '09:00', '15:00', 'Long weekend', '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000004', 'bbbbbbbb-0000-0000-0000-000000000002', '2026-05-26', '11:00', '19:00', null, '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000005', 'bbbbbbbb-0000-0000-0000-000000000002', '2026-05-29', '11:00', '19:00', null, '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000006', 'bbbbbbbb-0000-0000-0000-000000000002', '2026-05-30', '10:00', '18:00', null, '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000007', 'bbbbbbbb-0000-0000-0000-000000000003', '2026-05-30', '12:00', '20:00', 'Chip stand', '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000008', 'bbbbbbbb-0000-0000-0000-000000000003', '2026-05-31', '12:00', '20:00', 'Chip stand', '33333333-0000-0000-0000-000000000001');
+
+-- ===========================================================================================
+-- Multi-store. Backfill every store-scoped row above to Robinsons (store 1), then seed a small
+-- SECOND store so the store picker and the store-scoped reads have something to switch to.
+-- ===========================================================================================
+
+-- Backfill store 1 on all rows seeded above. receiving_event and inventory_count have no seed
+-- rows yet, so those updates are no-ops; they keep the backfill complete for future rows.
+update department set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update vendor set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update item set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update purchase_order set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update invoice set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update receiving_event set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update inventory_count set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update knowledge_note set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+
+-- Second store. ILLUSTRATIVE, to show the multi-store switch. Not a real Robinsons location.
+insert into store (id, name, legal_entity, address) values
+  ('11111111-2222-2222-2222-222222222222', 'Lakeside Outpost (sample)', null, 'Sample second location, Ontario (illustrative)');
+
+insert into app_user (id, store_id, full_name, role) values
+  ('33333333-2222-2222-2222-222222222222', '11111111-2222-2222-2222-222222222222', 'Outpost Lead', 'lead');
+
+-- Its own departments so the store is self-consistent in the scoped dropdowns.
+insert into department (id, store_id, name, parent_department_id, accent_color) values
+  ('22222222-2000-0000-0000-000000000001', '11111111-2222-2222-2222-222222222222', 'Hardware', null, '#2F5FA8'),
+  ('22222222-2000-0000-0000-000000000002', '11111111-2222-2222-2222-222222222222', 'Grocery', null, '#1E8E5A'),
+  ('22222222-2000-0000-0000-000000000003', '11111111-2222-2222-2222-222222222222', 'Gifts', null, '#B7791F');
+
+-- Two or three of its own vendors with one order and one invoice each (illustrative figures).
+insert into vendor (id, store_id, department_id, name, rep_name, phone, products_we_carry, default_terms, status, notes) values
+  ('44444444-2000-0000-0000-000000000001', '11111111-2222-2222-2222-222222222222', '22222222-2000-0000-0000-000000000001', 'Northwood Hardware Supply', 'Dana', '705-555-0201', 'Fasteners and tools', 'Net 30', 'active', 'Illustrative second-store vendor.'),
+  ('44444444-2000-0000-0000-000000000002', '11111111-2222-2222-2222-222222222222', '22222222-2000-0000-0000-000000000002', 'Lakeshore Provisions', 'Same', '705-555-0202', 'Dry grocery', 'Net 30', 'active', 'Illustrative second-store vendor. Flagged to reorder.'),
+  ('44444444-2000-0000-0000-000000000003', '11111111-2222-2222-2222-222222222222', '22222222-2000-0000-0000-000000000003', 'Cottage Gifts Co', 'Riley', '705-555-0203', 'Local gifts', 'Net 60', 'active', 'Illustrative second-store vendor.');
+
+insert into purchase_order (id, store_id, vendor_id, department_id, season_year, order_amount, ship_date, status, notes) values
+  ('66666666-2000-0000-0000-000000000001', '11111111-2222-2222-2222-222222222222', '44444444-2000-0000-0000-000000000001', '22222222-2000-0000-0000-000000000001', 2026, 2100.00, '2026-05-05', 'received', 'Illustrative.'),
+  ('66666666-2000-0000-0000-000000000003', '11111111-2222-2222-2222-222222222222', '44444444-2000-0000-0000-000000000003', '22222222-2000-0000-0000-000000000003', 2026, 1450.00, '2026-05-12', 'ordered', 'Illustrative.');
+
+insert into invoice (id, store_id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status) values
+  ('77777777-2000-0000-0000-000000000001', '11111111-2222-2222-2222-222222222222', '44444444-2000-0000-0000-000000000001', 'NWH-2026', 2040.00, 0, 'Net 30', '2026-06-04', 'unpaid'),
+  ('77777777-2000-0000-0000-000000000003', '11111111-2222-2222-2222-222222222222', '44444444-2000-0000-0000-000000000003', 'CGC-2026', 1450.00, 0, 'Net 60', '2026-07-11', 'unpaid');
+
+insert into knowledge_note (store_id, department_id, topic, body, tags, created_by) values
+  ('11111111-2222-2222-2222-222222222222', '22222222-2000-0000-0000-000000000002', 'Reorder dry grocery', 'Lakeshore Provisions, reorder staples monthly through the summer.', '{reorder}', '33333333-2222-2222-2222-222222222222');

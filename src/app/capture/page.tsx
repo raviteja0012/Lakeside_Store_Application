@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
 import { formatCAD, round2 } from "@/lib/format";
+import { useActiveStore } from "@/lib/store";
 import type { AppUser, Department, Draft, LineItem } from "@/lib/types";
 
 type VendorLite = { id: string; name: string; department_id: string | null; default_terms: string | null };
@@ -22,6 +23,7 @@ const LOW_CONFIDENCE = 0.7;
 
 export default function Capture() {
   const router = useRouter();
+  const { storeId, ready } = useActiveStore();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [vendors, setVendors] = useState<VendorLite[]>([]);
@@ -33,6 +35,7 @@ export default function Capture() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [manual, setManual] = useState(false);
   const [ack, setAck] = useState(false);
 
   const [extracting, setExtracting] = useState(false);
@@ -42,11 +45,18 @@ export default function Capture() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!ready) return;
     (async () => {
-      const { data: depts } = await supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      if (storeId) dq = dq.eq("store_id", storeId);
+      const { data: depts } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
-      const { data: vs } = await supabase.from("vendor").select("id, name, department_id, default_terms");
-      const { data: po } = await supabase.from("purchase_order").select("vendor_id, order_amount");
+      let vq = supabase.from("vendor").select("id, name, department_id, default_terms");
+      if (storeId) vq = vq.eq("store_id", storeId);
+      const { data: vs } = await vq;
+      let pq = supabase.from("purchase_order").select("vendor_id, order_amount");
+      if (storeId) pq = pq.eq("store_id", storeId);
+      const { data: po } = await pq;
       const { data: tr } = await supabase.from("tax_rules").select("rate").eq("region", "Ontario").limit(1).maybeSingle();
       const ds = (depts as Department[]) || [];
       const usr = (us as AppUser[]) || [];
@@ -55,19 +65,34 @@ export default function Capture() {
       setVendors((vs as VendorLite[]) || []);
       setPos((po as POLite[]) || []);
       if (tr && tr.rate != null) setTaxRate(Number(tr.rate));
-      if (ds[0]) setDeptId(ds.find((d) => d.name === "Hardware")?.id || ds[0].id);
+      setDeptId(ds.find((d) => d.name === "Hardware")?.id || ds[0]?.id || "");
       if (usr[0]) setUserId(usr.find((u) => u.role === "staff")?.id || usr[0].id);
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, storeId]);
 
   function pickFile(f: File | null) {
     setError(null);
     setSaved(false);
     setDraft(null);
+    setManual(false);
     setAck(false);
     setFile(f);
     if (preview) URL.revokeObjectURL(preview);
     setPreview(f && f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
+  }
+
+  // Fallback for a phone order with no document: open the same confirm form, blank, so it
+  // can be typed and posted to the feed with author and time. Photo-first stays the default.
+  function startManual() {
+    setError(null);
+    setSaved(false);
+    setFile(null);
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(null);
+    setAck(false);
+    setManual(true);
+    setDraft({ vendor: "", invoice_date: "", notes: "", line_items: [{ description: "", qty: null, unit_cost: null, retail_price_note: null, confidence: 1 }] });
   }
 
   async function extract() {
@@ -135,18 +160,23 @@ export default function Capture() {
   const hasDiscrepancy = discrepancy != null && Math.abs(discrepancy) >= 0.01;
 
   async function save() {
-    if (!draft || !file || !deptId || !userId) return;
+    if (!draft || (!file && !manual) || !deptId || !userId) return;
     if (hasDiscrepancy && !ack) return;
     setSaving(true);
     setError(null);
     try {
-      const path = `${deptId}/${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
-      const up = await supabase.storage.from(DOCUMENTS_BUCKET).upload(path, file, { upsert: false });
-      if (up.error) throw new Error(`storage: ${up.error.message}`);
+      // Photo capture uploads the document; a manual phone-order entry has no file to store.
+      let path: string | null = null;
+      if (file) {
+        path = `${deptId}/${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
+        const up = await supabase.storage.from(DOCUMENTS_BUCKET).upload(path, file, { upsert: false });
+        if (up.error) throw new Error(`storage: ${up.error.message}`);
+      }
 
       const ev = await supabase
         .from("receiving_event")
         .insert({
+          store_id: storeId,
           department_id: deptId,
           vendor_id: matchedVendor?.id ?? null,
           vendor_name: draft.vendor,
@@ -181,6 +211,7 @@ export default function Capture() {
       setSaved(true);
       setDraft(null);
       setFile(null);
+      setManual(false);
       if (preview) URL.revokeObjectURL(preview);
       setPreview(null);
       setAck(false);
@@ -234,14 +265,15 @@ export default function Capture() {
           <input ref={inputRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => pickFile(e.target.files?.[0] || null)} />
         </div>
 
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button className="btn-primary" onClick={extract} disabled={!file || extracting}>
             {extracting ? "Reading the invoice." : "Extract"}
           </button>
-          {file && <button className="btn-ghost" onClick={() => pickFile(null)}>Clear</button>}
+          {!file && !manual && <button className="btn-ghost" onClick={startManual}>Enter manually</button>}
+          {(file || manual) && <button className="btn-ghost" onClick={() => pickFile(null)}>Clear</button>}
         </div>
         {!file && !draft && !saved && (
-          <p className="help" style={{ margin: 0 }}>The invoice photo fills the form for you. You confirm one screen, then save.</p>
+          <p className="help" style={{ margin: 0 }}>The invoice photo fills the form for you. You confirm one screen, then save. No document? Enter a phone order by hand.</p>
         )}
       </div>
 
@@ -262,8 +294,8 @@ export default function Capture() {
       {draft && (
         <div className="card" style={{ padding: 16, display: "grid", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <h2 style={{ fontSize: 17, margin: 0 }}>Confirm</h2>
-            <span className="chip chip-progress">Fields in amber were uncertain, check them</span>
+            <h2 style={{ fontSize: 17, margin: 0 }}>{manual ? "Enter the order" : "Confirm"}</h2>
+            <span className="chip chip-progress">{manual ? "Type the vendor, date, and lines, then save" : "Fields in amber were uncertain, check them"}</span>
           </div>
 
           {hasDiscrepancy && (

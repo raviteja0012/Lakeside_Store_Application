@@ -31,6 +31,7 @@ create table app_user (
 
 create table vendor (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store: scope vendors to one store
   department_id uuid references department(id),
   name text not null,
   rep_name text,
@@ -45,6 +46,7 @@ create table vendor (
 
 create table item (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   department_id uuid references department(id),
   vendor_id uuid references vendor(id),
   sku text,
@@ -58,6 +60,7 @@ create table item (
 
 create table receiving_event (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   department_id uuid references department(id),
   vendor_id uuid references vendor(id),
   vendor_name text,                 -- raw extracted vendor name before matching
@@ -82,6 +85,7 @@ create table receiving_line (
 
 create table invoice (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   receiving_event_id uuid references receiving_event(id),
   vendor_id uuid references vendor(id),
   invoice_number text,
@@ -117,6 +121,7 @@ create table retail_price (
 
 create table inventory_count (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   department_id uuid references department(id),
   counted_date date,
   source_file_path text,
@@ -133,6 +138,7 @@ create table inventory_count_line (
 
 create table purchase_order (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   vendor_id uuid references vendor(id),
   department_id uuid references department(id),
   season_year int,
@@ -147,6 +153,7 @@ create table purchase_order (
 
 create table knowledge_note (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   department_id uuid references department(id),
   topic text,
   body text,
@@ -186,6 +193,90 @@ create table tax_rules (
   label text,                       -- e.g. "13% HST"
   note text,
   effective_date date,
+  created_at timestamptz default now()
+);
+
+-- Property and Maintenance (Phase: later). Assets are the things we maintain (building,
+-- refrigeration, equipment, grounds, safety) and the operating service accounts. Tasks are
+-- the recurring and one-off jobs against them. The dev RLS DO-block below covers these too;
+-- replace it with Supabase Auth plus per-role, per-store policies before production.
+create table maintenance_asset (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),
+  department_id uuid references department(id),
+  name text not null,
+  category text check (category in ('building','refrigeration','equipment','grounds','safety','other')),
+  location text,
+  notes text,
+  created_at timestamptz default now()
+);
+
+create table maintenance_task (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),
+  asset_id uuid references maintenance_asset(id),
+  title text not null,
+  detail text,
+  due_date date,
+  recurrence text default 'none' check (recurrence in ('none','weekly','monthly','seasonal','annual')),
+  status text default 'open' check (status in ('open','in_progress','done')),
+  assigned_to uuid references app_user(id),
+  completed_at timestamptz,
+  created_by uuid references app_user(id),
+  created_at timestamptz default now()
+);
+
+create table insurance_policy (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),
+  name text not null,
+  provider text,
+  policy_number text,
+  coverage text,
+  premium numeric,
+  renewal_date date,
+  notes text,
+  created_at timestamptz default now()
+);
+
+-- HR (Phase: later).
+-- PRIVACY: employee, pay_rate, and shift hold PIPEDA personal data (names, contact details,
+-- pay, and hours). PIPEDA requires consent for collection and use, employee access to their
+-- own data, and reasonable security safeguards. Keep this data in the Canadian region, limit
+-- who can read it, and replace the dev RLS DO-block below with Supabase Auth plus per-role
+-- policies before production. Quebec Law 25 only applies if Quebec-resident data enters scope.
+create table employee (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),
+  department_id uuid references department(id),
+  full_name text not null,
+  role text,
+  phone text,
+  email text,
+  hire_date date,
+  status text default 'active' check (status in ('active','inactive')),
+  notes text,
+  created_at timestamptz default now()
+);
+
+-- Effective-dated pay rates: insert a new row when pay changes, keep the history.
+create table pay_rate (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid references employee(id),
+  rate numeric,
+  unit text check (unit in ('hour','salary')),
+  effective_date date,
+  created_at timestamptz default now()
+);
+
+create table shift (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid references employee(id),
+  work_date date,
+  start_time time,
+  end_time time,
+  notes text,
+  created_by uuid references app_user(id),
   created_at timestamptz default now()
 );
 
