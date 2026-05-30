@@ -6,6 +6,7 @@ import { formatCAD, daysOverdue } from "@/lib/format";
 import { labelize } from "@/lib/status";
 import { paletteColor } from "@/lib/charts";
 import { useActiveStore } from "@/lib/store";
+import { canSeeMoney, useCurrentRole } from "@/lib/auth";
 
 type Inv = { id: string; amount: number | null; hst_amount: number | null; due_date: string | null; status: string; vendor_id: string | null; vendor: { name: string; department_id: string | null } | null };
 type PO = { vendor_id: string | null; order_amount: number | null; department_id: string | null };
@@ -28,6 +29,8 @@ function Bar({ label, value, max, color, display }: { label: string; value: numb
 
 export default function Reports() {
   const { storeId, ready } = useActiveStore();
+  const { role } = useCurrentRole();
+  const showMoney = canSeeMoney(role);
   const [invoices, setInvoices] = useState<Inv[]>([]);
   const [pos, setPos] = useState<PO[]>([]);
   const [depts, setDepts] = useState<Dept[]>([]);
@@ -139,7 +142,16 @@ export default function Reports() {
         </div>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && !showMoney && (
+        <div className="card" style={{ padding: 16 }}>
+          <span className="chip chip-neutral">Limited view</span>
+          <p className="help" style={{ marginTop: 8 }}>
+            Reports show cost and payment figures, so they are limited to leads, managers, and the owner.
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && showMoney && (
         <>
           <section>
             <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Spend ordered by department</h2>

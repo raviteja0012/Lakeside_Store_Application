@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { labelize } from "@/lib/status";
 import { daysOverdue, dueBand } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
+import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
 import type { MaintenanceAsset, MaintenanceTask, AppUser, Department } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -28,6 +29,9 @@ export default function Maintenance() {
 
   const [addTask, setAddTask] = useState(false);
   const [tForm, setTForm] = useState({ title: "", detail: "", asset_id: "", due_date: "", recurrence: "none", assigned_to: "" });
+
+  // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
+  const { effectiveActorId } = useEffectiveActor(users, actorId);
 
   async function load() {
     let aq = supabase
@@ -70,7 +74,7 @@ export default function Maintenance() {
     if (typeof window !== "undefined") localStorage.setItem(ACTOR_KEY, uid);
   }
   async function log(action: string, entity: string, entity_id: string | null) {
-    if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action, entity, entity_id });
+    if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action, entity, entity_id });
   }
 
   function startAddAsset() {
@@ -129,7 +133,7 @@ export default function Maintenance() {
         recurrence: tForm.recurrence,
         status: "open",
         assigned_to: tForm.assigned_to || null,
-        created_by: actorId || null
+        created_by: effectiveActorId
       }).select("id").single();
       if (r.error) throw new Error(r.error.message);
       await log("task_added", "maintenance_task", r.data.id as string);
@@ -214,6 +218,7 @@ export default function Maintenance() {
             <option value="">Unassigned</option>
             {users.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
           </select>
+          <span className="help">{t.assignee?.full_name ? `Assigned: ${t.assignee.full_name}` : "Unassigned"}</span>
           <div style={{ flex: 1 }} />
           {t.status !== "done" && t.status !== "in_progress" && (
             <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => setTaskStatus(t.id, "in_progress")} disabled={busy}>Start</button>
@@ -243,12 +248,14 @@ export default function Maintenance() {
     <div style={{ display: "grid", gap: 24 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
         <h1 style={{ fontSize: 22, margin: 0 }}>Property and maintenance</h1>
-        <div>
-          <label className="help" htmlFor="actor">Acting as </label>
-          <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-          </select>
-        </div>
+        {!REQUIRE_AUTH && (
+          <div>
+            <label className="help" htmlFor="actor">Acting as </label>
+            <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       {loading && <p className="help">Loading.</p>}

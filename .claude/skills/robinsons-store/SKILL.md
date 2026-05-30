@@ -19,9 +19,9 @@ The full plan with evidence, pricing, and citations is in robinsons_store_build_
 
 ## Locked architecture (do not re-debate)
 - Frontend and API: Next.js App Router on Vercel, TypeScript.
-- Database, auth, storage, vectors: Supabase Postgres in a Canadian region (ca-central, Toronto). Bundles Auth, Storage, and pgvector.
-- Document AI: Claude Sonnet vision by default for the dollar fields, GPT-4o as fallback or cross-check on low confidence, AWS Textract AnalyzeExpense in ca-central-1 for clean high-volume typed invoices.
-- RAG: pgvector for the ask-your-store assistant.
+- Database, auth, storage: Supabase Postgres in a Canadian region (ca-central, Toronto), bundling Auth and Storage. pgvector is available but not used yet.
+- Document AI: Claude Sonnet vision via the Anthropic API (the /api/extract route) for the dollar fields. GPT-4o fallback and AWS Textract are deferred, not built.
+- Ask-your-store: /api/ask passes the store's notes, vendors, and invoices to Claude as context. pgvector is the deferred upgrade when the data outgrows one prompt.
 - Not the enterprise stack. No Snowflake, Fabric, Redpanda, MuleSoft, API gateway, or MCP governance at this scale. One store, thousands of rows a month. The upgrade path is in the build spec and is earned only if the business grows to many stores.
 - Alternative backend if pure Postgres is ever wanted: Neon plus Auth.js plus S3. More moving parts, so not the default.
 - Budget ceiling is a couple hundred dollars a month. Realistic run rate 50 to 100.
@@ -30,29 +30,38 @@ The full plan with evidence, pricing, and citations is in robinsons_store_build_
 ```
 robinsons-store/
   README.md
-  supabase/schema.sql        v1 data model with audit and a licence table
+  supabase/schema.sql        v1 data model with audit, licence, maintenance, HR, insurance
   supabase/seed.sql          departments, demo users, real vendors from the bookings sheet
+  supabase/auth_setup.sql    the enforced-auth cutover: auth_id, role/store policies
   src/app/page.tsx           the department feed home
   src/app/capture/page.tsx   capture, extract, confirm, save
-  src/app/api/extract/route.ts  the vision call, handles images and PDF
+  src/app/dashboard, reports, overdue, vendors, vendors/[id], inventory, reorder,
+    price-signs, knowledge, ask, maintenance, compliance, hr, hr/schedule, login
+  src/app/api/extract, ask, reorder, alerts   the route handlers
   src/app/globals.css        the color tokens
-  src/lib/supabaseClient.ts
-  src/lib/types.ts
+  src/lib/  supabaseClient, types, auth, store, format, status, hr, charts, nav
   .claude/skills/robinsons-store/  this skill, so it travels with the code
 ```
 
 ## Conventions
-Data model rules and the entity list are in references/data-model.md. The short version: snake_case, audit on every write through activity_log plus created_by, a confidence value on every extracted line, low-confidence dollar fields never auto-post, money as integer cents before production. Replace the dev row-level security with Supabase Auth and per-role policies before real use.
+Data model rules and the entity list are in references/data-model.md. The short version: snake_case, audit on every write through activity_log plus created_by, a confidence value on every extracted line, low-confidence dollar fields never auto-post, money as numeric dollars in the demo and integer cents before production.
+
+App conventions to apply on every screen:
+- Multi-store: read through useActiveStore() and filter every query by the active store_id; stamp store_id on every insert. The header has a store picker and an area switcher (Store Operations, Property and Maintenance, HR, Reports) defined in src/lib/nav.ts.
+- Author: use useEffectiveActor() for created_by and activity_log.actor_id (the signed-in member in enforced auth, the "Acting as" dropdown in demo). Hide the dropdown with {!REQUIRE_AUTH && ...}.
+- Money by role: hide cost and margin (unit cost, order and invoice amounts, payments, premiums, pay) from the staff role with canSeeMoney(role) from src/lib/auth. Retail, customer-facing prices are not hidden.
+- Money and dates: format money with formatCAD(); compare dates with todayISO(), daysOverdue(), and dueBand() from src/lib/format.
+- Security: the open dev row-level security is the demo default. Enforced auth ships behind NEXT_PUBLIC_REQUIRE_AUTH with per-store, per-role policies in supabase/auth_setup.sql; flip it via the cutover in RUNBOOK.md and test with one owner and one staff account.
 
 ## Design system
 Exact color tokens, the one-meaning-per-hue status mapping, and the form and accessibility rules are in references/design-tokens.md. The short version: a calm neutral canvas, one calm blue primary, color carries meaning and never decorates, labels always visible above fields and never as placeholders, inline validation, big targets, scan do not type, WCAG AA. The one Instagram idea that transfers is letting the captured photos and the data carry the color while the interface stays quiet.
 
-## AI agents
-1. Document extraction, ship first. Serverless function sends the image or PDF to the vision model with a strict JSON-only contract: vendor, invoice_date, notes, line_items each with description, qty, unit_cost, retail_price_note, confidence. Validate, write a draft event, flag low-confidence fields. Cross-check the dollar total against the order amount to auto-flag over-ships and missing items. Never auto-post low-confidence amounts.
-2. Reorder suggestions, ship second. Dual-season reorder points: separate peak and off-peak average demand plus safety stock per SKU. Formula-based in SQL first, ML only after one or two clean seasons. The human decides.
-3. Ask-your-store, ship third. Embed knowledge notes, vendor rules, and key rows into pgvector. Answer with citations back to the source. This is what lets a manager run a department the owner is not expert in.
+## AI agents (all shipped)
+1. Document extraction (/api/extract). Sends the image or PDF to Claude vision with a strict JSON-only contract (vendor, invoice_date, notes, line_items each with description, qty, unit_cost, retail_price_note, confidence), validates it, and shows a confirm screen that flags low-confidence fields and an order-vs-invoiced warning a human acknowledges. Never auto-post low-confidence amounts.
+2. Reorder suggestions (/reorder and /api/reorder). Formula-based from the order ledger, the counts, and the reorder knowledge notes, with an optional Claude summary. Dual-season demand and ML are deferred until a clean season of sales data exists. The human decides.
+3. Ask-your-store (/ask and /api/ask). Answers from the store's own notes, vendors, and invoices passed as context, naming the source. pgvector is the deferred upgrade at scale. This is the remote-oversight tool for departments the owner is not expert in.
 
-Hosting note: vision LLM APIs are US-hosted, fine for non-personal vendor invoices. For any personal data prefer the Canadian-region OCR services.
+Hosting note: the Anthropic API is US-hosted, fine for non-personal vendor invoices. Prefer Canadian-region services for any personal data.
 
 ## Canada rules
 - Ontario 13 percent HST is the working default. Keep a tax_rules table keyed by province for portability. Show HST as a separate line. Keep records six years.
@@ -61,7 +70,7 @@ Hosting note: vision LLM APIs are US-hosted, fine for non-personal vendor invoic
 - Currency CAD, currency input masks.
 
 ## Build sequence
-Phase 0 kickoff and setup. Phase 1 capture and receiving, the Hardware loop, demoable. Phase 2 pricing and inventory. Phase 3 orders, vendors, payments, due-date alerts. Phase 4 manager dashboard with the Today view. Phase 5 tribal knowledge and reorder AI. Phase 6 ask-your-store. Later property maintenance, HR, licence expiry reminders, price-sign printing, a sales feed.
+Phases 1-6 plus property, HR, and compliance are shipped; see docs/STATUS.md. Deferred: pgvector at scale, ML reorder, SMS.
 
 ## Output and communication rules for this project
 - Lead with the answer, then context. Short and direct. No hedging or caveats unless asked.
@@ -79,7 +88,10 @@ Keep this as one skill for now. Split only if a piece grows past what fits clean
 - A Canada tax skill if multi-province support becomes real.
 
 ## References
+- docs/STATUS.md, the live status: what is built, what is left, the before-production checklist. The current source of truth.
+- CONTRIBUTING.md, the coding and writing standards, branch and commit rules, and how to run build, lint, and tests.
+- docs/ARCHITECTURE.md, the architecture, the data flow, and the Mermaid diagrams.
 - references/data-model.md, the entity list and database conventions.
 - references/design-tokens.md, the exact color values, status mapping, and form rules.
-- robinsons_store_build_spec.md in the repo, the full plan with evidence, pricing, and caveats.
-- docs/SOURCES.md in the repo, the Google Drive links for the real source files and how to load them into Claude Code.
+- docs/DATA_SOURCES.md and docs/DATA_INVENTORY.md, the Google Drive source files and how each maps to the app.
+- robinsons_store_build_spec.md, the original plan kept for history. docs/SOURCES.md, the Drive links.

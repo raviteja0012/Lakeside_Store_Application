@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, todayISO } from "@/lib/format";
 import { weekStart, weekDays, addDays, DOW_LABELS, shiftHours, hourlyRateOn } from "@/lib/hr";
 import { useActiveStore } from "@/lib/store";
+import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import type { Employee, PayRate, Shift, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -24,6 +25,10 @@ export default function Schedule() {
 
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ employee_id: "", work_date: "", start_time: "09:00", end_time: "17:00", notes: "" });
+
+  // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
+  const { effectiveActorId, role } = useEffectiveActor(users, actorId);
+  const showMoney = canSeeMoney(role);
 
   const days = useMemo(() => weekDays(week), [week]);
   const weekEnd = addDays(week, 6);
@@ -92,10 +97,10 @@ export default function Schedule() {
         start_time: form.start_time || null,
         end_time: form.end_time || null,
         notes: form.notes || null,
-        created_by: actorId || null
+        created_by: effectiveActorId
       }).select("id").single();
       if (r.error) throw new Error(r.error.message);
-      if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action: "shift_added", entity: "shift", entity_id: r.data.id as string });
+      if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "shift_added", entity: "shift", entity_id: r.data.id as string });
       setAdding(false);
       await loadShifts();
     } catch (e: any) {
@@ -146,12 +151,14 @@ export default function Schedule() {
           <Link href="/hr" className="help" style={{ textDecoration: "none" }}>&larr; Employees</Link>
           <h1 style={{ fontSize: 22, margin: "8px 0 0" }}>Weekly schedule</h1>
         </div>
-        <div>
-          <label className="help" htmlFor="actor">Acting as </label>
-          <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-          </select>
-        </div>
+        {!REQUIRE_AUTH && (
+          <div>
+            <label className="help" htmlFor="actor">Acting as </label>
+            <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -231,7 +238,7 @@ export default function Schedule() {
             <p className="help" style={{ marginTop: -6, marginBottom: 10 }}>Estimated pay uses the hourly rate in effect on each shift date. A person reviews before payroll.</p>
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               <div className="help" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
-                <span>Employee</span><span style={{ textAlign: "right" }}>Shifts</span><span style={{ textAlign: "right" }}>Hours</span><span style={{ textAlign: "right" }}>Est. pay</span>
+                <span>Employee</span><span style={{ textAlign: "right" }}>Shifts</span><span style={{ textAlign: "right" }}>Hours</span><span style={{ textAlign: "right" }}>{showMoney ? "Est. pay" : ""}</span>
               </div>
               {summary.length === 0 && <div style={{ padding: 14 }}><span className="help">No shifts this week.</span></div>}
               {summary.map((r) => (
@@ -239,12 +246,12 @@ export default function Schedule() {
                   <span style={{ fontWeight: 600 }}>{r.name}</span>
                   <span className="tabular" style={{ textAlign: "right" }}>{r.count}</span>
                   <span className="tabular" style={{ textAlign: "right" }}>{r.hours}</span>
-                  <span className="tabular" style={{ textAlign: "right" }}>{r.anyHourly ? formatCAD(r.pay) : "n/a"}</span>
+                  <span className="tabular" style={{ textAlign: "right" }}>{showMoney ? (r.anyHourly ? formatCAD(r.pay) : "n/a") : ""}</span>
                 </div>
               ))}
               {summary.length > 0 && (
                 <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8, padding: "10px 14px", fontWeight: 700 }}>
-                  <span>Total</span><span /><span className="tabular" style={{ textAlign: "right" }}>{Math.round(totalHours * 100) / 100}</span><span className="tabular" style={{ textAlign: "right" }}>{formatCAD(totalPay)}</span>
+                  <span>Total</span><span /><span className="tabular" style={{ textAlign: "right" }}>{Math.round(totalHours * 100) / 100}</span><span className="tabular" style={{ textAlign: "right" }}>{showMoney ? formatCAD(totalPay) : ""}</span>
                 </div>
               )}
             </div>

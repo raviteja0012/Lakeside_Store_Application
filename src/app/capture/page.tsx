@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
 import { formatCAD, round2 } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
+import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import type { AppUser, Department, Draft, LineItem } from "@/lib/types";
 
 type VendorLite = { id: string; name: string; department_id: string | null; default_terms: string | null };
@@ -43,6 +44,12 @@ export default function Capture() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Effective actor and role: the signed-in member in enforced auth, else the dropdown.
+  const { effectiveActorId, role } = useEffectiveActor(users, userId);
+  const showMoney = canSeeMoney(role);
+  // Line grid drops the unit cost column for staff, keeping description, qty, and retail note.
+  const lineGrid = showMoney ? "3fr 1fr 1.2fr 1.2fr 32px" : "3fr 1fr 1.2fr 32px";
 
   useEffect(() => {
     if (!ready) return;
@@ -157,10 +164,12 @@ export default function Capture() {
   const matchedPO = matchedVendor ? pos.find((p) => p.vendor_id === matchedVendor.id && p.order_amount != null) : undefined;
   const orderAmount = matchedPO?.order_amount ?? null;
   const discrepancy = orderAmount != null ? round2(subtotal - orderAmount) : null;
-  const hasDiscrepancy = discrepancy != null && Math.abs(discrepancy) >= 0.01;
+  // The order-vs-invoiced check compares dollar amounts, so it is only surfaced (and only
+  // gates the save) for roles that can see money. Staff capture quantities and post.
+  const hasDiscrepancy = showMoney && discrepancy != null && Math.abs(discrepancy) >= 0.01;
 
   async function save() {
-    if (!draft || (!file && !manual) || !deptId || !userId) return;
+    if (!draft || (!file && !manual) || !deptId || !effectiveActorId) return;
     if (hasDiscrepancy && !ack) return;
     setSaving(true);
     setError(null);
@@ -184,7 +193,7 @@ export default function Capture() {
           source_file_path: path,
           status: "confirmed",
           discrepancy_ack: hasDiscrepancy ? ack : false,
-          created_by: userId
+          created_by: effectiveActorId
         })
         .select("id")
         .single();
@@ -204,7 +213,7 @@ export default function Capture() {
         if (li.error) throw new Error(`lines: ${li.error.message}`);
       }
 
-      await supabase.from("activity_log").insert({ actor_id: userId, action: "received", entity: "receiving_event", entity_id: eventId });
+      await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "received", entity: "receiving_event", entity_id: eventId });
 
       // Clear the form fields directly. Do not call pickFile(null) here: it resets `saved`
       // to false in the same React batch, which would hide the confirmation card.
@@ -231,19 +240,21 @@ export default function Capture() {
       </div>
 
       <div className="card" style={{ padding: 16, display: "grid", gap: 14 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: REQUIRE_AUTH ? "1fr" : "1fr 1fr", gap: 14 }}>
           <div>
             <label className="label" htmlFor="dept">Department</label>
             <select id="dept" className="input" value={deptId} onChange={(e) => setDeptId(e.target.value)}>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className="label" htmlFor="user">Acting as</label>
-            <select id="user" className="input" value={userId} onChange={(e) => setUserId(e.target.value)}>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-            </select>
-          </div>
+          {!REQUIRE_AUTH && (
+            <div>
+              <label className="label" htmlFor="user">Acting as</label>
+              <select id="user" className="input" value={userId} onChange={(e) => setUserId(e.target.value)}>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+              </select>
+            </div>
+          )}
         </div>
 
         <div
@@ -313,7 +324,7 @@ export default function Capture() {
               </label>
             </div>
           )}
-          {matchedVendor && !matchedPO && (
+          {showMoney && matchedVendor && !matchedPO && (
             <p className="help">No order amount on file for {matchedVendor.name} to compare against.</p>
           )}
 
@@ -331,16 +342,16 @@ export default function Capture() {
           <div>
             <label className="label">Line items</label>
             <div style={{ display: "grid", gap: 8 }}>
-              <div className="help" style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1.2fr 1.2fr 32px", gap: 8 }}>
-                <span>Description</span><span>Qty</span><span>Unit cost</span><span>Retail note</span><span></span>
+              <div className="help" style={{ display: "grid", gridTemplateColumns: lineGrid, gap: 8 }}>
+                <span>Description</span><span>Qty</span>{showMoney && <span>Unit cost</span>}<span>Retail note</span><span></span>
               </div>
               {draft.line_items.map((l, i) => {
                 const low = l.confidence !== null && l.confidence < LOW_CONFIDENCE;
                 return (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1.2fr 1.2fr 32px", gap: 8 }}>
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: lineGrid, gap: 8 }}>
                     <input className={`input ${low ? "field-flag" : ""}`} value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
                     <input className={`input tabular ${low ? "field-flag" : ""}`} value={l.qty ?? ""} onChange={(e) => updateLine(i, { qty: e.target.value === "" ? null : Number(e.target.value) })} />
-                    <input className={`input tabular ${low ? "field-flag" : ""}`} value={l.unit_cost ?? ""} onChange={(e) => updateLine(i, { unit_cost: e.target.value === "" ? null : Number(e.target.value) })} />
+                    {showMoney && <input className={`input tabular ${low ? "field-flag" : ""}`} value={l.unit_cost ?? ""} onChange={(e) => updateLine(i, { unit_cost: e.target.value === "" ? null : Number(e.target.value) })} />}
                     <input className="input tabular" value={l.retail_price_note ?? ""} onChange={(e) => updateLine(i, { retail_price_note: e.target.value === "" ? null : Number(e.target.value) })} />
                     <button className="btn-ghost" style={{ padding: "6px 8px" }} onClick={() => removeLine(i)} aria-label="remove line">x</button>
                   </div>
@@ -350,11 +361,13 @@ export default function Capture() {
             <button className="btn-ghost" style={{ marginTop: 8 }} onClick={addLine}>Add line</button>
           </div>
 
-          <div style={{ maxWidth: 280, marginLeft: "auto", width: "100%" }}>
-            <div className="totals-row"><span className="help">Subtotal</span><span className="tabular">{formatCAD(subtotal)}</span></div>
-            <div className="totals-row"><span className="help">HST ({Math.round(taxRate * 100)}%)</span><span className="tabular">{formatCAD(hst)}</span></div>
-            <div className="totals-row total"><span>Total</span><span className="tabular">{formatCAD(total)}</span></div>
-          </div>
+          {showMoney && (
+            <div style={{ maxWidth: 280, marginLeft: "auto", width: "100%" }}>
+              <div className="totals-row"><span className="help">Subtotal</span><span className="tabular">{formatCAD(subtotal)}</span></div>
+              <div className="totals-row"><span className="help">HST ({Math.round(taxRate * 100)}%)</span><span className="tabular">{formatCAD(hst)}</span></div>
+              <div className="totals-row total"><span>Total</span><span className="tabular">{formatCAD(total)}</span></div>
+            </div>
+          )}
 
           <div>
             <label className="label">Notes</label>

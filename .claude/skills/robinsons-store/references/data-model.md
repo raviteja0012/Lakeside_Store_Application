@@ -15,13 +15,14 @@
 - purchase_order: vendor_id, department_id, season_year, order_amount, ship_date, delivery_commit, status, notes.
 - knowledge_note: department_id, topic, body, tags, created_by. The tribal knowledge.
 - licence: store_id, name, authority, number, holder, expiry_date, source_file_path. Required because the store sells regulated pesticides under a tracked Ontario licence.
+- maintenance_asset and maintenance_task: assets (filters, refrigeration, snow removal, painting, roof) and tasks with a due date, recurrence, status, and assigned_to. The /maintenance screen.
+- insurance_policy: provider, policy_number, coverage, premium, renewal_date, notes. The /compliance screen alongside licences.
+- HR: employee, effective-dated pay_rate, and shift (the weekly schedule and hours). The /hr and /hr/schedule screens.
+- tax_rules keyed by province for portability. Ontario 13 percent HST is the working default.
 - activity_log: actor_id, action, entity, entity_id. Audit on every write.
 
-## Phase 2 and later additions
-- maintenance_assets and maintenance_tasks: filters, refrigeration, snow removal, painting, roof, with recurring schedules and a status.
-- insurance_policies.
-- HR: employees, schedules, shifts, effective-dated pay_rates, timesheets.
-- tax_rules keyed by province for portability.
+## Deferred
+- pgvector RAG for ask-your-store at scale, ML-based reorder points, and SMS alerts. The current ask and reorder agents pass store data directly as context; see docs/STATUS.md.
 
 ## Conventions
 - snake_case everywhere.

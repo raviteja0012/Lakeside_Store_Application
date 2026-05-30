@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, daysOverdue } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
+import { canSeeMoney, useCurrentRole } from "@/lib/auth";
 
 type Inv = { id: string; amount: number | null; hst_amount: number | null; due_date: string | null; status: string; vendor: { name: string; department_id: string | null } | null };
 type PO = { order_amount: number | null; status: string; department_id: string | null };
@@ -23,6 +24,8 @@ function Tile({ label, value, sub, accent }: { label: string; value: string; sub
 
 export default function Dashboard() {
   const { storeId, ready } = useActiveStore();
+  const { role } = useCurrentRole();
+  const showMoney = canSeeMoney(role);
   const [invoices, setInvoices] = useState<Inv[]>([]);
   const [pos, setPos] = useState<PO[]>([]);
   const [depts, setDepts] = useState<Dept[]>([]);
@@ -120,32 +123,40 @@ export default function Dashboard() {
       {!loading && !error && (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 24 }}>
-            <Tile label="Outstanding" value={formatCAD(m.outstanding)} sub="unpaid and post-dated" />
-            <Tile label="Overdue" value={formatCAD(m.overdueSum)} sub={`${m.overdueCount} ${m.overdueCount === 1 ? "invoice" : "invoices"}`} accent="var(--error-base)" />
-            <Tile label="Due in 7 days" value={formatCAD(m.dueSoonSum)} sub="plan the cash" accent="var(--warning-base)" />
-            <Tile label="Paid" value={formatCAD(m.paid)} sub="recorded payments" accent="var(--success-base)" />
+            {showMoney && <Tile label="Outstanding" value={formatCAD(m.outstanding)} sub="unpaid and post-dated" />}
+            {showMoney && <Tile label="Overdue" value={formatCAD(m.overdueSum)} sub={`${m.overdueCount} ${m.overdueCount === 1 ? "invoice" : "invoices"}`} accent="var(--error-base)" />}
+            {showMoney && <Tile label="Due in 7 days" value={formatCAD(m.dueSoonSum)} sub="plan the cash" accent="var(--warning-base)" />}
+            {showMoney && <Tile label="Paid" value={formatCAD(m.paid)} sub="recorded payments" accent="var(--success-base)" />}
             <Tile label="Open orders" value={String(m.awaiting)} sub="awaiting delivery" />
             <Tile label="Vendors" value={String(vendors.length)} sub={`${recentCount} receivings logged`} />
           </div>
 
-          <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>By department: ordered vs invoiced</h2>
-          <div className="card" style={{ padding: 0, marginBottom: 24, overflow: "hidden" }}>
-            <div className="help" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
-              <span>Department</span><span style={{ textAlign: "right" }}>Vendors</span><span style={{ textAlign: "right" }}>Ordered</span><span style={{ textAlign: "right" }}>Invoiced</span><span style={{ textAlign: "right" }}>Gap</span>
-            </div>
-            {byDept.map((d) => {
-              const gap = d.ordered - d.invoiced;
-              return (
-                <div key={d.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
-                  <span><span className="chip" style={{ background: "#EEF1F4", color: d.color || "#6B7480" }}>{d.name}</span></span>
-                  <span className="tabular" style={{ textAlign: "right" }}>{d.vcount}</span>
-                  <span className="tabular" style={{ textAlign: "right" }}>{formatCAD(d.ordered)}</span>
-                  <span className="tabular" style={{ textAlign: "right" }}>{formatCAD(d.invoiced)}</span>
-                  <span className="tabular" style={{ textAlign: "right", color: Math.abs(gap) >= 0.01 ? "var(--warning-base)" : "var(--text-secondary)" }}>{formatCAD(gap)}</span>
+          {!showMoney && (
+            <p className="help" style={{ marginBottom: 24 }}>Cost and payment totals are limited to leads, managers, and the owner.</p>
+          )}
+
+          {showMoney && (
+            <>
+              <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>By department: ordered vs invoiced</h2>
+              <div className="card" style={{ padding: 0, marginBottom: 24, overflow: "hidden" }}>
+                <div className="help" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
+                  <span>Department</span><span style={{ textAlign: "right" }}>Vendors</span><span style={{ textAlign: "right" }}>Ordered</span><span style={{ textAlign: "right" }}>Invoiced</span><span style={{ textAlign: "right" }}>Gap</span>
                 </div>
-              );
-            })}
-          </div>
+                {byDept.map((d) => {
+                  const gap = d.ordered - d.invoiced;
+                  return (
+                    <div key={d.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
+                      <span><span className="chip" style={{ background: "#EEF1F4", color: d.color || "#6B7480" }}>{d.name}</span></span>
+                      <span className="tabular" style={{ textAlign: "right" }}>{d.vcount}</span>
+                      <span className="tabular" style={{ textAlign: "right" }}>{formatCAD(d.ordered)}</span>
+                      <span className="tabular" style={{ textAlign: "right" }}>{formatCAD(d.invoiced)}</span>
+                      <span className="tabular" style={{ textAlign: "right", color: Math.abs(gap) >= 0.01 ? "var(--warning-base)" : "var(--text-secondary)" }}>{formatCAD(gap)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
             <h2 style={{ fontSize: 16, margin: 0 }}>Most overdue</h2>
@@ -161,7 +172,7 @@ export default function Dashboard() {
                     <strong>{i.vendor?.name || "Vendor"}</strong>
                     <span className="chip chip-error" style={{ marginLeft: 8 }}>{dd} days overdue</span>
                   </div>
-                  <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(total(i))}</div>
+                  {showMoney && <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(total(i))}</div>}
                 </div>
               );
             })}

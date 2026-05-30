@@ -43,15 +43,51 @@ The daily payment alert emails a summary of invoices overdue or due within 7 day
 3. Environment Variables, add:
    - `NEXT_PUBLIC_SUPABASE_URL` = your Supabase Project URL
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = your Supabase anon key
+   - `NEXT_PUBLIC_REQUIRE_AUTH` = leave unset/false for demo, true only after the auth cutover
    - `ANTHROPIC_API_KEY` = your Anthropic key
    - `ANTHROPIC_MODEL` = current Sonnet id
    - `RESEND_API_KEY`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `CRON_SECRET` (only if you did Step 3)
 4. Deploy. After import, every push to the branch redeploys automatically.
 5. The daily alert cron is in `vercel.json` (runs `/api/alerts` once a day). Vercel registers it on deploy. To test it now, open `/api/alerts` with the `x-cron-secret` header set to your `CRON_SECRET`.
+   - The schedule `0 13 * * *` is in UTC (Vercel crons always are), so it fires at 9 AM EDT / 8 AM EST.
 
 ## Step 5, tell me
 Send me "done" plus the Vercel URL (not the keys). I will check the feed, dashboard, vendors, overdue, knowledge, price signs, maintenance, compliance, HR, and reports, then we test one real invoice through capture.
 
+## Go to enforced auth (production)
+The app ships in demo mode: open access, no login, the "Acting as" picker decides who a write
+is attributed to. That is the default and stays on until you deliberately cut over. The switch
+is the env var `NEXT_PUBLIC_REQUIRE_AUTH`. Do these steps in order. Until the last step, the
+live app keeps working in demo mode.
+
+1. Enable Email auth. Supabase, Authentication, Providers, turn on Email. Leave sign-ups off
+   (there is no public sign-up; you create every account). Authentication, Users, Add user:
+   create the owner account with a real email and a password. Repeat for each member later.
+2. Run the cutover SQL. SQL Editor, paste the contents of `supabase/auth_setup.sql`, Run. This
+   adds `app_user.auth_id`, creates the role and store helper functions, and replaces the dev
+   open policies with per-store, per-role policies. It does not touch `schema.sql`.
+3. Link the owner account to their app_user row. In the SQL editor find the auth user id with
+   `select id, email from auth.users order by created_at desc;` then run the template at the
+   bottom of `auth_setup.sql` to set `auth_id` on the owner's app_user row (the seed owner is
+   Ravi Kiran). The SQL editor runs as the table owner and bypasses the new policies, so this
+   bootstrap works before anyone is linked. Repeat for each member: create the account, copy
+   its `auth.users.id`, set `auth_id` on their app_user row. A member with no `auth_id` cannot
+   sign in to any data, which is the safe default.
+4. Test with real accounts BEFORE trusting it. Sign in as the owner and confirm full access.
+   Sign in as a staff member and confirm they cannot see costs, order or invoice amounts,
+   payments, or totals, and cannot read another store's rows. Do not skip this; the policies
+   are only as good as their test.
+5. Flip the switch. Vercel, project, Settings, Environment Variables: set
+   `NEXT_PUBLIC_REQUIRE_AUTH` = `true`. Redeploy (it is a build-time public var, so a redeploy
+   is required). Now `/login` is required and the per-store, per-role policies are live.
+
+To roll back to demo mode: set `NEXT_PUBLIC_REQUIRE_AUTH` back to unset or `false` and redeploy.
+That restores open access in the app. The database policies from `auth_setup.sql` stay in
+place, so reads and writes still require a linked session; flip the var only while the open dev
+policies are also restored if you need full anonymous access again.
+
 ## Before real staff use
-- Replace the dev row-level security in `supabase/schema.sql` with Supabase Auth and per-role policies (staff, lead, manager, owner).
 - Move document storage to signed URLs if invoices hold anything sensitive.
+- Column-level cost hiding is enforced in the UI today, with row-level DB policies from
+  `auth_setup.sql`. Full column-level DB privileges (revoking cost columns from the staff role
+  in Postgres) are a later hardening step.

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
+import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
 import type { Department, AppUser, Item } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -31,6 +32,9 @@ export default function Inventory() {
   const [deptId, setDeptId] = useState("");
   const [countDate, setCountDate] = useState(todayISO());
   const [qty, setQty] = useState<Record<string, string>>({});
+
+  // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
+  const { effectiveActorId } = useEffectiveActor(users, actorId);
 
   async function load() {
     let query = supabase
@@ -88,12 +92,12 @@ export default function Inventory() {
     setBusy(true);
     setError(null);
     try {
-      const c = await supabase.from("inventory_count").insert({ store_id: storeId, department_id: deptId, counted_date: countDate || null, created_by: actorId || null }).select("id").single();
+      const c = await supabase.from("inventory_count").insert({ store_id: storeId, department_id: deptId, counted_date: countDate || null, created_by: effectiveActorId }).select("id").single();
       if (c.error) throw new Error(c.error.message);
       const countId = c.data.id as string;
       const li = await supabase.from("inventory_count_line").insert(lines.map((l) => ({ ...l, inventory_count_id: countId })));
       if (li.error) throw new Error(li.error.message);
-      if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action: "inventory_counted", entity: "inventory_count", entity_id: countId });
+      if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "inventory_counted", entity: "inventory_count", entity_id: countId });
       setAdding(false);
       setQty({});
       await load();
@@ -121,11 +125,13 @@ export default function Inventory() {
               </select>
             </div>
             <div><label className="label">Count date</label><input className="input" type="date" value={countDate} onChange={(e) => setCountDate(e.target.value)} /></div>
-            <div><label className="label">Acting as</label>
-              <select className="input" value={actorId} onChange={(e) => setActor(e.target.value)}>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-              </select>
-            </div>
+            {!REQUIRE_AUTH && (
+              <div><label className="label">Acting as</label>
+                <select className="input" value={actorId} onChange={(e) => setActor(e.target.value)}>
+                  {users.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                </select>
+              </div>
+            )}
           </div>
 
           {deptItems.length === 0 ? (

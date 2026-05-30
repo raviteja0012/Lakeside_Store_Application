@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 export const runtime = "nodejs";
 
-const CURRENT_SEASON = 2026;
+const CURRENT_SEASON = new Date().getFullYear();
 
 // Reorder summary. Pulls the same order ledger and knowledge notes the /reorder screen uses
 // and asks the model to summarize the likely reorders. Mirrors /api/ask: no-op (200 with a

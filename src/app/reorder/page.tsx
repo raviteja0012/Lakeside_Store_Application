@@ -5,8 +5,9 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
+import { canSeeMoney, useCurrentRole } from "@/lib/auth";
 
-const CURRENT_SEASON = 2026;
+const CURRENT_SEASON = new Date().getFullYear();
 const LOW_STOCK = 3; // a latest count at or below this flags the item for a restock look
 
 type Vend = { id: string; name: string; status: string; default_terms: string | null; notes: string | null; department: { name: string } | null };
@@ -17,6 +18,8 @@ type CountLine = { item_id: string | null; counted_qty: number | null; inventory
 
 export default function Reorder() {
   const { storeId, ready } = useActiveStore();
+  const { role } = useCurrentRole();
+  const showMoney = canSeeMoney(role);
   const [vendors, setVendors] = useState<Vend[]>([]);
   const [pos, setPos] = useState<PO[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -194,7 +197,7 @@ export default function Reorder() {
                       )}
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div className="tabular" style={{ fontWeight: 600 }}>{r.lastAmount != null ? formatCAD(r.lastAmount) : "No prior order"}</div>
+                      {showMoney && <div className="tabular" style={{ fontWeight: 600 }}>{r.lastAmount != null ? formatCAD(r.lastAmount) : "No prior order"}</div>}
                       <div className="help">{r.lastDate ? `last order ${r.lastDate}` : ""}</div>
                     </div>
                   </div>
@@ -208,12 +211,12 @@ export default function Reorder() {
             <div className="card" style={{ padding: 0, overflowX: "auto" }}>
               <div style={{ minWidth: 620 }}>
                 <div className="help" style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
-                  <span>Vendor</span><span style={{ textAlign: "right" }}>Last order</span><span style={{ textAlign: "right" }}>Last date</span><span style={{ textAlign: "right" }}>{CURRENT_SEASON} order</span>
+                  <span>Vendor</span><span style={{ textAlign: "right" }}>{showMoney ? "Last order" : ""}</span><span style={{ textAlign: "right" }}>Last date</span><span style={{ textAlign: "right" }}>{CURRENT_SEASON} order</span>
                 </div>
                 {rows.map((r) => (
                   <div key={r.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
                     <span style={{ fontWeight: 600 }}>{r.name}{r.status !== "active" ? <span className="help"> ({r.status})</span> : ""}</span>
-                    <span className="tabular" style={{ textAlign: "right" }}>{r.lastAmount != null ? formatCAD(r.lastAmount) : "n/a"}</span>
+                    <span className="tabular" style={{ textAlign: "right" }}>{showMoney ? (r.lastAmount != null ? formatCAD(r.lastAmount) : "n/a") : ""}</span>
                     <span className="tabular" style={{ textAlign: "right" }}>{r.lastDate || "n/a"}</span>
                     <span style={{ textAlign: "right" }}>{r.hasCurrent ? <span className="chip chip-success">yes</span> : <span className="chip chip-neutral">no</span>}</span>
                   </div>

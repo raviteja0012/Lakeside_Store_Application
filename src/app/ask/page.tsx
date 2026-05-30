@@ -32,7 +32,7 @@ export default function Ask() {
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || data.error || "request failed");
-      setAnswer(data.answer || "No answer came back.");
+      setAnswer(data.answer || data.message || "No answer came back.");
     } catch (e: any) {
       setError(e.message);
     } finally {

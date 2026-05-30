@@ -6,6 +6,7 @@ import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
 import { formatCAD, todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
+import { canSeeMoney, useCurrentRole } from "@/lib/auth";
 import type { FeedRow } from "@/lib/types";
 
 function thumb(path: string | null) {
@@ -27,6 +28,8 @@ const HOWTO_KEY = "rgs_seen_howto";
 
 export default function Home() {
   const { storeId, ready } = useActiveStore();
+  const { role } = useCurrentRole();
+  const showMoney = canSeeMoney(role);
   const [rows, setRows] = useState<FeedRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +151,7 @@ export default function Home() {
                   {r.app_user?.full_name || "Unknown"} . {new Date(r.created_at).toLocaleString()}
                 </div>
               </div>
-              {subtotal > 0 && (
+              {showMoney && subtotal > 0 && (
                 <div className="tabular" style={{ textAlign: "right", fontWeight: 600, flexShrink: 0 }}>
                   {formatCAD(subtotal)}
                   <div className="help" style={{ fontWeight: 400 }}>subtotal</div>

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
 import { formatCAD, daysOverdue } from "@/lib/format";
+import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import type { Vendor, PurchaseOrder, Invoice, Payment, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -32,6 +33,10 @@ export default function VendorDetail() {
   const [invForm, setInvForm] = useState({ invoice_number: "", amount: "", hst_amount: "", terms: "", due_date: "", status: "unpaid" });
   const [payFor, setPayFor] = useState<string | null>(null);
   const [payForm, setPayForm] = useState({ amount: "", method: "cheque", paid_date: "" });
+
+  // Effective role and actor: in enforced auth the signed-in member, else the dropdown.
+  const { effectiveActorId, role } = useEffectiveActor(users, actorId);
+  const showMoney = canSeeMoney(role);
 
   async function load() {
     const { data: v, error: ve } = await supabase
@@ -76,7 +81,7 @@ export default function VendorDetail() {
     if (typeof window !== "undefined") localStorage.setItem(ACTOR_KEY, uid);
   }
   async function log(action: string, entity: string, entity_id: string | null) {
-    if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action, entity, entity_id });
+    if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action, entity, entity_id });
   }
 
   function startEditVendor() {
@@ -133,7 +138,7 @@ export default function VendorDetail() {
         delivery_commit: poForm.delivery_commit || null,
         status: poForm.status,
         notes: poForm.notes || null,
-        created_by: actorId || null
+        created_by: effectiveActorId
       }).select("id").single();
       if (r.error) throw new Error(r.error.message);
       await log("order_added", "purchase_order", r.data.id as string);
@@ -204,7 +209,7 @@ export default function VendorDetail() {
         amount: num(payForm.amount),
         method: payForm.method,
         paid_date: payForm.paid_date || null,
-        created_by: actorId || null
+        created_by: effectiveActorId
       }).select("id").single();
       if (p.error) throw new Error(p.error.message);
       const u = await supabase.from("invoice").update({ status: "paid" }).eq("id", payFor);
@@ -249,12 +254,14 @@ export default function VendorDetail() {
             <span className={`chip ${chipClass(vendor.status)}`}>{labelize(vendor.status)}</span>
           </div>
         </div>
-        <div>
-          <label className="help" htmlFor="actor">Acting as </label>
-          <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-          </select>
-        </div>
+        {!REQUIRE_AUTH && (
+          <div>
+            <label className="help" htmlFor="actor">Acting as </label>
+            <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -272,8 +279,12 @@ export default function VendorDetail() {
             <div className="help">{[vendor.phone, vendor.email].filter(Boolean).join(" . ")}</div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div className="help">Outstanding</div>
-            <div className="tabular" style={{ fontSize: 20, fontWeight: 700 }}>{formatCAD(outstanding)}</div>
+            {showMoney && (
+              <>
+                <div className="help">Outstanding</div>
+                <div className="tabular" style={{ fontSize: 20, fontWeight: 700 }}>{formatCAD(outstanding)}</div>
+              </>
+            )}
             <div className="help">{vendor.default_terms || ""}</div>
           </div>
         </div>
@@ -307,9 +318,9 @@ export default function VendorDetail() {
       <section>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <h2 style={{ fontSize: 16, margin: 0 }}>Invoices</h2>
-          <button className="btn-ghost" onClick={() => setShowInv((s) => !s)}>{showInv ? "Close" : "+ Add invoice"}</button>
+          {showMoney && <button className="btn-ghost" onClick={() => setShowInv((s) => !s)}>{showInv ? "Close" : "+ Add invoice"}</button>}
         </div>
-        {showInv && (
+        {showMoney && showInv && (
           <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
               <div><label className="label">Invoice number</label><input className="input" value={invForm.invoice_number} onChange={(e) => setInvForm({ ...invForm, invoice_number: e.target.value })} /></div>
@@ -341,12 +352,14 @@ export default function VendorDetail() {
                     </div>
                     <div className="help" style={{ marginTop: 4 }}>{i.terms || ""}{i.due_date ? ` . due ${i.due_date}` : ""}</div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(invoiceTotal(i))}</div>
-                    {i.status !== "paid" && <button className="btn-ghost" style={{ padding: "4px 10px", marginTop: 4 }} onClick={() => startPay(i)}>Record payment</button>}
-                  </div>
+                  {showMoney && (
+                    <div style={{ textAlign: "right" }}>
+                      <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(invoiceTotal(i))}</div>
+                      {i.status !== "paid" && <button className="btn-ghost" style={{ padding: "4px 10px", marginTop: 4 }} onClick={() => startPay(i)}>Record payment</button>}
+                    </div>
+                  )}
                 </div>
-                {payFor === i.id && (
+                {showMoney && payFor === i.id && (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, alignItems: "end" }}>
                     <div><label className="label">Amount</label><input className="input tabular" type="number" step="0.01" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} /></div>
                     <div><label className="label">Method</label>
@@ -370,9 +383,9 @@ export default function VendorDetail() {
       <section>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <h2 style={{ fontSize: 16, margin: 0 }}>Purchase orders</h2>
-          <button className="btn-ghost" onClick={() => setShowPO((s) => !s)}>{showPO ? "Close" : "+ Add order"}</button>
+          {showMoney && <button className="btn-ghost" onClick={() => setShowPO((s) => !s)}>{showPO ? "Close" : "+ Add order"}</button>}
         </div>
-        {showPO && (
+        {showMoney && showPO && (
           <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
               <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={poForm.order_amount} onChange={(e) => setPoForm({ ...poForm, order_amount: e.target.value })} /></div>
@@ -402,27 +415,29 @@ export default function VendorDetail() {
                 </div>
                 <div className="help" style={{ marginTop: 4 }}>{o.ship_date ? `ship ${o.ship_date}` : ""}{o.notes ? ` . ${o.notes}` : ""}</div>
               </div>
-              <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{o.order_amount != null ? formatCAD(o.order_amount) : "n/a"}</div>
+              {showMoney && <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{o.order_amount != null ? formatCAD(o.order_amount) : "n/a"}</div>}
             </div>
           ))}
         </div>
       </section>
 
-      <section>
-        <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Payments</h2>
-        {payments.length === 0 && <p className="help">No payments recorded.</p>}
-        <div style={{ display: "grid", gap: 8 }}>
-          {payments.map((p) => (
-            <div key={p.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <div>
-                <strong>{labelize(p.method) || "Payment"}</strong>
-                <div className="help" style={{ marginTop: 4 }}>{p.paid_date ? `paid ${p.paid_date}` : ""}</div>
+      {showMoney && (
+        <section>
+          <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Payments</h2>
+          {payments.length === 0 && <p className="help">No payments recorded.</p>}
+          <div style={{ display: "grid", gap: 8 }}>
+            {payments.map((p) => (
+              <div key={p.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div>
+                  <strong>{labelize(p.method) || "Payment"}</strong>
+                  <div className="help" style={{ marginTop: 4 }}>{p.paid_date ? `paid ${p.paid_date}` : ""}</div>
+                </div>
+                <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(p.amount)}</div>
               </div>
-              <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(p.amount)}</div>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
