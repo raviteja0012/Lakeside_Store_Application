@@ -238,7 +238,7 @@ export default function Schedule() {
             <p className="help" style={{ marginTop: -6, marginBottom: 10 }}>Estimated pay uses the hourly rate in effect on each shift date. A person reviews before payroll.</p>
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               <div className="help" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
-                <span>Employee</span><span style={{ textAlign: "right" }}>Shifts</span><span style={{ textAlign: "right" }}>Hours</span><span style={{ textAlign: "right" }}>Est. pay</span>
+                <span>Employee</span><span style={{ textAlign: "right" }}>Shifts</span><span style={{ textAlign: "right" }}>Hours</span><span style={{ textAlign: "right" }}>{showMoney ? "Est. pay" : ""}</span>
               </div>
               {summary.length === 0 && <div style={{ padding: 14 }}><span className="help">No shifts this week.</span></div>}
               {summary.map((r) => (
