@@ -43,11 +43,13 @@ The daily payment alert emails a summary of invoices overdue or due within 7 day
 3. Environment Variables, add:
    - `NEXT_PUBLIC_SUPABASE_URL` = your Supabase Project URL
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = your Supabase anon key
+   - `NEXT_PUBLIC_REQUIRE_AUTH` = leave unset/false for demo, true only after the auth cutover
    - `ANTHROPIC_API_KEY` = your Anthropic key
    - `ANTHROPIC_MODEL` = current Sonnet id
    - `RESEND_API_KEY`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `CRON_SECRET` (only if you did Step 3)
 4. Deploy. After import, every push to the branch redeploys automatically.
 5. The daily alert cron is in `vercel.json` (runs `/api/alerts` once a day). Vercel registers it on deploy. To test it now, open `/api/alerts` with the `x-cron-secret` header set to your `CRON_SECRET`.
+   - The schedule `0 13 * * *` is in UTC (Vercel crons always are), so it fires at 9 AM EDT / 8 AM EST.
 
 ## Step 5, tell me
 Send me "done" plus the Vercel URL (not the keys). I will check the feed, dashboard, vendors, overdue, knowledge, price signs, maintenance, compliance, HR, and reports, then we test one real invoice through capture.

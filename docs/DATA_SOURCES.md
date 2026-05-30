@@ -53,7 +53,7 @@ How it maps to the schema:
 
 ## Utilities and service accounts
 
-`Utilities.docx` lists Hydro One, Bell, Vnet. `Vendorlist&InvoiceFilling.docx` adds the rest of the operating accounts: Moor Propane, Orkin Canada (pest control), Generator Solution, Howell Data Systems (POS), plus the Grocery, Bakery, Meat, Produce, Checkout, and Beer vendors. These are captured as `knowledge_note` rows for now (topic "Utility and service accounts" and the per-department vendor notes). A dedicated service-account or maintenance table is a later phase.
+`Utilities.docx` lists Hydro One, Bell, Vnet. `Vendorlist&InvoiceFilling.docx` adds the rest of the operating accounts: Moor Propane, Orkin Canada (pest control), Generator Solution, Howell Data Systems (POS), plus the Grocery, Bakery, Meat, Produce, Checkout, and Beer vendors. These are captured as `knowledge_note` rows (topic "Utility and service accounts" and the per-department vendor notes). The `maintenance_asset`, `maintenance_task`, and `insurance_policy` tables and the `/maintenance` and `/compliance` screens are shipped; track service accounts, recurring tasks, and insurance renewals there.
 
 ## How to use the documents for testing
 

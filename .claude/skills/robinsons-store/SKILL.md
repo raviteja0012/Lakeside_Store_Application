@@ -30,14 +30,16 @@ The full plan with evidence, pricing, and citations is in robinsons_store_build_
 ```
 robinsons-store/
   README.md
-  supabase/schema.sql        v1 data model with audit and a licence table
+  supabase/schema.sql        v1 data model with audit, licence, maintenance, HR, insurance
   supabase/seed.sql          departments, demo users, real vendors from the bookings sheet
+  supabase/auth_setup.sql    the enforced-auth cutover: auth_id, role/store policies
   src/app/page.tsx           the department feed home
   src/app/capture/page.tsx   capture, extract, confirm, save
-  src/app/api/extract/route.ts  the vision call, handles images and PDF
+  src/app/dashboard, reports, overdue, vendors, vendors/[id], inventory, reorder,
+    price-signs, knowledge, ask, maintenance, compliance, hr, hr/schedule, login
+  src/app/api/extract, ask, reorder, alerts   the route handlers
   src/app/globals.css        the color tokens
-  src/lib/supabaseClient.ts
-  src/lib/types.ts
+  src/lib/  supabaseClient, types, auth, store, format, status, hr, charts, nav
   .claude/skills/robinsons-store/  this skill, so it travels with the code
 ```
 
@@ -61,7 +63,7 @@ Hosting note: vision LLM APIs are US-hosted, fine for non-personal vendor invoic
 - Currency CAD, currency input masks.
 
 ## Build sequence
-Phase 0 kickoff and setup. Phase 1 capture and receiving, the Hardware loop, demoable. Phase 2 pricing and inventory. Phase 3 orders, vendors, payments, due-date alerts. Phase 4 manager dashboard with the Today view. Phase 5 tribal knowledge and reorder AI. Phase 6 ask-your-store. Later property maintenance, HR, licence expiry reminders, price-sign printing, a sales feed.
+Phases 1-6 plus property, HR, and compliance are shipped; see docs/STATUS.md. Deferred: pgvector at scale, ML reorder, SMS.
 
 ## Output and communication rules for this project
 - Lead with the answer, then context. Short and direct. No hedging or caveats unless asked.
