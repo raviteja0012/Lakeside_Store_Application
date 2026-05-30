@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
 
     if (!resp.ok) {
       const detail = await resp.text();
-      return NextResponse.json({ error: "model call failed", detail }, { status: 502 });
+      return NextResponse.json({ error: "model call failed", detail });
     }
 
     const data = await resp.json();

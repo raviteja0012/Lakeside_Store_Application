@@ -28,7 +28,7 @@ async function run(req: NextRequest) {
   // Pull unpaid invoices with a due date and split into overdue and due within 7 days.
   const { data, error } = await supabase
     .from("invoice")
-    .select("invoice_number, amount, hst_amount, due_date, vendor:vendor_id(name)")
+    .select("invoice_number, amount, hst_amount, due_date, vendor:vendor_id(name), store:store_id(name)")
     .eq("status", "unpaid")
     .not("due_date", "is", null)
     .order("due_date", { ascending: true });
@@ -44,7 +44,7 @@ async function run(req: NextRequest) {
   for (const i of (data as any[]) || []) {
     const days = Math.round((todayMs - ms(i.due_date)) / 86400000);
     const total = (Number(i.amount) || 0) + (Number(i.hst_amount) || 0);
-    const row = { name: i.vendor?.name || "Vendor", number: i.invoice_number || "", due: i.due_date, total, days };
+    const row = { name: i.vendor?.name || "Vendor", number: i.invoice_number || "", due: i.due_date, total, days, store: i.store?.name || "" };
     if (days > 0) overdue.push(row);
     else if (days >= -7) dueSoon.push(row);
   }
@@ -66,10 +66,10 @@ async function run(req: NextRequest) {
   }
 
   if (count === 0) {
-    return NextResponse.json({ sent: false, message: "Nothing overdue or due within 7 days. No email sent." });
+    return NextResponse.json({ sent: false, message: "Nothing overdue or due within 7 days. No email sent.", counts: { overdue: 0, dueSoon: 0, owed: 0 } });
   }
 
-  const line = (r: any) => `  - ${r.name}${r.number ? ` (${r.number})` : ""}: ${fmt(r.total)}, due ${r.due}${r.days > 0 ? ` (${r.days} days overdue)` : r.days === 0 ? " (due today)" : ` (in ${-r.days} days)`}`;
+  const line = (r: any) => `  - ${r.store ? `[${r.store}] ` : ""}${r.name}${r.number ? ` (${r.number})` : ""}: ${fmt(r.total)}, due ${r.due}${r.days > 0 ? ` (${r.days} days overdue)` : r.days === 0 ? " (due today)" : ` (in ${-r.days} days)`}`;
   const textParts: string[] = [`Robinsons General Store payment alert for ${todayISO}.`, `${count} invoice${count === 1 ? "" : "s"}, ${fmt(owed)} owed.`];
   if (overdue.length) textParts.push(`\nOverdue (${overdue.length}):`, overdue.map(line).join("\n"));
   if (dueSoon.length) textParts.push(`\nDue within 7 days (${dueSoon.length}):`, dueSoon.map(line).join("\n"));
@@ -85,7 +85,7 @@ async function run(req: NextRequest) {
 
   if (!resp.ok) {
     const detail = await resp.text();
-    return NextResponse.json({ sent: false, error: "resend call failed", detail }, { status: 502 });
+    return NextResponse.json({ sent: false, error: "resend call failed", detail });
   }
 
   return NextResponse.json({ sent: true, counts: { overdue: overdue.length, dueSoon: dueSoon.length, owed } });

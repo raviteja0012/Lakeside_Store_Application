@@ -22,6 +22,10 @@ export default function Compliance() {
   const [editLic, setEditLic] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", authority: "", number: "", holder: "", expiry_date: "" });
 
+  const [addPol, setAddPol] = useState(false);
+  const [editPol, setEditPol] = useState<string | null>(null);
+  const [polForm, setPolForm] = useState({ name: "", provider: "", policy_number: "", coverage: "", premium: "", renewal_date: "", notes: "" });
+
   async function load() {
     let lq = supabase.from("licence").select("id, store_id, name, authority, number, holder, expiry_date").order("expiry_date", { ascending: true, nullsFirst: false });
     if (storeId) lq = lq.eq("store_id", storeId);
@@ -87,6 +91,49 @@ export default function Compliance() {
       }
       setAddLic(false);
       setEditLic(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startAddPol() {
+    setEditPol(null);
+    setPolForm({ name: "", provider: "", policy_number: "", coverage: "", premium: "", renewal_date: "", notes: "" });
+    setAddPol(true);
+  }
+  function startEditPol(p: InsurancePolicy) {
+    setAddPol(false);
+    setPolForm({ name: p.name, provider: p.provider || "", policy_number: p.policy_number || "", coverage: p.coverage || "", premium: p.premium != null ? String(p.premium) : "", renewal_date: p.renewal_date || "", notes: p.notes || "" });
+    setEditPol(p.id);
+  }
+  async function savePol() {
+    if (!polForm.name.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const row = {
+        name: polForm.name.trim(),
+        provider: polForm.provider || null,
+        policy_number: polForm.policy_number || null,
+        coverage: polForm.coverage || null,
+        premium: polForm.premium.trim() === "" ? null : Number(polForm.premium),
+        renewal_date: polForm.renewal_date || null,
+        notes: polForm.notes || null
+      };
+      if (editPol) {
+        const r = await supabase.from("insurance_policy").update(row).eq("id", editPol);
+        if (r.error) throw new Error(r.error.message);
+        if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action: "insurance_edited", entity: "insurance_policy", entity_id: editPol });
+      } else {
+        const r = await supabase.from("insurance_policy").insert({ ...row, store_id: storeId }).select("id").single();
+        if (r.error) throw new Error(r.error.message);
+        if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action: "insurance_added", entity: "insurance_policy", entity_id: r.data.id as string });
+      }
+      setAddPol(false);
+      setEditPol(null);
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -163,7 +210,27 @@ export default function Compliance() {
           </section>
 
           <section>
-            <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Insurance renewals</h2>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <h2 style={{ fontSize: 16, margin: 0 }}>Insurance renewals</h2>
+              <button className="btn-ghost" onClick={startAddPol}>{addPol ? "Close" : "+ Add policy"}</button>
+            </div>
+            {(addPol || editPol) && (
+              <div className="card" style={{ padding: 14, marginBottom: 12, display: "grid", gap: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+                  <div><label className="label">Name</label><input className="input" value={polForm.name} onChange={(e) => setPolForm({ ...polForm, name: e.target.value })} /></div>
+                  <div><label className="label">Provider</label><input className="input" value={polForm.provider} onChange={(e) => setPolForm({ ...polForm, provider: e.target.value })} /></div>
+                  <div><label className="label">Policy number</label><input className="input" value={polForm.policy_number} onChange={(e) => setPolForm({ ...polForm, policy_number: e.target.value })} /></div>
+                  <div><label className="label">Coverage</label><input className="input" value={polForm.coverage} onChange={(e) => setPolForm({ ...polForm, coverage: e.target.value })} /></div>
+                  <div><label className="label">Premium</label><input className="input tabular" type="number" step="0.01" value={polForm.premium} onChange={(e) => setPolForm({ ...polForm, premium: e.target.value })} /></div>
+                  <div><label className="label">Renewal date</label><input className="input" type="date" value={polForm.renewal_date} onChange={(e) => setPolForm({ ...polForm, renewal_date: e.target.value })} /></div>
+                </div>
+                <div><label className="label">Notes</label><input className="input" value={polForm.notes} onChange={(e) => setPolForm({ ...polForm, notes: e.target.value })} /></div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn-primary" onClick={savePol} disabled={busy || !polForm.name.trim()}>{busy ? "Saving." : "Save policy"}</button>
+                  <button className="btn-ghost" onClick={() => { setAddPol(false); setEditPol(null); }}>Cancel</button>
+                </div>
+              </div>
+            )}
             {policies.length === 0 && <p className="help">No policies on file.</p>}
             <div style={{ display: "grid", gap: 8 }}>
               {policies.map((p) => {
@@ -182,7 +249,10 @@ export default function Compliance() {
                       </div>
                       {p.notes && <div className="help" style={{ marginTop: 2 }}>{p.notes}</div>}
                     </div>
-                    {p.premium != null && <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(p.premium)}<div className="help" style={{ fontWeight: 400 }}>premium</div></div>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      {p.premium != null && <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(p.premium)}<div className="help" style={{ fontWeight: 400 }}>premium</div></div>}
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditPol(p)}>Edit</button>
+                    </div>
                   </div>
                 );
               })}
