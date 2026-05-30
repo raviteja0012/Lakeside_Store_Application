@@ -39,7 +39,7 @@ export function useActiveStore() {
       setStores(list);
       const saved = getActiveStore();
       const valid = saved && list.some((s) => s.id === saved) ? saved : list[0]?.id || null;
-      if (saved !== valid && valid) localStorage.setItem(STORE_KEY, valid);
+      if (saved !== valid && valid && typeof window !== "undefined") localStorage.setItem(STORE_KEY, valid);
       setStoreId(valid);
       setReady(true);
     })();

@@ -11,7 +11,7 @@ const navLinkActive = { textDecoration: "none", color: "var(--primary)", fontWei
 
 export default function Header() {
   const pathname = usePathname() || "/";
-  const [area, setArea] = useState<Area>("ops");
+  const [area, setArea] = useState<Area>(() => areaForPath(pathname));
   const { stores, storeId, setStore } = useActiveStore();
 
   // The current path decides the area on load and on navigation, so a deep link or a

@@ -5,7 +5,10 @@ Capture-first receiving app for Robinsons General Store, a Canadian general stor
 Stack: Next.js App Router on Vercel, Supabase Postgres (database, auth, storage, pgvector) in a Canadian region, Claude Sonnet vision for reading invoices.
 
 ## Documentation
+- docs/STATUS.md, the current status: what is built, what is left, and what to do before real staff use. Start here.
+- RUNBOOK.md, the go-live steps and every environment variable.
 - docs/ARCHITECTURE.md, the architecture, the data flow, and how we work in Claude Code.
+- docs/DATA_SOURCES.md, the Google Drive store files and how each maps to the app.
 - robinsons_store_build_spec.md, the full plan with evidence, schema, AI layer, Canada rules, phases, and caveats.
 - .claude/skills/robinsons-store, the project skill that Claude Code loads automatically, with data-model and design-tokens references.
 
