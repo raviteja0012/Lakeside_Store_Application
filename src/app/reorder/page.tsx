@@ -13,7 +13,7 @@ type Vend = { id: string; name: string; status: string; default_terms: string | 
 type PO = { vendor_id: string | null; order_amount: number | null; ship_date: string | null; season_year: number | null; status: string };
 type Note = { topic: string | null; body: string | null; tags: string[] | null };
 type ItemRow = { id: string; name: string; vendor_id: string | null };
-type CountLine = { item_id: string | null; counted_qty: number | null; inventory_count: { counted_date: string | null } | null };
+type CountLine = { item_id: string | null; counted_qty: number | null; inventory_count: { counted_date: string | null; store_id: string | null } | null };
 
 export default function Reorder() {
   const { storeId, ready } = useActiveStore();
@@ -32,18 +32,29 @@ export default function Reorder() {
 
   useEffect(() => {
     if (!ready) return;
+    setLoading(true);
     (async () => {
-      const v = await supabase.from("vendor").select("id, name, status, default_terms, notes, department:department_id(name)").order("name");
+      let vq = supabase.from("vendor").select("id, name, status, default_terms, notes, department:department_id(name)").order("name");
+      if (storeId) vq = vq.eq("store_id", storeId);
+      const v = await vq;
       if (v.error) { setError(v.error.message); setLoading(false); return; }
       setVendors((v.data as unknown as Vend[]) || []);
-      const p = await supabase.from("purchase_order").select("vendor_id, order_amount, ship_date, season_year, status");
+      let pq = supabase.from("purchase_order").select("vendor_id, order_amount, ship_date, season_year, status");
+      if (storeId) pq = pq.eq("store_id", storeId);
+      const p = await pq;
       setPos((p.data as unknown as PO[]) || []);
-      const n = await supabase.from("knowledge_note").select("topic, body, tags");
+      let nq = supabase.from("knowledge_note").select("topic, body, tags");
+      if (storeId) nq = nq.eq("store_id", storeId);
+      const n = await nq;
       setNotes((n.data as unknown as Note[]) || []);
-      const it = await supabase.from("item").select("id, name, vendor_id");
+      let iq = supabase.from("item").select("id, name, vendor_id");
+      if (storeId) iq = iq.eq("store_id", storeId);
+      const it = await iq;
       setItems((it.data as unknown as ItemRow[]) || []);
-      const cl = await supabase.from("inventory_count_line").select("item_id, counted_qty, inventory_count:inventory_count_id(counted_date)");
-      setCountLines((cl.data as unknown as CountLine[]) || []);
+      // Count lines carry no store_id; filter by the parent count's store after fetching.
+      const cl = await supabase.from("inventory_count_line").select("item_id, counted_qty, inventory_count:inventory_count_id(counted_date, store_id)");
+      const lines = ((cl.data as unknown as CountLine[]) || []).filter((l) => !storeId || l.inventory_count?.store_id === storeId);
+      setCountLines(lines);
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

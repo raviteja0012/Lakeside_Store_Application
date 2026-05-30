@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useActiveStore } from "@/lib/store";
 import type { KnowledgeNote, Department, AppUser } from "@/lib/types";
 
 export default function Knowledge() {
+  const { storeId, ready } = useActiveStore();
   const [notes, setNotes] = useState<KnowledgeNote[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -22,25 +24,32 @@ export default function Knowledge() {
   const [saving, setSaving] = useState(false);
 
   async function load() {
-    const { data, error } = await supabase
+    let query = supabase
       .from("knowledge_note")
       .select("id, department_id, topic, body, tags, created_at, department:department_id(name, accent_color), app_user:created_by(full_name)")
       .order("created_at", { ascending: false });
+    if (storeId) query = query.eq("store_id", storeId);
+    const { data, error } = await query;
     if (error) setError(error.message);
     else setNotes((data as unknown as KnowledgeNote[]) || []);
   }
 
   useEffect(() => {
+    if (!ready) return;
+    setLoading(true);
     (async () => {
       await load();
-      const { data: ds } = await supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      if (storeId) dq = dq.eq("store_id", storeId);
+      const { data: ds } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
       setDepartments((ds as Department[]) || []);
       setUsers((us as AppUser[]) || []);
       if (us && us.length) setUserId((us as AppUser[])[0].id);
       setLoading(false);
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, storeId]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -61,6 +70,7 @@ export default function Knowledge() {
     try {
       const tagArr = tags.split(",").map((t) => t.trim()).filter(Boolean);
       const ins = await supabase.from("knowledge_note").insert({
+        store_id: storeId,
         department_id: deptId || null,
         topic: topic.trim(),
         body: body.trim(),

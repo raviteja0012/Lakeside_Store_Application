@@ -8,10 +8,11 @@ export const runtime = "nodejs";
 // upgrade once the knowledge base grows past what fits in one prompt.
 export async function POST(req: NextRequest) {
   try {
-    const { question } = await req.json();
+    const { question, store_id } = await req.json();
     if (!question || typeof question !== "string") {
       return NextResponse.json({ error: "question is required" }, { status: 400 });
     }
+    const storeId: string | null = store_id || null;
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
@@ -19,10 +20,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set" }, { status: 500 });
     }
 
+    const scopeNote = supabase.from("knowledge_note").select("topic, body, tags, department:department_id(name)");
+    const scopeVendor = supabase.from("vendor").select("name, default_terms, status, notes, phone, department:department_id(name)");
+    const scopeInvoice = supabase.from("invoice").select("amount, hst_amount, due_date, status, terms, vendor:vendor_id(name)");
     const [notes, vendors, invoices] = await Promise.all([
-      supabase.from("knowledge_note").select("topic, body, tags, department:department_id(name)"),
-      supabase.from("vendor").select("name, default_terms, status, notes, phone, department:department_id(name)"),
-      supabase.from("invoice").select("amount, hst_amount, due_date, status, terms, vendor:vendor_id(name)")
+      storeId ? scopeNote.eq("store_id", storeId) : scopeNote,
+      storeId ? scopeVendor.eq("store_id", storeId) : scopeVendor,
+      storeId ? scopeInvoice.eq("store_id", storeId) : scopeInvoice
     ]);
 
     const today = new Date().toISOString().slice(0, 10);

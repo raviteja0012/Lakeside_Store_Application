@@ -3,26 +3,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, daysOverdue } from "@/lib/format";
+import { useActiveStore } from "@/lib/store";
 import type { Invoice } from "@/lib/types";
 
 export default function Overdue() {
+  const { storeId, ready } = useActiveStore();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!ready) return;
+    setLoading(true);
     (async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("invoice")
         .select("id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status, vendor:vendor_id(name)")
         .in("status", ["unpaid", "postdated"])
         .not("due_date", "is", null)
         .order("due_date", { ascending: true });
+      if (storeId) query = query.eq("store_id", storeId);
+      const { data, error } = await query;
       if (error) setError(error.message);
       else setInvoices((data as unknown as Invoice[]) || []);
       setLoading(false);
     })();
-  }, []);
+  }, [ready, storeId]);
 
   const total = (i: Invoice) => (Number(i.amount) || 0) + (Number(i.hst_amount) || 0);
   const outstanding = useMemo(() => invoices.reduce((s, i) => s + total(i), 0), [invoices]);

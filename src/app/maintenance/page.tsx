@@ -30,16 +30,20 @@ export default function Maintenance() {
   const [tForm, setTForm] = useState({ title: "", detail: "", asset_id: "", due_date: "", recurrence: "none", assigned_to: "" });
 
   async function load() {
-    const a = await supabase
+    let aq = supabase
       .from("maintenance_asset")
       .select("id, store_id, department_id, name, category, location, notes, department:department_id(name, accent_color)")
       .order("name");
+    if (storeId) aq = aq.eq("store_id", storeId);
+    const a = await aq;
     if (a.error) { setError(a.error.message); return; }
     setAssets((a.data as unknown as MaintenanceAsset[]) || []);
-    const t = await supabase
+    let tq = supabase
       .from("maintenance_task")
       .select("id, store_id, asset_id, title, detail, due_date, recurrence, status, assigned_to, completed_at, asset:asset_id(name), assignee:assigned_to(full_name)")
       .order("due_date", { ascending: true });
+    if (storeId) tq = tq.eq("store_id", storeId);
+    const t = await tq;
     setTasks((t.data as unknown as MaintenanceTask[]) || []);
   }
 
@@ -47,7 +51,9 @@ export default function Maintenance() {
     if (!ready) return;
     (async () => {
       await load();
-      const { data: ds } = await supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      if (storeId) dq = dq.eq("store_id", storeId);
+      const { data: ds } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
       const usr = (us as AppUser[]) || [];
       setDepartments((ds as Department[]) || []);

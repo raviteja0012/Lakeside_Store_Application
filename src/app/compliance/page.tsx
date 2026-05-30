@@ -23,10 +23,14 @@ export default function Compliance() {
   const [form, setForm] = useState({ name: "", authority: "", number: "", holder: "", expiry_date: "" });
 
   async function load() {
-    const l = await supabase.from("licence").select("id, store_id, name, authority, number, holder, expiry_date").order("expiry_date", { ascending: true, nullsFirst: false });
+    let lq = supabase.from("licence").select("id, store_id, name, authority, number, holder, expiry_date").order("expiry_date", { ascending: true, nullsFirst: false });
+    if (storeId) lq = lq.eq("store_id", storeId);
+    const l = await lq;
     if (l.error) { setError(l.error.message); return; }
     setLicences((l.data as unknown as Licence[]) || []);
-    const p = await supabase.from("insurance_policy").select("id, store_id, name, provider, policy_number, coverage, premium, renewal_date, notes").order("renewal_date", { ascending: true, nullsFirst: false });
+    let pq = supabase.from("insurance_policy").select("id, store_id, name, provider, policy_number, coverage, premium, renewal_date, notes").order("renewal_date", { ascending: true, nullsFirst: false });
+    if (storeId) pq = pq.eq("store_id", storeId);
+    const p = await pq;
     setPolicies((p.data as unknown as InsurancePolicy[]) || []);
   }
 

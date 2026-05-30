@@ -28,30 +28,38 @@ export default function Schedule() {
   const days = useMemo(() => weekDays(week), [week]);
   const weekEnd = addDays(week, 6);
 
-  async function loadShifts() {
-    const s = await supabase
+  async function loadShifts(empIds?: string[]) {
+    const ids = empIds || employees.map((e) => e.id);
+    let sq = supabase
       .from("shift")
       .select("id, employee_id, work_date, start_time, end_time, notes, employee:employee_id(full_name)")
       .gte("work_date", week)
       .lte("work_date", weekEnd)
       .order("work_date", { ascending: true });
+    if (ids.length) sq = sq.in("employee_id", ids);
+    const s = await sq;
     if (s.error) { setError(s.error.message); return; }
-    setShifts((s.data as unknown as Shift[]) || []);
+    // Guard against an empty id list matching nothing unexpectedly.
+    setShifts(ids.length ? ((s.data as unknown as Shift[]) || []) : []);
   }
 
   useEffect(() => {
     if (!ready) return;
     (async () => {
-      const e = await supabase.from("employee").select("id, store_id, department_id, full_name, role, phone, email, hire_date, status, notes").eq("status", "active").order("full_name");
-      setEmployees((e.data as unknown as Employee[]) || []);
+      let eq = supabase.from("employee").select("id, store_id, department_id, full_name, role, phone, email, hire_date, status, notes").eq("status", "active").order("full_name");
+      if (storeId) eq = eq.eq("store_id", storeId);
+      const e = await eq;
+      const emps = (e.data as unknown as Employee[]) || [];
+      setEmployees(emps);
+      const ids = emps.map((x) => x.id);
       const r = await supabase.from("pay_rate").select("id, employee_id, rate, unit, effective_date").order("effective_date", { ascending: false });
-      setRates((r.data as unknown as PayRate[]) || []);
+      setRates(((r.data as unknown as PayRate[]) || []).filter((x) => x.employee_id && ids.includes(x.employee_id)));
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
       const usr = (us as AppUser[]) || [];
       setUsers(usr);
       const saved = typeof window !== "undefined" ? localStorage.getItem(ACTOR_KEY) : null;
       setActorId(saved || usr[0]?.id || "");
-      await loadShifts();
+      await loadShifts(ids);
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

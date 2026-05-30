@@ -40,6 +40,7 @@ export type FeedRow = {
 
 export type Vendor = {
   id: string;
+  store_id?: string | null;
   department_id: string | null;
   name: string;
   rep_name: string | null;

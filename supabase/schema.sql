@@ -31,6 +31,7 @@ create table app_user (
 
 create table vendor (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store: scope vendors to one store
   department_id uuid references department(id),
   name text not null,
   rep_name text,
@@ -45,6 +46,7 @@ create table vendor (
 
 create table item (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   department_id uuid references department(id),
   vendor_id uuid references vendor(id),
   sku text,
@@ -58,6 +60,7 @@ create table item (
 
 create table receiving_event (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   department_id uuid references department(id),
   vendor_id uuid references vendor(id),
   vendor_name text,                 -- raw extracted vendor name before matching
@@ -82,6 +85,7 @@ create table receiving_line (
 
 create table invoice (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   receiving_event_id uuid references receiving_event(id),
   vendor_id uuid references vendor(id),
   invoice_number text,
@@ -117,6 +121,7 @@ create table retail_price (
 
 create table inventory_count (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   department_id uuid references department(id),
   counted_date date,
   source_file_path text,
@@ -133,6 +138,7 @@ create table inventory_count_line (
 
 create table purchase_order (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   vendor_id uuid references vendor(id),
   department_id uuid references department(id),
   season_year int,
@@ -147,6 +153,7 @@ create table purchase_order (
 
 create table knowledge_note (
   id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
   department_id uuid references department(id),
   topic text,
   body text,

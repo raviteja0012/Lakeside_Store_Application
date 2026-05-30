@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
+import { useActiveStore } from "@/lib/store";
 import type { Vendor, Department, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
 
 export default function Vendors() {
+  const { storeId, ready } = useActiveStore();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -22,29 +24,36 @@ export default function Vendors() {
   const [form, setForm] = useState({ name: "", department_id: "", rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active" });
 
   async function load() {
-    const { data, error } = await supabase
+    let query = supabase
       .from("vendor")
       .select("id, name, rep_name, phone, email, products_we_carry, default_terms, status, notes, department:department_id(name, accent_color)")
       .order("name");
+    if (storeId) query = query.eq("store_id", storeId);
+    const { data, error } = await query;
     if (error) setError(error.message);
     else setVendors((data as unknown as Vendor[]) || []);
   }
 
   useEffect(() => {
+    if (!ready) return;
+    setLoading(true);
     (async () => {
       await load();
-      const { data: ds } = await supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      if (storeId) dq = dq.eq("store_id", storeId);
+      const { data: ds } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
       const dList = (ds as Department[]) || [];
       const usr = (us as AppUser[]) || [];
       setDepartments(dList);
       setUsers(usr);
-      if (dList[0]) setForm((f) => ({ ...f, department_id: dList[0].id }));
+      setForm((f) => ({ ...f, department_id: dList[0]?.id || "" }));
       const saved = typeof window !== "undefined" ? localStorage.getItem(ACTOR_KEY) : null;
       setActorId(saved || usr[0]?.id || "");
       setLoading(false);
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, storeId]);
 
   function setActor(uid: string) {
     setActorId(uid);
@@ -57,6 +66,7 @@ export default function Vendors() {
     setError(null);
     try {
       const r = await supabase.from("vendor").insert({
+        store_id: storeId,
         name: form.name.trim(),
         department_id: form.department_id,
         rep_name: form.rep_name || null,

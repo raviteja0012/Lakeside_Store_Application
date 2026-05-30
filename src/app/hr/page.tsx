@@ -30,21 +30,28 @@ export default function HR() {
   const [rateForm, setRateForm] = useState({ rate: "", unit: "hour", effective_date: "" });
 
   async function load() {
-    const e = await supabase
+    let eq = supabase
       .from("employee")
       .select("id, store_id, department_id, full_name, role, phone, email, hire_date, status, notes, department:department_id(name, accent_color)")
       .order("full_name");
+    if (storeId) eq = eq.eq("store_id", storeId);
+    const e = await eq;
     if (e.error) { setError(e.error.message); return; }
-    setEmployees((e.data as unknown as Employee[]) || []);
+    const emps = (e.data as unknown as Employee[]) || [];
+    setEmployees(emps);
+    // Pay rates have no store_id; keep only those for this store's employees.
+    const ids = emps.map((x) => x.id);
     const r = await supabase.from("pay_rate").select("id, employee_id, rate, unit, effective_date").order("effective_date", { ascending: false });
-    setRates((r.data as unknown as PayRate[]) || []);
+    setRates(((r.data as unknown as PayRate[]) || []).filter((x) => x.employee_id && ids.includes(x.employee_id)));
   }
 
   useEffect(() => {
     if (!ready) return;
     (async () => {
       await load();
-      const { data: ds } = await supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      if (storeId) dq = dq.eq("store_id", storeId);
+      const { data: ds } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
       const usr = (us as AppUser[]) || [];
       setDepartments((ds as Department[]) || []);

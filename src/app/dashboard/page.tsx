@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, daysOverdue } from "@/lib/format";
+import { useActiveStore } from "@/lib/store";
 
 type Inv = { id: string; amount: number | null; hst_amount: number | null; due_date: string | null; status: string; vendor: { name: string; department_id: string | null } | null };
 type PO = { order_amount: number | null; status: string; department_id: string | null };
@@ -21,6 +22,7 @@ function Tile({ label, value, sub, accent }: { label: string; value: string; sub
 }
 
 export default function Dashboard() {
+  const { storeId, ready } = useActiveStore();
   const [invoices, setInvoices] = useState<Inv[]>([]);
   const [pos, setPos] = useState<PO[]>([]);
   const [depts, setDepts] = useState<Dept[]>([]);
@@ -30,25 +32,37 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!ready) return;
+    setLoading(true);
     (async () => {
-      const inv = await supabase.from("invoice").select("id, amount, hst_amount, due_date, status, vendor:vendor_id(name, department_id)");
+      let invq = supabase.from("invoice").select("id, amount, hst_amount, due_date, status, vendor:vendor_id(name, department_id)");
+      if (storeId) invq = invq.eq("store_id", storeId);
+      const inv = await invq;
       if (inv.error) {
         setError(inv.error.message);
         setLoading(false);
         return;
       }
       setInvoices((inv.data as unknown as Inv[]) || []);
-      const po = await supabase.from("purchase_order").select("order_amount, status, department_id");
+      let poq = supabase.from("purchase_order").select("order_amount, status, department_id");
+      if (storeId) poq = poq.eq("store_id", storeId);
+      const po = await poq;
       setPos((po.data as unknown as PO[]) || []);
-      const d = await supabase.from("department").select("id, name, accent_color").order("name");
+      let dq = supabase.from("department").select("id, name, accent_color").order("name");
+      if (storeId) dq = dq.eq("store_id", storeId);
+      const d = await dq;
       setDepts((d.data as unknown as Dept[]) || []);
-      const v = await supabase.from("vendor").select("id, department_id, status");
+      let vq = supabase.from("vendor").select("id, department_id, status");
+      if (storeId) vq = vq.eq("store_id", storeId);
+      const v = await vq;
       setVendors((v.data as unknown as Vend[]) || []);
-      const re = await supabase.from("receiving_event").select("id", { count: "exact", head: true });
+      let req = supabase.from("receiving_event").select("id", { count: "exact", head: true });
+      if (storeId) req = req.eq("store_id", storeId);
+      const re = await req;
       setRecentCount(re.count || 0);
       setLoading(false);
     })();
-  }, []);
+  }, [ready, storeId]);
 
   const total = (i: Inv) => (Number(i.amount) || 0) + (Number(i.hst_amount) || 0);
 

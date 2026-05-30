@@ -36,7 +36,7 @@ export default function VendorDetail() {
   async function load() {
     const { data: v, error: ve } = await supabase
       .from("vendor")
-      .select("id, department_id, name, rep_name, phone, email, products_we_carry, default_terms, status, notes, department:department_id(name, accent_color)")
+      .select("id, store_id, department_id, name, rep_name, phone, email, products_we_carry, default_terms, status, notes, department:department_id(name, accent_color)")
       .eq("id", id)
       .maybeSingle();
     if (ve) {
@@ -124,6 +124,7 @@ export default function VendorDetail() {
     setError(null);
     try {
       const r = await supabase.from("purchase_order").insert({
+        store_id: vendor.store_id ?? null,
         vendor_id: vendor.id,
         department_id: vendor.department_id,
         season_year: num(poForm.season_year),
@@ -167,6 +168,7 @@ export default function VendorDetail() {
     setError(null);
     try {
       const r = await supabase.from("invoice").insert({
+        store_id: vendor.store_id ?? null,
         vendor_id: vendor.id,
         invoice_number: invForm.invoice_number || null,
         amount: num(invForm.amount),

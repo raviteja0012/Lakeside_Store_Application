@@ -232,3 +232,49 @@ insert into shift (id, employee_id, work_date, start_time, end_time, notes, crea
   ('dddddddd-0000-0000-0000-000000000006', 'bbbbbbbb-0000-0000-0000-000000000002', '2026-05-30', '10:00', '18:00', null, '33333333-0000-0000-0000-000000000001'),
   ('dddddddd-0000-0000-0000-000000000007', 'bbbbbbbb-0000-0000-0000-000000000003', '2026-05-30', '12:00', '20:00', 'Chip stand', '33333333-0000-0000-0000-000000000001'),
   ('dddddddd-0000-0000-0000-000000000008', 'bbbbbbbb-0000-0000-0000-000000000003', '2026-05-31', '12:00', '20:00', 'Chip stand', '33333333-0000-0000-0000-000000000001');
+
+-- ===========================================================================================
+-- Multi-store. Backfill every store-scoped row above to Robinsons (store 1), then seed a small
+-- SECOND store so the store picker and the store-scoped reads have something to switch to.
+-- ===========================================================================================
+
+-- Backfill store 1 on all rows seeded above. receiving_event and inventory_count have no seed
+-- rows yet, so those updates are no-ops; they keep the backfill complete for future rows.
+update department set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update vendor set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update item set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update purchase_order set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update invoice set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update receiving_event set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update inventory_count set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+update knowledge_note set store_id = '11111111-1111-1111-1111-111111111111' where store_id is null;
+
+-- Second store. ILLUSTRATIVE, to show the multi-store switch. Not a real Robinsons location.
+insert into store (id, name, legal_entity, address) values
+  ('11111111-2222-2222-2222-222222222222', 'Lakeside Outpost (sample)', null, 'Sample second location, Ontario (illustrative)');
+
+insert into app_user (id, store_id, full_name, role) values
+  ('33333333-2222-2222-2222-222222222222', '11111111-2222-2222-2222-222222222222', 'Outpost Lead', 'lead');
+
+-- Its own departments so the store is self-consistent in the scoped dropdowns.
+insert into department (id, store_id, name, parent_department_id, accent_color) values
+  ('22222222-2000-0000-0000-000000000001', '11111111-2222-2222-2222-222222222222', 'Hardware', null, '#2F5FA8'),
+  ('22222222-2000-0000-0000-000000000002', '11111111-2222-2222-2222-222222222222', 'Grocery', null, '#1E8E5A'),
+  ('22222222-2000-0000-0000-000000000003', '11111111-2222-2222-2222-222222222222', 'Gifts', null, '#B7791F');
+
+-- Two or three of its own vendors with one order and one invoice each (illustrative figures).
+insert into vendor (id, store_id, department_id, name, rep_name, phone, products_we_carry, default_terms, status, notes) values
+  ('44444444-2000-0000-0000-000000000001', '11111111-2222-2222-2222-222222222222', '22222222-2000-0000-0000-000000000001', 'Northwood Hardware Supply', 'Dana', '705-555-0201', 'Fasteners and tools', 'Net 30', 'active', 'Illustrative second-store vendor.'),
+  ('44444444-2000-0000-0000-000000000002', '11111111-2222-2222-2222-222222222222', '22222222-2000-0000-0000-000000000002', 'Lakeshore Provisions', 'Same', '705-555-0202', 'Dry grocery', 'Net 30', 'active', 'Illustrative second-store vendor. Flagged to reorder.'),
+  ('44444444-2000-0000-0000-000000000003', '11111111-2222-2222-2222-222222222222', '22222222-2000-0000-0000-000000000003', 'Cottage Gifts Co', 'Riley', '705-555-0203', 'Local gifts', 'Net 60', 'active', 'Illustrative second-store vendor.');
+
+insert into purchase_order (id, store_id, vendor_id, department_id, season_year, order_amount, ship_date, status, notes) values
+  ('66666666-2000-0000-0000-000000000001', '11111111-2222-2222-2222-222222222222', '44444444-2000-0000-0000-000000000001', '22222222-2000-0000-0000-000000000001', 2026, 2100.00, '2026-05-05', 'received', 'Illustrative.'),
+  ('66666666-2000-0000-0000-000000000003', '11111111-2222-2222-2222-222222222222', '44444444-2000-0000-0000-000000000003', '22222222-2000-0000-0000-000000000003', 2026, 1450.00, '2026-05-12', 'ordered', 'Illustrative.');
+
+insert into invoice (id, store_id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status) values
+  ('77777777-2000-0000-0000-000000000001', '11111111-2222-2222-2222-222222222222', '44444444-2000-0000-0000-000000000001', 'NWH-2026', 2040.00, 0, 'Net 30', '2026-06-04', 'unpaid'),
+  ('77777777-2000-0000-0000-000000000003', '11111111-2222-2222-2222-222222222222', '44444444-2000-0000-0000-000000000003', 'CGC-2026', 1450.00, 0, 'Net 60', '2026-07-11', 'unpaid');
+
+insert into knowledge_note (store_id, department_id, topic, body, tags, created_by) values
+  ('11111111-2222-2222-2222-222222222222', '22222222-2000-0000-0000-000000000002', 'Reorder dry grocery', 'Lakeshore Provisions, reorder staples monthly through the summer.', '{reorder}', '33333333-2222-2222-2222-222222222222');

@@ -20,11 +20,15 @@ The app code is done and hosted-ready. A few setup steps remain, and they need y
 4. Project Settings, API: copy the Project URL and the `anon` public key. Keep for Step 3.
 5. Confirm the load with this query:
    ```sql
-   select 'vendors' t, count(*) from vendor
+   select 'stores' t, count(*) from store
+   union all select 'vendors', count(*) from vendor
    union all select 'invoices', count(*) from invoice
-   union all select 'knowledge', count(*) from knowledge_note;
+   union all select 'knowledge', count(*) from knowledge_note
+   union all select 'maintenance_tasks', count(*) from maintenance_task
+   union all select 'employees', count(*) from employee;
    ```
-   Expect vendors 35, invoices 29, knowledge 9.
+   Expect stores 2, vendors 38, invoices 31, knowledge 10, maintenance_tasks 8, employees 3.
+   (The second store, its 3 vendors, and the maintenance/HR rows are clearly marked illustrative in `seed.sql`.)
 
 ## Step 3, Resend for due-date alerts (optional, about 5 minutes)
 The daily payment alert emails a summary of invoices overdue or due within 7 days. Skip this and the rest of the app still works; `/api/alerts` just reports that email is off.

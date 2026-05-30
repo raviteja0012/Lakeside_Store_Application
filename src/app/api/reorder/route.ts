@@ -16,10 +16,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "AI summary is off. Set ANTHROPIC_API_KEY to enable it. The formula-based list above still works." });
     }
 
+    const body = await req.json().catch(() => ({}));
+    const storeId: string | null = body?.store_id || null;
+    const scopeVendor = supabase.from("vendor").select("name, status, default_terms, notes, department:department_id(name)");
+    const scopePo = supabase.from("purchase_order").select("vendor_id, order_amount, ship_date, season_year, status, vendor:vendor_id(name)");
+    const scopeNote = supabase.from("knowledge_note").select("topic, body, tags");
     const [vendors, pos, notes] = await Promise.all([
-      supabase.from("vendor").select("name, status, default_terms, notes, department:department_id(name)"),
-      supabase.from("purchase_order").select("vendor_id, order_amount, ship_date, season_year, status, vendor:vendor_id(name)"),
-      supabase.from("knowledge_note").select("topic, body, tags")
+      storeId ? scopeVendor.eq("store_id", storeId) : scopeVendor,
+      storeId ? scopePo.eq("store_id", storeId) : scopePo,
+      storeId ? scopeNote.eq("store_id", storeId) : scopeNote
     ]);
 
     const lines: string[] = [];

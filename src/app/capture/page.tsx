@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
 import { formatCAD, round2 } from "@/lib/format";
+import { useActiveStore } from "@/lib/store";
 import type { AppUser, Department, Draft, LineItem } from "@/lib/types";
 
 type VendorLite = { id: string; name: string; department_id: string | null; default_terms: string | null };
@@ -22,6 +23,7 @@ const LOW_CONFIDENCE = 0.7;
 
 export default function Capture() {
   const router = useRouter();
+  const { storeId, ready } = useActiveStore();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [vendors, setVendors] = useState<VendorLite[]>([]);
@@ -43,11 +45,18 @@ export default function Capture() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!ready) return;
     (async () => {
-      const { data: depts } = await supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
+      if (storeId) dq = dq.eq("store_id", storeId);
+      const { data: depts } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
-      const { data: vs } = await supabase.from("vendor").select("id, name, department_id, default_terms");
-      const { data: po } = await supabase.from("purchase_order").select("vendor_id, order_amount");
+      let vq = supabase.from("vendor").select("id, name, department_id, default_terms");
+      if (storeId) vq = vq.eq("store_id", storeId);
+      const { data: vs } = await vq;
+      let pq = supabase.from("purchase_order").select("vendor_id, order_amount");
+      if (storeId) pq = pq.eq("store_id", storeId);
+      const { data: po } = await pq;
       const { data: tr } = await supabase.from("tax_rules").select("rate").eq("region", "Ontario").limit(1).maybeSingle();
       const ds = (depts as Department[]) || [];
       const usr = (us as AppUser[]) || [];
@@ -56,10 +65,11 @@ export default function Capture() {
       setVendors((vs as VendorLite[]) || []);
       setPos((po as POLite[]) || []);
       if (tr && tr.rate != null) setTaxRate(Number(tr.rate));
-      if (ds[0]) setDeptId(ds.find((d) => d.name === "Hardware")?.id || ds[0].id);
+      setDeptId(ds.find((d) => d.name === "Hardware")?.id || ds[0]?.id || "");
       if (usr[0]) setUserId(usr.find((u) => u.role === "staff")?.id || usr[0].id);
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, storeId]);
 
   function pickFile(f: File | null) {
     setError(null);
@@ -166,6 +176,7 @@ export default function Capture() {
       const ev = await supabase
         .from("receiving_event")
         .insert({
+          store_id: storeId,
           department_id: deptId,
           vendor_id: matchedVendor?.id ?? null,
           vendor_name: draft.vendor,
