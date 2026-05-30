@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
     if (!apiKey) {
-      return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set" }, { status: 500 });
+      return NextResponse.json({ message: "Ask is off. Set ANTHROPIC_API_KEY to enable it." });
     }
 
     const scopeNote = supabase.from("knowledge_note").select("topic, body, tags, department:department_id(name)");
