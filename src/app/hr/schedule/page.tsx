@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, todayISO } from "@/lib/format";
 import { weekStart, weekDays, addDays, DOW_LABELS, shiftHours, hourlyRateOn } from "@/lib/hr";
 import { useActiveStore } from "@/lib/store";
-import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
+import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import type { Employee, PayRate, Shift, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -27,7 +27,8 @@ export default function Schedule() {
   const [form, setForm] = useState({ employee_id: "", work_date: "", start_time: "09:00", end_time: "17:00", notes: "" });
 
   // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
-  const { effectiveActorId } = useEffectiveActor(users, actorId);
+  const { effectiveActorId, role } = useEffectiveActor(users, actorId);
+  const showMoney = canSeeMoney(role);
 
   const days = useMemo(() => weekDays(week), [week]);
   const weekEnd = addDays(week, 6);
@@ -245,12 +246,12 @@ export default function Schedule() {
                   <span style={{ fontWeight: 600 }}>{r.name}</span>
                   <span className="tabular" style={{ textAlign: "right" }}>{r.count}</span>
                   <span className="tabular" style={{ textAlign: "right" }}>{r.hours}</span>
-                  <span className="tabular" style={{ textAlign: "right" }}>{r.anyHourly ? formatCAD(r.pay) : "n/a"}</span>
+                  <span className="tabular" style={{ textAlign: "right" }}>{showMoney ? (r.anyHourly ? formatCAD(r.pay) : "n/a") : ""}</span>
                 </div>
               ))}
               {summary.length > 0 && (
                 <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8, padding: "10px 14px", fontWeight: 700 }}>
-                  <span>Total</span><span /><span className="tabular" style={{ textAlign: "right" }}>{Math.round(totalHours * 100) / 100}</span><span className="tabular" style={{ textAlign: "right" }}>{formatCAD(totalPay)}</span>
+                  <span>Total</span><span /><span className="tabular" style={{ textAlign: "right" }}>{Math.round(totalHours * 100) / 100}</span><span className="tabular" style={{ textAlign: "right" }}>{showMoney ? formatCAD(totalPay) : ""}</span>
                 </div>
               )}
             </div>
