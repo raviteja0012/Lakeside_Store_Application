@@ -173,3 +173,37 @@ insert into knowledge_note (department_id, topic, body, tags, created_by) values
   ('22222222-0000-0000-0000-000000000003', 'Checkout vendors', 'RBH Tobacco and Imperial Tobacco order by email. Ice cream from Nestle and DGS Distribution. Coffee from Muskoka Roastery. Maple syrup from Emes Family.', '{checkout}', '33333333-0000-0000-0000-000000000001'),
   (null, 'Utility and service accounts', 'Hydro One for power, Vnet for internet, Bell for phone. Propane from Moor Propane. Pest control by Orkin Canada. Generator service by Generator Solution. POS data by Howell Data Systems.', '{utilities,maintenance,accounts}', '33333333-0000-0000-0000-000000000001'),
   ('22222222-0000-0000-0000-000000000001', 'Pesticide vendor licence', 'The store sells regulated pesticides under an Ontario Vendor Licence. Keep it current and be ready to show it at point of sale. Northland supplies the bug sprays.', '{compliance}', '33333333-0000-0000-0000-000000000001');
+
+-- Property and Maintenance assets. The building, refrigeration, and grounds we keep up, plus
+-- the operating service accounts from Utilities.docx and Vendorlist&InvoiceFilling.docx
+-- (DATA_SOURCES.md): Hydro One, Bell, Vnet, Moor Propane, Orkin, Generator Solution, Howell.
+insert into maintenance_asset (id, store_id, department_id, name, category, location, notes) values
+  ('88888888-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', null, 'Store building', 'building', '1062 Main Street, Dorset', 'Winter and summer prep, roof, eavestroughs.'),
+  ('88888888-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '22222222-0000-0000-0000-000000000003', 'Grocery refrigeration and coolers', 'refrigeration', 'Grocery and Meat', 'Walk-in cooler and display fridges. Check seals and temperatures.'),
+  ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', null, 'Parking lot and grounds', 'grounds', 'Exterior', 'Snow removal in winter, line painting and brush in summer.'),
+  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', '22222222-0000-0000-0000-000000000009', 'Propane tank exchange cage', 'safety', 'Garden Center', 'Gas tank exchange program. Keep cage stocked and locked.'),
+  ('88888888-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', null, 'Standby generator', 'equipment', 'Rear of building', 'Serviced by Generator Solution.'),
+  ('88888888-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', null, 'Hydro One account', 'building', 'Utility', 'Electricity supply. Account from Utilities.docx.'),
+  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', null, 'Bell phone account', 'building', 'Utility', 'Store phone line.'),
+  ('88888888-0000-0000-0000-000000000008', '11111111-1111-1111-1111-111111111111', null, 'Vnet internet account', 'building', 'Utility', 'Internet service.'),
+  ('88888888-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111', null, 'Moor Propane account', 'building', 'Utility', 'Propane supply for heating and the exchange program.'),
+  ('88888888-0000-0000-0000-000000000010', '11111111-1111-1111-1111-111111111111', null, 'Orkin Canada pest control', 'safety', 'Whole store', 'Scheduled pest control service.'),
+  ('88888888-0000-0000-0000-000000000011', '11111111-1111-1111-1111-111111111111', null, 'Howell Data Systems POS', 'equipment', 'Checkout', 'Point of sale hardware and data service.');
+
+-- Maintenance tasks. Real seasonal jobs from the store notes. Due dates are spread around the
+-- current 2026 season so the open / due soon / overdue / done grouping is visible in the screen.
+insert into maintenance_task (id, store_id, asset_id, title, detail, due_date, recurrence, status, assigned_to, completed_at, created_by) values
+  ('99999999-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000002', 'Refrigeration check', 'Check walk-in cooler seals, coils, and temperatures before peak summer.', '2026-06-03', 'monthly', 'open', '33333333-0000-0000-0000-000000000002', null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000001', 'Summer building prep', 'Open patio area, service screens and doors, check eavestroughs.', '2026-06-15', 'seasonal', 'open', null, null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000004', 'Restock gas tank exchange cage', 'Confirm exchange propane stock for the long weekend.', '2026-05-31', 'monthly', 'open', '33333333-0000-0000-0000-000000000002', null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000001', 'Roof check', 'Inspect roof and flashing after winter, before the busy season.', '2026-05-20', 'annual', 'open', null, null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000005', 'Generator service', 'Annual service by Generator Solution.', '2026-09-01', 'annual', 'open', null, null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000003', 'First-snow removal arrangement', 'Confirm the snow removal contractor for the coming winter.', '2026-11-01', 'seasonal', 'open', null, null, '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000001', 'Winter building prep', 'Shut down patio, service heat, check insulation and weather seals.', '2025-11-01', 'seasonal', 'done', '33333333-0000-0000-0000-000000000002', '2025-11-04T15:00:00Z', '33333333-0000-0000-0000-000000000001'),
+  ('99999999-0000-0000-0000-000000000008', '11111111-1111-1111-1111-111111111111', '88888888-0000-0000-0000-000000000010', 'Quarterly pest control visit', 'Orkin Canada scheduled service.', '2026-06-30', 'seasonal', 'in_progress', '33333333-0000-0000-0000-000000000002', null, '33333333-0000-0000-0000-000000000001');
+
+-- Insurance policies. ILLUSTRATIVE values only, not the store's real policies. Replace with
+-- the actual policies before relying on these for renewals.
+insert into insurance_policy (id, store_id, name, provider, policy_number, coverage, premium, renewal_date, notes) values
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Commercial property and liability', 'Illustrative Insurer', 'ILLUSTRATIVE-0001', 'Building, contents, general liability', 4800, '2026-06-20', 'ILLUSTRATIVE sample, not the real policy. Confirm with the broker.'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'Garage and fuel handling endorsement', 'Illustrative Insurer', 'ILLUSTRATIVE-0002', 'Propane exchange and fuel handling', 1200, '2026-12-01', 'ILLUSTRATIVE sample, not the real policy.');

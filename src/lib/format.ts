@@ -26,3 +26,15 @@ export function daysOverdue(dateISO: string | null | undefined): number | null {
   if (isNaN(target)) return null;
   return Math.round((today - target) / 86400000);
 }
+
+// Status band for a due or expiry date, with a configurable warning window in days.
+// Overdue is red (error), within the window is amber (warning), else neutral. One hue per meaning.
+export function dueBand(dateISO: string | null | undefined, windowDays: number): { cls: string; text: string } {
+  const d = daysOverdue(dateISO);
+  if (d == null) return { cls: "chip-neutral", text: "no date" };
+  if (d > 0) return { cls: "chip-error", text: `${d} ${d === 1 ? "day" : "days"} overdue` };
+  if (d === 0) return { cls: "chip-warning", text: "due today" };
+  const remaining = -d;
+  if (remaining <= windowDays) return { cls: "chip-warning", text: `in ${remaining} ${remaining === 1 ? "day" : "days"}` };
+  return { cls: "chip-neutral", text: `in ${remaining} days` };
+}

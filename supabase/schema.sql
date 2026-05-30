@@ -189,6 +189,49 @@ create table tax_rules (
   created_at timestamptz default now()
 );
 
+-- Property and Maintenance (Phase: later). Assets are the things we maintain (building,
+-- refrigeration, equipment, grounds, safety) and the operating service accounts. Tasks are
+-- the recurring and one-off jobs against them. The dev RLS DO-block below covers these too;
+-- replace it with Supabase Auth plus per-role, per-store policies before production.
+create table maintenance_asset (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),
+  department_id uuid references department(id),
+  name text not null,
+  category text check (category in ('building','refrigeration','equipment','grounds','safety','other')),
+  location text,
+  notes text,
+  created_at timestamptz default now()
+);
+
+create table maintenance_task (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),
+  asset_id uuid references maintenance_asset(id),
+  title text not null,
+  detail text,
+  due_date date,
+  recurrence text default 'none' check (recurrence in ('none','weekly','monthly','seasonal','annual')),
+  status text default 'open' check (status in ('open','in_progress','done')),
+  assigned_to uuid references app_user(id),
+  completed_at timestamptz,
+  created_by uuid references app_user(id),
+  created_at timestamptz default now()
+);
+
+create table insurance_policy (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),
+  name text not null,
+  provider text,
+  policy_number text,
+  coverage text,
+  premium numeric,
+  renewal_date date,
+  notes text,
+  created_at timestamptz default now()
+);
+
 -- DEV ONLY row-level security.
 -- These policies allow the anon key to read and write so the demo runs without login.
 -- Replace every one of these with Supabase Auth plus per-role policies before production.

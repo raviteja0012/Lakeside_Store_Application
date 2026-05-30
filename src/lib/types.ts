@@ -110,3 +110,51 @@ export type KnowledgeNote = {
   department?: { name: string; accent_color: string | null } | null;
   app_user?: { full_name: string } | null;
 };
+
+export type MaintenanceAsset = {
+  id: string;
+  store_id: string | null;
+  department_id: string | null;
+  name: string;
+  category: string | null;
+  location: string | null;
+  notes: string | null;
+  department?: { name: string; accent_color: string | null } | null;
+};
+
+export type MaintenanceTask = {
+  id: string;
+  store_id: string | null;
+  asset_id: string | null;
+  title: string;
+  detail: string | null;
+  due_date: string | null;
+  recurrence: string;
+  status: "open" | "in_progress" | "done";
+  assigned_to: string | null;
+  completed_at: string | null;
+  asset?: { name: string } | null;
+  assignee?: { full_name: string } | null;
+};
+
+export type InsurancePolicy = {
+  id: string;
+  store_id: string | null;
+  name: string;
+  provider: string | null;
+  policy_number: string | null;
+  coverage: string | null;
+  premium: number | null;
+  renewal_date: string | null;
+  notes: string | null;
+};
+
+export type Licence = {
+  id: string;
+  store_id: string | null;
+  name: string;
+  authority: string | null;
+  number: string | null;
+  holder: string | null;
+  expiry_date: string | null;
+};
