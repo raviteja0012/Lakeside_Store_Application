@@ -33,6 +33,7 @@ export default function Capture() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [manual, setManual] = useState(false);
   const [ack, setAck] = useState(false);
 
   const [extracting, setExtracting] = useState(false);
@@ -64,10 +65,24 @@ export default function Capture() {
     setError(null);
     setSaved(false);
     setDraft(null);
+    setManual(false);
     setAck(false);
     setFile(f);
     if (preview) URL.revokeObjectURL(preview);
     setPreview(f && f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
+  }
+
+  // Fallback for a phone order with no document: open the same confirm form, blank, so it
+  // can be typed and posted to the feed with author and time. Photo-first stays the default.
+  function startManual() {
+    setError(null);
+    setSaved(false);
+    setFile(null);
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(null);
+    setAck(false);
+    setManual(true);
+    setDraft({ vendor: "", invoice_date: "", notes: "", line_items: [{ description: "", qty: null, unit_cost: null, retail_price_note: null, confidence: 1 }] });
   }
 
   async function extract() {
@@ -135,14 +150,18 @@ export default function Capture() {
   const hasDiscrepancy = discrepancy != null && Math.abs(discrepancy) >= 0.01;
 
   async function save() {
-    if (!draft || !file || !deptId || !userId) return;
+    if (!draft || (!file && !manual) || !deptId || !userId) return;
     if (hasDiscrepancy && !ack) return;
     setSaving(true);
     setError(null);
     try {
-      const path = `${deptId}/${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
-      const up = await supabase.storage.from(DOCUMENTS_BUCKET).upload(path, file, { upsert: false });
-      if (up.error) throw new Error(`storage: ${up.error.message}`);
+      // Photo capture uploads the document; a manual phone-order entry has no file to store.
+      let path: string | null = null;
+      if (file) {
+        path = `${deptId}/${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
+        const up = await supabase.storage.from(DOCUMENTS_BUCKET).upload(path, file, { upsert: false });
+        if (up.error) throw new Error(`storage: ${up.error.message}`);
+      }
 
       const ev = await supabase
         .from("receiving_event")
@@ -181,6 +200,7 @@ export default function Capture() {
       setSaved(true);
       setDraft(null);
       setFile(null);
+      setManual(false);
       if (preview) URL.revokeObjectURL(preview);
       setPreview(null);
       setAck(false);
@@ -234,14 +254,15 @@ export default function Capture() {
           <input ref={inputRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => pickFile(e.target.files?.[0] || null)} />
         </div>
 
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button className="btn-primary" onClick={extract} disabled={!file || extracting}>
             {extracting ? "Reading the invoice." : "Extract"}
           </button>
-          {file && <button className="btn-ghost" onClick={() => pickFile(null)}>Clear</button>}
+          {!file && !manual && <button className="btn-ghost" onClick={startManual}>Enter manually</button>}
+          {(file || manual) && <button className="btn-ghost" onClick={() => pickFile(null)}>Clear</button>}
         </div>
         {!file && !draft && !saved && (
-          <p className="help" style={{ margin: 0 }}>The invoice photo fills the form for you. You confirm one screen, then save.</p>
+          <p className="help" style={{ margin: 0 }}>The invoice photo fills the form for you. You confirm one screen, then save. No document? Enter a phone order by hand.</p>
         )}
       </div>
 
@@ -262,8 +283,8 @@ export default function Capture() {
       {draft && (
         <div className="card" style={{ padding: 16, display: "grid", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <h2 style={{ fontSize: 17, margin: 0 }}>Confirm</h2>
-            <span className="chip chip-progress">Fields in amber were uncertain, check them</span>
+            <h2 style={{ fontSize: 17, margin: 0 }}>{manual ? "Enter the order" : "Confirm"}</h2>
+            <span className="chip chip-progress">{manual ? "Type the vendor, date, and lines, then save" : "Fields in amber were uncertain, check them"}</span>
           </div>
 
           {hasDiscrepancy && (
