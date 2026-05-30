@@ -2,17 +2,25 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AREAS, NAV, AREA_KEY, areaForPath, type Area } from "@/lib/nav";
 import { useActiveStore } from "@/lib/store";
+import { REQUIRE_AUTH, useMember, signOut } from "@/lib/auth";
 
 const navLink = { textDecoration: "none", color: "var(--text-secondary)", fontWeight: 500 } as const;
 const navLinkActive = { textDecoration: "none", color: "var(--primary)", fontWeight: 600 } as const;
 
 export default function Header() {
   const pathname = usePathname() || "/";
+  const router = useRouter();
   const [area, setArea] = useState<Area>(() => areaForPath(pathname));
   const { stores, storeId, setStore } = useActiveStore();
+  const { member } = useMember();
+
+  async function handleSignOut() {
+    await signOut();
+    router.replace("/login");
+  }
 
   // The current path decides the area on load and on navigation, so a deep link or a
   // nav click always shows the right links. The saved area only seeds the very first paint.
@@ -33,6 +41,9 @@ export default function Header() {
 
   const links = NAV[area];
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+
+  // The login screen is its own full page; no app chrome there.
+  if (pathname === "/login") return null;
 
   return (
     <header className="no-print" style={{ borderBottom: "1px solid var(--border)", background: "var(--panel)" }}>
@@ -75,6 +86,14 @@ export default function Header() {
             <Link href="/capture" className="btn-primary" style={{ textDecoration: "none" }}>
               + Capture
             </Link>
+            {REQUIRE_AUTH && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {member && <span className="help">{member.full_name} ({member.role})</span>}
+                <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12.5 }} onClick={handleSignOut}>
+                  Sign out
+                </button>
+              </div>
+            )}
           </div>
         </div>
         <nav style={{ display: "flex", gap: 14, fontSize: 14, flexWrap: "wrap" }}>
