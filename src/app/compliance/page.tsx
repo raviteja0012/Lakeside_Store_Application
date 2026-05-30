@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, dueBand } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
+import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import type { Licence, InsurancePolicy, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -25,6 +26,10 @@ export default function Compliance() {
   const [addPol, setAddPol] = useState(false);
   const [editPol, setEditPol] = useState<string | null>(null);
   const [polForm, setPolForm] = useState({ name: "", provider: "", policy_number: "", coverage: "", premium: "", renewal_date: "", notes: "" });
+
+  // Effective actor and role: the signed-in member in enforced auth, else the dropdown.
+  const { effectiveActorId, role } = useEffectiveActor(users, actorId);
+  const showMoney = canSeeMoney(role);
 
   async function load() {
     let lq = supabase.from("licence").select("id, store_id, name, authority, number, holder, expiry_date").order("expiry_date", { ascending: true, nullsFirst: false });
@@ -83,11 +88,11 @@ export default function Compliance() {
       if (editLic) {
         const r = await supabase.from("licence").update(row).eq("id", editLic);
         if (r.error) throw new Error(r.error.message);
-        if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action: "licence_edited", entity: "licence", entity_id: editLic });
+        if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "licence_edited", entity: "licence", entity_id: editLic });
       } else {
         const r = await supabase.from("licence").insert({ ...row, store_id: storeId }).select("id").single();
         if (r.error) throw new Error(r.error.message);
-        if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action: "licence_added", entity: "licence", entity_id: r.data.id as string });
+        if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "licence_added", entity: "licence", entity_id: r.data.id as string });
       }
       setAddLic(false);
       setEditLic(null);
@@ -126,11 +131,11 @@ export default function Compliance() {
       if (editPol) {
         const r = await supabase.from("insurance_policy").update(row).eq("id", editPol);
         if (r.error) throw new Error(r.error.message);
-        if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action: "insurance_edited", entity: "insurance_policy", entity_id: editPol });
+        if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "insurance_edited", entity: "insurance_policy", entity_id: editPol });
       } else {
         const r = await supabase.from("insurance_policy").insert({ ...row, store_id: storeId }).select("id").single();
         if (r.error) throw new Error(r.error.message);
-        if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action: "insurance_added", entity: "insurance_policy", entity_id: r.data.id as string });
+        if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "insurance_added", entity: "insurance_policy", entity_id: r.data.id as string });
       }
       setAddPol(false);
       setEditPol(null);
@@ -146,12 +151,14 @@ export default function Compliance() {
     <div style={{ display: "grid", gap: 24 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
         <h1 style={{ fontSize: 22, margin: 0 }}>Compliance</h1>
-        <div>
-          <label className="help" htmlFor="actor">Acting as </label>
-          <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-          </select>
-        </div>
+        {!REQUIRE_AUTH && (
+          <div>
+            <label className="help" htmlFor="actor">Acting as </label>
+            <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+            </select>
+          </div>
+        )}
       </div>
       <p className="help" style={{ marginTop: -16 }}>Licences, certifications, and insurance renewals. The store sells regulated pesticides under an Ontario vendor licence that must be kept current.</p>
 
@@ -221,7 +228,7 @@ export default function Compliance() {
                   <div><label className="label">Provider</label><input className="input" value={polForm.provider} onChange={(e) => setPolForm({ ...polForm, provider: e.target.value })} /></div>
                   <div><label className="label">Policy number</label><input className="input" value={polForm.policy_number} onChange={(e) => setPolForm({ ...polForm, policy_number: e.target.value })} /></div>
                   <div><label className="label">Coverage</label><input className="input" value={polForm.coverage} onChange={(e) => setPolForm({ ...polForm, coverage: e.target.value })} /></div>
-                  <div><label className="label">Premium</label><input className="input tabular" type="number" step="0.01" value={polForm.premium} onChange={(e) => setPolForm({ ...polForm, premium: e.target.value })} /></div>
+                  {showMoney && <div><label className="label">Premium</label><input className="input tabular" type="number" step="0.01" value={polForm.premium} onChange={(e) => setPolForm({ ...polForm, premium: e.target.value })} /></div>}
                   <div><label className="label">Renewal date</label><input className="input" type="date" value={polForm.renewal_date} onChange={(e) => setPolForm({ ...polForm, renewal_date: e.target.value })} /></div>
                 </div>
                 <div><label className="label">Notes</label><input className="input" value={polForm.notes} onChange={(e) => setPolForm({ ...polForm, notes: e.target.value })} /></div>
@@ -250,7 +257,7 @@ export default function Compliance() {
                       {p.notes && <div className="help" style={{ marginTop: 2 }}>{p.notes}</div>}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      {p.premium != null && <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(p.premium)}<div className="help" style={{ fontWeight: 400 }}>premium</div></div>}
+                      {showMoney && p.premium != null && <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(p.premium)}<div className="help" style={{ fontWeight: 400 }}>premium</div></div>}
                       <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditPol(p)}>Edit</button>
                     </div>
                   </div>

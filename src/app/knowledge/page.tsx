@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useActiveStore } from "@/lib/store";
+import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
 import type { KnowledgeNote, Department, AppUser } from "@/lib/types";
 
 export default function Knowledge() {
@@ -22,6 +23,9 @@ export default function Knowledge() {
   const [tags, setTags] = useState("");
   const [userId, setUserId] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Effective actor: the signed-in member in enforced auth, else the chosen author.
+  const { effectiveActorId } = useEffectiveActor(users, userId);
 
   async function load() {
     let query = supabase
@@ -64,7 +68,7 @@ export default function Knowledge() {
   }, [notes, q]);
 
   async function save() {
-    if (!topic.trim() || !body.trim() || !userId) return;
+    if (!topic.trim() || !body.trim() || !effectiveActorId) return;
     setSaving(true);
     setError(null);
     try {
@@ -75,10 +79,10 @@ export default function Knowledge() {
         topic: topic.trim(),
         body: body.trim(),
         tags: tagArr.length ? tagArr : null,
-        created_by: userId
-      });
+        created_by: effectiveActorId
+      }).select("id").single();
       if (ins.error) throw new Error(ins.error.message);
-      await supabase.from("activity_log").insert({ actor_id: userId, action: "note_added", entity: "knowledge_note", entity_id: null });
+      await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "note_added", entity: "knowledge_note", entity_id: ins.data.id as string });
       setTopic(""); setBody(""); setDeptId(""); setTags(""); setAdding(false);
       await load();
     } catch (e: any) {
@@ -120,12 +124,14 @@ export default function Knowledge() {
               <label className="label">Tags (comma separated)</label>
               <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="reorder, payments" />
             </div>
-            <div>
-              <label className="label">Author</label>
-              <select className="input" value={userId} onChange={(e) => setUserId(e.target.value)}>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-              </select>
-            </div>
+            {!REQUIRE_AUTH && (
+              <div>
+                <label className="label">Author</label>
+                <select className="input" value={userId} onChange={(e) => setUserId(e.target.value)}>
+                  {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+                </select>
+              </div>
+            )}
           </div>
           <div>
             <button className="btn-primary" onClick={save} disabled={saving || !topic.trim() || !body.trim()}>{saving ? "Saving." : "Save note"}</button>

@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
 import { formatCAD } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
+import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import type { Employee, PayRate, Department, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -28,6 +29,10 @@ export default function HR() {
 
   const [rateFor, setRateFor] = useState<string | null>(null);
   const [rateForm, setRateForm] = useState({ rate: "", unit: "hour", effective_date: "" });
+
+  // Effective actor and role: the signed-in member in enforced auth, else the dropdown.
+  const { effectiveActorId, role } = useEffectiveActor(users, actorId);
+  const showMoney = canSeeMoney(role);
 
   async function load() {
     let eq = supabase
@@ -68,7 +73,7 @@ export default function HR() {
     if (typeof window !== "undefined") localStorage.setItem(ACTOR_KEY, uid);
   }
   async function log(action: string, entity: string, entity_id: string | null) {
-    if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action, entity, entity_id });
+    if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action, entity, entity_id });
   }
 
   function startAdd() {
@@ -152,12 +157,14 @@ export default function HR() {
         <h1 style={{ fontSize: 22, margin: 0 }}>Employees</h1>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <Link href="/hr/schedule" className="help" style={{ textDecoration: "none" }}>Schedule and hours &rarr;</Link>
-          <div>
-            <label className="help" htmlFor="actor">Acting as </label>
-            <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-            </select>
-          </div>
+          {!REQUIRE_AUTH && (
+            <div>
+              <label className="help" htmlFor="actor">Acting as </label>
+              <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+              </select>
+            </div>
+          )}
           <button className="btn-primary" onClick={startAdd}>{addEmp ? "Close" : "+ Add employee"}</button>
         </div>
       </div>
@@ -221,15 +228,15 @@ export default function HR() {
                   {e.hire_date && <div className="help">Hired {e.hire_date}</div>}
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div className="tabular" style={{ fontWeight: 600 }}>{cr && cr.rate != null ? `${formatCAD(cr.rate)}/${cr.unit === "hour" ? "hr" : "yr"}` : "No rate"}</div>
+                  {showMoney && <div className="tabular" style={{ fontWeight: 600 }}>{cr && cr.rate != null ? `${formatCAD(cr.rate)}/${cr.unit === "hour" ? "hr" : "yr"}` : "No rate"}</div>}
                   <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                    <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startRate(e.id)}>{rateFor === e.id ? "Close" : "Pay rates"}</button>
+                    {showMoney && <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startRate(e.id)}>{rateFor === e.id ? "Close" : "Pay rates"}</button>}
                     <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEdit(e)}>Edit</button>
                   </div>
                 </div>
               </div>
 
-              {rateFor === e.id && (
+              {showMoney && rateFor === e.id && (
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "grid", gap: 10 }}>
                   <div className="help">Pay rates are effective-dated. Add a new row when pay changes; history stays.</div>
                   <div style={{ display: "grid", gap: 4 }}>

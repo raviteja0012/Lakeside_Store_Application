@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
 import { useActiveStore } from "@/lib/store";
+import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
 import type { Vendor, Department, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -22,6 +23,9 @@ export default function Vendors() {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ name: "", department_id: "", rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active" });
+
+  // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
+  const { effectiveActorId } = useEffectiveActor(users, actorId);
 
   async function load() {
     let query = supabase
@@ -77,7 +81,7 @@ export default function Vendors() {
         status: form.status
       }).select("id").single();
       if (r.error) throw new Error(r.error.message);
-      if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action: "vendor_added", entity: "vendor", entity_id: r.data.id as string });
+      if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "vendor_added", entity: "vendor", entity_id: r.data.id as string });
       setForm({ name: "", department_id: departments[0]?.id || "", rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active" });
       setAdding(false);
       await load();
@@ -127,11 +131,13 @@ export default function Vendors() {
                 {["active", "skip", "discontinue", "bankrupt"].map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-            <div><label className="label">Acting as</label>
-              <select className="input" value={actorId} onChange={(e) => setActor(e.target.value)}>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-              </select>
-            </div>
+            {!REQUIRE_AUTH && (
+              <div><label className="label">Acting as</label>
+                <select className="input" value={actorId} onChange={(e) => setActor(e.target.value)}>
+                  {users.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                </select>
+              </div>
+            )}
           </div>
           <div><label className="label">Products we carry</label><input className="input" value={form.products_we_carry} onChange={(e) => setForm({ ...form, products_we_carry: e.target.value })} /></div>
           <div><button className="btn-primary" onClick={save} disabled={busy || !form.name.trim()}>{busy ? "Saving." : "Save vendor"}</button></div>

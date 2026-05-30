@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, todayISO } from "@/lib/format";
 import { weekStart, weekDays, addDays, DOW_LABELS, shiftHours, hourlyRateOn } from "@/lib/hr";
 import { useActiveStore } from "@/lib/store";
+import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
 import type { Employee, PayRate, Shift, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -24,6 +25,9 @@ export default function Schedule() {
 
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ employee_id: "", work_date: "", start_time: "09:00", end_time: "17:00", notes: "" });
+
+  // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
+  const { effectiveActorId } = useEffectiveActor(users, actorId);
 
   const days = useMemo(() => weekDays(week), [week]);
   const weekEnd = addDays(week, 6);
@@ -92,10 +96,10 @@ export default function Schedule() {
         start_time: form.start_time || null,
         end_time: form.end_time || null,
         notes: form.notes || null,
-        created_by: actorId || null
+        created_by: effectiveActorId
       }).select("id").single();
       if (r.error) throw new Error(r.error.message);
-      if (actorId) await supabase.from("activity_log").insert({ actor_id: actorId, action: "shift_added", entity: "shift", entity_id: r.data.id as string });
+      if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "shift_added", entity: "shift", entity_id: r.data.id as string });
       setAdding(false);
       await loadShifts();
     } catch (e: any) {
@@ -146,12 +150,14 @@ export default function Schedule() {
           <Link href="/hr" className="help" style={{ textDecoration: "none" }}>&larr; Employees</Link>
           <h1 style={{ fontSize: 22, margin: "8px 0 0" }}>Weekly schedule</h1>
         </div>
-        <div>
-          <label className="help" htmlFor="actor">Acting as </label>
-          <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-          </select>
-        </div>
+        {!REQUIRE_AUTH && (
+          <div>
+            <label className="help" htmlFor="actor">Acting as </label>
+            <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
