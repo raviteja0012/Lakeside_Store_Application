@@ -28,7 +28,7 @@ Read .claude/skills/robinsons-store, robinsons_store_build_spec.md, and docs/ARC
 4. Deploy: import the repo at vercel.com/new, set the same environment variables, deploy. Use Node 20.
 
 ## Before production
-- The dev row-level security allows anonymous access so the demo runs without login. Replace it with Supabase Auth and per-role policies (staff, lead, manager, owner) before real use. See the comments in supabase/schema.sql.
+- The dev row-level security allows anonymous access so the demo runs without login. Authentication and per-store, per-role policies are built and ship behind `NEXT_PUBLIC_REQUIRE_AUTH` (default off). To enforce them, follow "Go to enforced auth (production)" in RUNBOOK.md: enable Email auth, create accounts, link app_user.auth_id, run supabase/auth_setup.sql, then set the env var to true and redeploy. Test with one owner and one staff account first.
 - Move document storage to signed URLs if invoices contain anything sensitive.
 - The confidence value is captured per line. Add a review threshold so low-confidence dollar fields require a human before they post.
 

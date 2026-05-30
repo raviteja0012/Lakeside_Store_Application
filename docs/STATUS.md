@@ -23,6 +23,7 @@ Reports and reorder
 
 Cross-cutting
 - Header store picker and area switcher (Store Operations, Property and Maintenance, HR, Reports). Reads scoped and writes stamped by the active store. Every write records who and when in activity_log. CAD throughout, Ontario 13 percent HST from a tax table. Daily Resend email of overdue and due-soon invoices (off until the Resend key is set).
+- Authentication and per-store, per-role security, behind a switch. `NEXT_PUBLIC_REQUIRE_AUTH` defaults off, so the demo stays open with the "Acting as" picker. Set it on (after the cutover in RUNBOOK.md) for Supabase email login, a /login page, and per-store, per-role row policies from `supabase/auth_setup.sql`. Cost and margin (unit cost, order and invoice amounts, payments, premiums, pay) are hidden from the staff role in the UI in both modes; floor staff still see quantities, vendors, due-date status, and can capture and count.
 
 ## Open items (polish, tractable, no architecture change)
 1. Compliance: insurance policies are read-only; add an add-and-edit form like the licence one.
@@ -35,7 +36,8 @@ Cross-cutting
 8. Decide whether the Acting-as user list stays store-wide (current) or scopes per store.
 
 ## Before production (do not skip)
-- Replace the dev row-level security (anonymous full access) with Supabase Auth and per-role, per-store policies. Keep floor staff from costs and margins. See the comment in supabase/schema.sql.
+- Flip to enforced auth: run the cutover in RUNBOOK.md and test with one owner and one staff account before trusting the policies. Auth itself is built and ships behind `NEXT_PUBLIC_REQUIRE_AUTH`.
+- Column-level cost hiding is enforced in the UI with row-level DB policies in place. Full column-level DB privileges (revoke cost columns from the staff role in Postgres) are a later hardening step so the database, not only the UI, withholds costs.
 - Move document storage to signed URLs if invoices hold anything sensitive.
 - Add a confidence threshold so low-confidence dollar fields require a human before they post.
 - Set the Resend key, the alert addresses, and the cron secret in Vercel to turn on due-date emails.
