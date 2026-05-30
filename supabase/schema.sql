@@ -232,6 +232,47 @@ create table insurance_policy (
   created_at timestamptz default now()
 );
 
+-- HR (Phase: later).
+-- PRIVACY: employee, pay_rate, and shift hold PIPEDA personal data (names, contact details,
+-- pay, and hours). PIPEDA requires consent for collection and use, employee access to their
+-- own data, and reasonable security safeguards. Keep this data in the Canadian region, limit
+-- who can read it, and replace the dev RLS DO-block below with Supabase Auth plus per-role
+-- policies before production. Quebec Law 25 only applies if Quebec-resident data enters scope.
+create table employee (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),
+  department_id uuid references department(id),
+  full_name text not null,
+  role text,
+  phone text,
+  email text,
+  hire_date date,
+  status text default 'active' check (status in ('active','inactive')),
+  notes text,
+  created_at timestamptz default now()
+);
+
+-- Effective-dated pay rates: insert a new row when pay changes, keep the history.
+create table pay_rate (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid references employee(id),
+  rate numeric,
+  unit text check (unit in ('hour','salary')),
+  effective_date date,
+  created_at timestamptz default now()
+);
+
+create table shift (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid references employee(id),
+  work_date date,
+  start_time time,
+  end_time time,
+  notes text,
+  created_by uuid references app_user(id),
+  created_at timestamptz default now()
+);
+
 -- DEV ONLY row-level security.
 -- These policies allow the anon key to read and write so the demo runs without login.
 -- Replace every one of these with Supabase Auth plus per-role policies before production.

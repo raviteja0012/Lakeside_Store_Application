@@ -158,3 +158,35 @@ export type Licence = {
   holder: string | null;
   expiry_date: string | null;
 };
+
+export type Employee = {
+  id: string;
+  store_id: string | null;
+  department_id: string | null;
+  full_name: string;
+  role: string | null;
+  phone: string | null;
+  email: string | null;
+  hire_date: string | null;
+  status: "active" | "inactive";
+  notes: string | null;
+  department?: { name: string; accent_color: string | null } | null;
+};
+
+export type PayRate = {
+  id: string;
+  employee_id: string | null;
+  rate: number | null;
+  unit: "hour" | "salary" | null;
+  effective_date: string | null;
+};
+
+export type Shift = {
+  id: string;
+  employee_id: string | null;
+  work_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  notes: string | null;
+  employee?: { full_name: string } | null;
+};

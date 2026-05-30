@@ -207,3 +207,28 @@ insert into maintenance_task (id, store_id, asset_id, title, detail, due_date, r
 insert into insurance_policy (id, store_id, name, provider, policy_number, coverage, premium, renewal_date, notes) values
   ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Commercial property and liability', 'Illustrative Insurer', 'ILLUSTRATIVE-0001', 'Building, contents, general liability', 4800, '2026-06-20', 'ILLUSTRATIVE sample, not the real policy. Confirm with the broker.'),
   ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'Garage and fuel handling endorsement', 'Illustrative Insurer', 'ILLUSTRATIVE-0002', 'Propane exchange and fuel handling', 1200, '2026-12-01', 'ILLUSTRATIVE sample, not the real policy.');
+
+-- HR. ILLUSTRATIVE employees, pay rates, and shifts only, not real staff records. They hold
+-- PIPEDA personal data; see the privacy header in schema.sql. Shifts sit in the week of the
+-- current 2026 season so the schedule and the hours-and-pay summary show data. Replace with
+-- real records (with consent) before use.
+insert into employee (id, store_id, department_id, full_name, role, phone, email, hire_date, status, notes) values
+  ('bbbbbbbb-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '22222222-0000-0000-0000-000000000001', 'Sample Lead', 'Department lead', '705-555-0101', 'lead@example.com', '2024-05-01', 'active', 'ILLUSTRATIVE record.'),
+  ('bbbbbbbb-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '22222222-0000-0000-0000-000000000003', 'Sample Cashier', 'Seasonal floor staff', '705-555-0102', 'cashier@example.com', '2026-04-15', 'active', 'ILLUSTRATIVE record.'),
+  ('bbbbbbbb-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', '22222222-0000-0000-0000-000000000008', 'Sample Cook', 'Chip stand', '705-555-0103', null, '2025-06-01', 'active', 'ILLUSTRATIVE record.');
+
+insert into pay_rate (id, employee_id, rate, unit, effective_date) values
+  ('cccccccc-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001', 22.50, 'hour', '2024-05-01'),
+  ('cccccccc-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000001', 24.00, 'hour', '2026-01-01'),
+  ('cccccccc-0000-0000-0000-000000000003', 'bbbbbbbb-0000-0000-0000-000000000002', 17.20, 'hour', '2026-04-15'),
+  ('cccccccc-0000-0000-0000-000000000004', 'bbbbbbbb-0000-0000-0000-000000000003', 18.00, 'hour', '2025-06-01');
+
+insert into shift (id, employee_id, work_date, start_time, end_time, notes, created_by) values
+  ('dddddddd-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001', '2026-05-25', '09:00', '17:00', null, '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000001', '2026-05-27', '09:00', '17:00', null, '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000003', 'bbbbbbbb-0000-0000-0000-000000000001', '2026-05-30', '09:00', '15:00', 'Long weekend', '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000004', 'bbbbbbbb-0000-0000-0000-000000000002', '2026-05-26', '11:00', '19:00', null, '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000005', 'bbbbbbbb-0000-0000-0000-000000000002', '2026-05-29', '11:00', '19:00', null, '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000006', 'bbbbbbbb-0000-0000-0000-000000000002', '2026-05-30', '10:00', '18:00', null, '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000007', 'bbbbbbbb-0000-0000-0000-000000000003', '2026-05-30', '12:00', '20:00', 'Chip stand', '33333333-0000-0000-0000-000000000001'),
+  ('dddddddd-0000-0000-0000-000000000008', 'bbbbbbbb-0000-0000-0000-000000000003', '2026-05-31', '12:00', '20:00', 'Chip stand', '33333333-0000-0000-0000-000000000001');
