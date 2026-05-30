@@ -95,9 +95,11 @@ export function useEffectiveActor(
 
 // The current role for screens that have no actor dropdown (dashboard, reports).
 //   - enforced mode: the signed-in member's role.
-//   - demo mode: the role of the saved rgs_actor, looked up in app_user. Falls back to the
-//     first user if nothing is saved, matching how the dropdown screens seed their selection.
-// Returns null until resolved. Conservative: an unresolved role hides money via canSeeMoney.
+//   - demo mode: the role of the actor the user picked, stored in rgs_actor. If the user has
+//     not picked anyone yet (nothing saved), default to "owner" so the demo dashboard and
+//     reports look exactly as before (full visibility). Money hides only once a staff actor
+//     is actively selected on a dropdown screen, which is how the feature is demoed.
+// Returns null until resolved. canSeeMoney treats a null role as no access.
 const ACTOR_KEY = "rgs_actor";
 export function useCurrentRole(): { role: Role | null; ready: boolean } {
   const { member, ready: memberReady } = useMember();
@@ -109,12 +111,19 @@ export function useCurrentRole(): { role: Role | null; ready: boolean } {
     let alive = true;
     (async () => {
       const saved = typeof window !== "undefined" ? localStorage.getItem(ACTOR_KEY) : null;
-      let q = supabase.from("app_user").select("id, role").order("full_name");
-      const { data } = await q;
-      const users = (data as Pick<AppUser, "id" | "role">[]) || [];
-      const picked = (saved && users.find((u) => u.id === saved)) || users[0] || null;
+      // No actor chosen yet: keep the demo's full view.
+      if (!saved) {
+        if (alive) {
+          setRole("owner");
+          setReady(true);
+        }
+        return;
+      }
+      const { data } = await supabase.from("app_user").select("id, role").eq("id", saved).maybeSingle();
+      const picked = (data as Pick<AppUser, "id" | "role"> | null) || null;
       if (!alive) return;
-      setRole(picked?.role ?? null);
+      // A saved id that no longer resolves (e.g. different store): fall back to full view.
+      setRole(picked?.role ?? "owner");
       setReady(true);
     })();
     return () => {
