@@ -74,6 +74,58 @@ export function useAuthUser(): { user: User | null; ready: boolean } {
   return { user, ready };
 }
 
+// Resolve the effective actor for the current screen in either mode.
+//   - demo mode: the actor is whoever the rgs_actor dropdown has selected. Its role drives
+//     UI gating and its id stamps created_by and activity_log.
+//   - enforced mode: the actor is always the signed-in member, regardless of any dropdown.
+// Pass the screen's already-loaded users list and selected actorId. Returns the actor id to
+// write with (null until known) and the role to gate on (null until known). Conservative:
+// when nothing resolves, role is null and canSeeMoney treats it as no access.
+export function useEffectiveActor(
+  users: Pick<AppUser, "id" | "role">[],
+  actorId: string
+): { effectiveActorId: string | null; role: Role | null } {
+  const { member } = useMember();
+  if (REQUIRE_AUTH) {
+    return { effectiveActorId: member?.id ?? null, role: member?.role ?? null };
+  }
+  const selected = users.find((u) => u.id === actorId);
+  return { effectiveActorId: actorId || null, role: selected?.role ?? null };
+}
+
+// The current role for screens that have no actor dropdown (dashboard, reports).
+//   - enforced mode: the signed-in member's role.
+//   - demo mode: the role of the saved rgs_actor, looked up in app_user. Falls back to the
+//     first user if nothing is saved, matching how the dropdown screens seed their selection.
+// Returns null until resolved. Conservative: an unresolved role hides money via canSeeMoney.
+const ACTOR_KEY = "rgs_actor";
+export function useCurrentRole(): { role: Role | null; ready: boolean } {
+  const { member, ready: memberReady } = useMember();
+  const [role, setRole] = useState<Role | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (REQUIRE_AUTH) return;
+    let alive = true;
+    (async () => {
+      const saved = typeof window !== "undefined" ? localStorage.getItem(ACTOR_KEY) : null;
+      let q = supabase.from("app_user").select("id, role").order("full_name");
+      const { data } = await q;
+      const users = (data as Pick<AppUser, "id" | "role">[]) || [];
+      const picked = (saved && users.find((u) => u.id === saved)) || users[0] || null;
+      if (!alive) return;
+      setRole(picked?.role ?? null);
+      setReady(true);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (REQUIRE_AUTH) return { role: member?.role ?? null, ready: memberReady };
+  return { role, ready };
+}
+
 // The app_user row for the signed-in auth user, resolved via auth_id. Returns null when
 // not signed in, when no app_user is linked yet, or when env or the auth_id column is
 // absent (the query then errors and we degrade to null rather than throwing).
