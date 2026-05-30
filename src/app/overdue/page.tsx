@@ -4,10 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, daysOverdue } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
+import { canSeeMoney, useCurrentRole } from "@/lib/auth";
 import type { Invoice } from "@/lib/types";
 
 export default function Overdue() {
   const { storeId, ready } = useActiveStore();
+  const { role } = useCurrentRole();
+  const showMoney = canSeeMoney(role);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +48,7 @@ export default function Overdue() {
     <div>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
         <h1 style={{ fontSize: 22, margin: 0 }}>Outstanding and overdue</h1>
-        <span className="tabular help">{formatCAD(outstanding)} owed</span>
+        {showMoney && <span className="tabular help">{formatCAD(outstanding)} owed</span>}
       </div>
 
       {loading && <p className="help">Loading invoices.</p>}
@@ -75,7 +78,7 @@ export default function Overdue() {
                 </div>
                 <div className="help" style={{ marginTop: 4 }}>{i.invoice_number || ""}{i.due_date ? ` . due ${i.due_date}` : ""}{i.terms ? ` . ${i.terms}` : ""}</div>
               </div>
-              <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(total(i))}</div>
+              {showMoney && <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(total(i))}</div>}
             </div>
           );
         })}
