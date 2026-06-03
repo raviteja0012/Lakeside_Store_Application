@@ -16,6 +16,7 @@ The app code is done and hosted-ready. A few setup steps remain, and they need y
 ## Step 2, Supabase (about 5 minutes)
 1. supabase.com, New project. Region: Canada (Central), Toronto.
 2. SQL Editor: paste the contents of `supabase/schema.sql`, Run. Then paste `supabase/seed.sql`, Run.
+   - To load the full real vendor ledger (all ~125 vendors with their orders, invoices, terms, and due dates), also paste `supabase/seed_bookings.sql`, Run. It is safe to run on top of `seed.sql` (insert-if-not-exists by vendor name) and safe to re-run. Or skip it and load the sheet later from the in-app Import data page.
 3. Storage: `schema.sql` already creates the `documents` bucket and its upload policy, so capture works right after step 2. (If you prefer the UI: Storage, New bucket named exactly `documents`, set Public. Either way is fine.)
 4. Project Settings, API: copy the Project URL and the `anon` public key. Keep for Step 3.
 5. Confirm the load with this query:
@@ -44,6 +45,7 @@ The daily payment alert emails a summary of invoices overdue or due within 7 day
    - `NEXT_PUBLIC_SUPABASE_URL` = your Supabase Project URL
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = your Supabase anon key
    - `NEXT_PUBLIC_REQUIRE_AUTH` = leave unset/false for demo, true only after the auth cutover
+   - `SUPABASE_SERVICE_ROLE_KEY` = the service_role key (Project Settings, API). Server-side only. Powers the in-app Team page (create and remove staff logins). Optional: skip it and add staff in the Supabase dashboard instead.
    - `ANTHROPIC_API_KEY` = your Anthropic key
    - `ANTHROPIC_MODEL` = current Sonnet id
    - `RESEND_API_KEY`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `CRON_SECRET` (only if you did Step 3)
@@ -83,7 +85,15 @@ only you can create them in your Supabase. These steps create them, then turn it
    and that another store's rows are not visible. The policies are only as good as their test.
 
 That is it: `/login` is now required and the per-store, per-role policies and storage lockdown
-are live. To roll back to open demo mode, set `NEXT_PUBLIC_REQUIRE_AUTH` back to unset or `false`
+are live.
+
+Adding staff later, without the Supabase dashboard: open the in-app Admin area, Team page. The
+owner or a manager adds a member (email, name, role, password) and it creates their login and
+links it in one step, or removes a member. This needs `SUPABASE_SERVICE_ROLE_KEY` set in Vercel
+(see Step 4). The first owner account is still created in the dashboard once to bootstrap; every
+member after that can be managed from the Team page.
+
+To roll back to open demo mode, set `NEXT_PUBLIC_REQUIRE_AUTH` back to unset or `false`
 and redeploy, and re-run the dev storage and table policies from `schema.sql` if you also need
 anonymous writes again (otherwise reads and writes keep requiring a linked session).
 
