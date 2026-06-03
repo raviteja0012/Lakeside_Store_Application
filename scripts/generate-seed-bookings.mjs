@@ -1,0 +1,215 @@
+// Generate supabase/seed_bookings.sql from the real 2026 bookings workbook.
+//
+// Usage: NODE_PATH=node_modules node scripts/generate-seed-bookings.mjs <in.xlsx> <out.sql>
+//
+// Reads the three department sheets (Dry goods -> Gifts, Lake side -> Clothing,
+// Grocery Vendors -> Grocery), maps each vendor row to a vendor plus, when present, a
+// purchase_order, an invoice, a payment, and a knowledge_note. Output is idempotent: each
+// vendor is wrapped in an insert-if-not-exists-by-name guard, so it can be run on top of
+// seed.sql (the curated subset) or re-run without creating duplicates or deleting anything.
+//
+// Correctness is checked against the sheet's own printed section totals (see VALIDATION).
+// Keep the column maps here in sync with src/lib/importBookings.ts (same mapping, two callers).
+
+import XLSX from "xlsx";
+import { createHash } from "node:crypto";
+import { writeFileSync } from "node:fs";
+
+const IN = process.argv[2] || "/tmp/bookings.xlsx";
+const OUT = process.argv[3] || "/tmp/seed_bookings.sql";
+
+const STORE = "11111111-1111-1111-1111-111111111111";
+const OWNER = "33333333-0000-0000-0000-000000000001";
+const DEPT = {
+  Gifts: "22222222-0000-0000-0000-000000000002",
+  Grocery: "22222222-0000-0000-0000-000000000003",
+  Clothing: "22222222-0000-0000-0000-000000000005"
+};
+
+// Sheet name -> { dept, columns }. Each sheet has its own column order.
+const SHEETS = {
+  "Dry goods": {
+    dept: "Gifts",
+    col: { vendor: 0, rep: 1, phone: 2, email: 3, products: 4, orderStatus: 5, comments: 6,
+           amount: 8, ship: 9, deliveryStatus: 10, deliveryComments: 11, invAmount: 13,
+           terms: 14, due: 15, payStatus: 16, payDate: 17 }
+  },
+  "Lake side": {
+    dept: "Clothing",
+    col: { vendor: 0, rep: 1, phone: 2, products: 3, orderStatus: 6, ship: 7, deliveryStatus: 8,
+           amount: 9, invAmount: 10, due: 11, terms: 12, payMonth: 13, comments: 14, statusNote: 15 }
+  },
+  "Grocery Vendors": {
+    dept: "Grocery",
+    col: { vendor: 0, rep: 1, phone: 2, products: 3, orderStatus: 4, ship: 5, deliveryStatus: 6,
+           amount: 7, invAmount: 8, due: 9, terms: 10, payMonth: 11, comments: 12, statusNote: 13 }
+  }
+};
+
+// Vendor-cell text that marks a section divider or totals row, not a vendor. A divider is
+// skipped only when it carries no money: "2026 new" is an empty divider on the Lake side sheet
+// but a real vendor (order $1,518) on Dry goods, so the money test keeps the real one.
+const DIVIDERS = new Set([
+  "faith in the forest", "2026 new", "grand total", "reorder vendors", "clothing",
+  "total", "order placed, waiting for confirmation", "need before may long weekend",
+  "cancelled & corrections", "grocery vendors"
+]);
+
+const uuid = (key) => {
+  const h = createHash("md5").update(key).digest("hex");
+  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+};
+const q = (v) => (v === null || v === undefined || v === "") ? "null" : `'${String(v).trim().replace(/'/g, "''")}'`;
+const num = (v) => (typeof v === "number" && isFinite(v)) ? v : null;
+const numSql = (v) => num(v) === null ? "null" : String(num(v));
+const text = (v) => (v === null || v === undefined) ? "" : String(v).trim();
+
+// Excel serial date -> ISO yyyy-mm-dd (Excel epoch 1899-12-30). Text dates return null.
+function iso(v) {
+  if (typeof v !== "number" || !isFinite(v)) return null;
+  const ms = Math.round((v - 25569) * 86400 * 1000);
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+function vendorStatus(s) {
+  if (/bankrupt|bankcrupt/i.test(s)) return "bankrupt";
+  if (/discontinue/i.test(s)) return "discontinue";
+  if (/skip/i.test(s)) return "skip";
+  return "active";
+}
+function payMethod(s) {
+  if (/cheque/i.test(s)) return "cheque";
+  if (/e-?transfer/i.test(s)) return "etransfer";
+  if (/credit card|\bcc\b/i.test(s)) return "cc";
+  if (/cash/i.test(s)) return "cash";
+  return null;
+}
+function poStatus(orderStatus, deliveryStatus) {
+  if (/cancel/i.test(orderStatus)) return "cancelled";
+  if (/deliver|received/i.test(deliveryStatus)) return "received";
+  return "ordered";
+}
+// Paid is encoded differently per sheet (a PaymentStatus column on Dry goods, the DueDate cell
+// on Lake side, scattered on Grocery), so scan every status-bearing cell. Guard against the
+// "Not Paid" / "Not Yet" rows, and \bpaid\b never matches "payment" or "after Payment".
+function isPaid(r, c) {
+  const s = [c.payStatus, c.due, c.payMonth, c.statusNote, c.comments]
+    .filter((k) => k !== undefined).map((k) => text(r[k])).join(" ");
+  if (/not\s*paid|not\s*yet/i.test(s)) return false;
+  return /\bpaid\b/i.test(s);
+}
+function invStatus(paid, termsAndNotes) {
+  if (paid) return "paid";
+  if (/post-?dated|post dated/i.test(termsAndNotes)) return "postdated";
+  return "unpaid";
+}
+
+const wb = XLSX.readFile(IN);
+const out = [];
+out.push("-- GENERATED by scripts/generate-seed-bookings.mjs from the 2026 bookings workbook.");
+out.push("-- The full real vendor ledger (Gifts, Clothing, Grocery). Run AFTER schema.sql and seed.sql.");
+out.push("-- Idempotent: each vendor is insert-if-not-exists by name, so it never duplicates or deletes.");
+out.push("-- Money is the invoiced amount as billed; hst_amount is 0 for these historical rows.");
+out.push("");
+
+let totalVendors = 0, totalOrders = 0, totalInvoices = 0, totalPayments = 0, totalNotes = 0;
+const report = [];
+
+for (const [sheetName, cfg] of Object.entries(SHEETS)) {
+  const ws = wb.Sheets[sheetName];
+  if (!ws) { report.push(`MISSING SHEET ${sheetName}`); continue; }
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: null });
+  const c = cfg.col;
+  let orderSum = 0, invSum = 0, vendors = 0;
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const name = text(r[c.vendor]);
+    const amount = num(r[c.amount]);
+    const invAmount = num(r[c.invAmount]);
+    // Skip blank vendor cells (the printed total rows) and empty section dividers.
+    if (name === "") continue;
+    if (DIVIDERS.has(name.toLowerCase()) && amount === null && invAmount === null) continue;
+
+    const vId = uuid(`v|${sheetName}|${name.toLowerCase()}`);
+    const comments = text(r[c.comments]);
+    const statusNote = text(r[c.statusNote]);
+    const orderStatus = text(r[c.orderStatus]);
+    const deliveryStatus = text(r[c.deliveryStatus]);
+    const terms = text(r[c.terms]);
+    const noteText = [comments, statusNote].filter(Boolean).join(" | ");
+    const status = vendorStatus(`${comments} ${statusNote} ${orderStatus}`);
+    const dept = DEPT[cfg.dept];
+
+    if (amount !== null) orderSum += amount;
+    if (invAmount !== null) invSum += invAmount;
+    vendors++;
+
+    const lines = [];
+    lines.push(`  if not exists (select 1 from vendor where store_id = '${STORE}' and lower(name) = lower(${q(name)})) then`);
+    lines.push(`    insert into vendor (id, store_id, department_id, name, rep_name, phone, email, products_we_carry, default_terms, status, notes) values`);
+    lines.push(`      ('${vId}', '${STORE}', '${dept}', ${q(name)}, ${q(text(r[c.rep]))}, ${q(text(r[c.phone]))}, ${q(text(r[c.email]))}, ${q(text(r[c.products]))}, ${q(terms)}, '${status}', ${q(noteText)});`);
+
+    if (amount !== null) {
+      const poId = uuid(`po|${sheetName}|${name.toLowerCase()}`);
+      lines.push(`    insert into purchase_order (id, store_id, vendor_id, department_id, season_year, order_amount, ship_date, status, notes, created_by) values`);
+      lines.push(`      ('${poId}', '${STORE}', '${vId}', '${dept}', 2026, ${numSql(amount)}, ${q(iso(r[c.ship]))}, '${poStatus(orderStatus, deliveryStatus)}', ${q(text(r[c.deliveryComments]))}, '${OWNER}');`);
+      totalOrders++;
+    }
+
+    const paid = isPaid(r, c);
+    let invId = null;
+    if (invAmount !== null) {
+      invId = uuid(`inv|${sheetName}|${name.toLowerCase()}`);
+      lines.push(`    insert into invoice (id, store_id, vendor_id, amount, hst_amount, terms, due_date, status) values`);
+      lines.push(`      ('${invId}', '${STORE}', '${vId}', ${numSql(invAmount)}, 0, ${q(terms)}, ${q(iso(r[c.due]))}, '${invStatus(paid, terms + " " + noteText)}');`);
+      totalInvoices++;
+    }
+
+    if (invId && paid) {
+      const payId = uuid(`pay|${sheetName}|${name.toLowerCase()}`);
+      const method = payMethod(terms);
+      lines.push(`    insert into payment (id, invoice_id, amount, method, paid_date, created_by) values`);
+      lines.push(`      ('${payId}', '${invId}', ${numSql(invAmount)}, ${method ? `'${method}'` : "null"}, ${q(iso(r[c.payDate]))}, '${OWNER}');`);
+      totalPayments++;
+    }
+
+    if (noteText) {
+      const nId = uuid(`note|${sheetName}|${name.toLowerCase()}`);
+      lines.push(`    insert into knowledge_note (id, store_id, department_id, topic, body, tags, created_by) values`);
+      lines.push(`      ('${nId}', '${STORE}', '${dept}', ${q("Vendor: " + name)}, ${q(noteText)}, '{vendor}', '${OWNER}');`);
+      totalNotes++;
+    }
+
+    lines.push("  end if;");
+    out.push("do $$\nbegin");
+    out.push(lines.join("\n"));
+    out.push("end $$;");
+    out.push("");
+    totalVendors++;
+  }
+
+  report.push({ sheet: sheetName, vendors, orderSum: Math.round(orderSum * 100) / 100, invSum: Math.round(invSum * 100) / 100 });
+}
+
+writeFileSync(OUT, out.join("\n"));
+
+// Expected full sums. Lake side equals the sheet's printed Grand Total. Dry goods is the
+// printed total reconciled with the rows appended below the stale SUM formula: the printed
+// order total 158,412.20 omits Socksmith ($600.09) and the printed invoiced 122,219.15 omits
+// Gap ($529.94) + Cottage Cloth ($327.06) + Socksmith ($685.80) = $1,542.80. The full real
+// sums below include every vendor row.
+const EXPECTED = {
+  "Dry goods": { order: 159012.29, inv: 123761.95 },
+  "Lake side": { order: 63363.79, inv: 38444.24 }
+};
+console.log("OUT:", OUT);
+console.log("TOTAL vendors/orders/invoices/payments/notes:", totalVendors, totalOrders, totalInvoices, totalPayments, totalNotes);
+for (const row of report) {
+  const exp = EXPECTED[row.sheet];
+  const okO = exp ? (Math.abs(row.orderSum - exp.order) < 0.02 ? "OK" : `MISMATCH exp ${exp.order}`) : "(no expected)";
+  const okI = exp ? (Math.abs(row.invSum - exp.inv) < 0.02 ? "OK" : `MISMATCH exp ${exp.inv}`) : "(no expected)";
+  console.log(`  ${row.sheet}: vendors=${row.vendors} order=${row.orderSum} [${okO}] inv=${row.invSum} [${okI}]`);
+}
