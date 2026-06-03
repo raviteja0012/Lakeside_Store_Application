@@ -26,6 +26,7 @@ create table app_user (
   store_id uuid references store(id),
   full_name text not null,
   role text not null check (role in ('staff','lead','manager','owner')),
+  email text unique,                -- the Supabase Auth account email; auth_setup.sql links auth_id by this
   created_at timestamptz default now()
 );
 
@@ -294,3 +295,19 @@ begin
     execute format('create policy dev_all on public.%I for all using (true) with check (true);', t);
   end loop;
 end $$;
+
+-- DEV ONLY storage access for the captured documents (invoice photos, payment confirmations).
+-- Supabase enables row-level security on storage.objects, so without a policy even the anon key
+-- cannot upload and every capture fails with "new row violates row-level security policy".
+-- This opens the `documents` bucket for the demo exactly like dev_all opens the public tables.
+-- auth_setup.sql replaces this with an authenticated-only policy at the production cutover.
+insert into storage.buckets (id, name, public)
+values ('documents', 'documents', true)
+on conflict (id) do update set public = excluded.public;
+
+drop policy if exists "documents_dev_all" on storage.objects;
+create policy "documents_dev_all" on storage.objects
+  for all
+  to public
+  using (bucket_id = 'documents')
+  with check (bucket_id = 'documents');

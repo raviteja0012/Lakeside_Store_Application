@@ -16,7 +16,7 @@ The app code is done and hosted-ready. A few setup steps remain, and they need y
 ## Step 2, Supabase (about 5 minutes)
 1. supabase.com, New project. Region: Canada (Central), Toronto.
 2. SQL Editor: paste the contents of `supabase/schema.sql`, Run. Then paste `supabase/seed.sql`, Run.
-3. Storage: New bucket named exactly `documents`, set Public.
+3. Storage: `schema.sql` already creates the `documents` bucket and its upload policy, so capture works right after step 2. (If you prefer the UI: Storage, New bucket named exactly `documents`, set Public. Either way is fine.)
 4. Project Settings, API: copy the Project URL and the `anon` public key. Keep for Step 3.
 5. Confirm the load with this query:
    ```sql
@@ -54,40 +54,44 @@ The daily payment alert emails a summary of invoices overdue or due within 7 day
 ## Step 5, tell me
 Send me "done" plus the Vercel URL (not the keys). I will check the feed, dashboard, vendors, overdue, knowledge, price signs, maintenance, compliance, HR, and reports, then we test one real invoice through capture.
 
-## Go to enforced auth (production)
-The app ships in demo mode: open access, no login, the "Acting as" picker decides who a write
-is attributed to. That is the default and stays on until you deliberately cut over. The switch
-is the env var `NEXT_PUBLIC_REQUIRE_AUTH`. Do these steps in order. Until the last step, the
-live app keeps working in demo mode.
+## Turn on login (real auth and per-role security, about 5 minutes)
+The login, the per-store per-role database policies, and the storage lockdown are all built and
+ready. Turning them on takes about five minutes and only needs your Supabase. Until you flip the
+last switch the app keeps working, so you can do this whenever you want a real demo or before any
+staff use. Login can't be on by default in the code because the accounts have to exist first, and
+only you can create them in your Supabase. These steps create them, then turn it on.
 
 1. Enable Email auth. Supabase, Authentication, Providers, turn on Email. Leave sign-ups off
-   (there is no public sign-up; you create every account). Authentication, Users, Add user:
-   create the owner account with a real email and a password. Repeat for each member later.
-2. Run the cutover SQL. SQL Editor, paste the contents of `supabase/auth_setup.sql`, Run. This
-   adds `app_user.auth_id`, creates the role and store helper functions, and replaces the dev
-   open policies with per-store, per-role policies. It does not touch `schema.sql`.
-3. Link the owner account to their app_user row. In the SQL editor find the auth user id with
-   `select id, email from auth.users order by created_at desc;` then run the template at the
-   bottom of `auth_setup.sql` to set `auth_id` on the owner's app_user row (the seed owner is
-   Ravi Kiran). The SQL editor runs as the table owner and bypasses the new policies, so this
-   bootstrap works before anyone is linked. Repeat for each member: create the account, copy
-   its `auth.users.id`, set `auth_id` on their app_user row. A member with no `auth_id` cannot
-   sign in to any data, which is the safe default.
-4. Test with real accounts BEFORE trusting it. Sign in as the owner and confirm full access.
-   Sign in as a staff member and confirm they cannot see costs, order or invoice amounts,
-   payments, or totals, and cannot read another store's rows. Do not skip this; the policies
-   are only as good as their test.
-5. Flip the switch. Vercel, project, Settings, Environment Variables: set
-   `NEXT_PUBLIC_REQUIRE_AUTH` = `true`. Redeploy (it is a build-time public var, so a redeploy
-   is required). Now `/login` is required and the per-store, per-role policies are live.
+   (there is no public sign-up; you create every account).
+2. Add one account per role, each with the SAME email as its seeded member so linking is
+   automatic. Authentication, Users, Add user (turn on Auto Confirm User so no email step):
+   - `owner@robinsons.demo`   -> Ravi Kiran (owner, sees everything)
+   - `manager@robinsons.demo` -> Demo Manager (sees money, manages members)
+   - `staff@robinsons.demo`   -> Demo Staff (no costs, no amounts)
+   - `lead@robinsons.demo`    -> Outpost Lead (second store, for the multi-store test)
+   Pick any password you like for each; you will type it to sign in. Use real emails instead of
+   these if you prefer; just set the same email on the matching member (auth_setup section 1b).
+3. Run the cutover SQL. SQL Editor, paste all of `supabase/auth_setup.sql`, Run. It adds
+   `auth_id`, creates the role and store helper functions, replaces the open dev policies with
+   per-store per-role policies, locks the `documents` bucket to signed-in users, and links every
+   account to its member automatically by email. It is idempotent; re-run it any time you add an
+   account. It does not touch `schema.sql`.
+4. Test BEFORE trusting it. Set `NEXT_PUBLIC_REQUIRE_AUTH` = `true` in Vercel (Settings,
+   Environment Variables) and redeploy (it is a build-time public var, so a redeploy is
+   required). Sign in as `owner@robinsons.demo` and confirm full access. Sign in as
+   `staff@robinsons.demo` and confirm no costs, order or invoice amounts, payments, or totals,
+   and that another store's rows are not visible. The policies are only as good as their test.
 
-To roll back to demo mode: set `NEXT_PUBLIC_REQUIRE_AUTH` back to unset or `false` and redeploy.
-That restores open access in the app. The database policies from `auth_setup.sql` stay in
-place, so reads and writes still require a linked session; flip the var only while the open dev
-policies are also restored if you need full anonymous access again.
+That is it: `/login` is now required and the per-store, per-role policies and storage lockdown
+are live. To roll back to open demo mode, set `NEXT_PUBLIC_REQUIRE_AUTH` back to unset or `false`
+and redeploy, and re-run the dev storage and table policies from `schema.sql` if you also need
+anonymous writes again (otherwise reads and writes keep requiring a linked session).
 
-## Before real staff use
-- Move document storage to signed URLs if invoices hold anything sensitive.
-- Column-level cost hiding is enforced in the UI today, with row-level DB policies from
-  `auth_setup.sql`. Full column-level DB privileges (revoking cost columns from the staff role
-  in Postgres) are a later hardening step.
+## Before real staff use (later hardening, not blockers)
+- Move document storage to signed URLs. The `documents` bucket is public-read so feed thumbnails
+  load; a determined staff member could open an invoice image URL and read amounts the UI hides.
+  Signed URLs close that. Do this before real money data with a staff role that should not see it.
+- Column-level cost hiding is enforced in the UI today and by the row-level DB policies in
+  `auth_setup.sql`. Revoking the cost columns from the staff Postgres role is a further step.
+- Rotate the Anthropic key and remove the credit-card number from the Lawson PO Drive doc (see
+  docs/DATA_INVENTORY.md) before this is more than a demo.
