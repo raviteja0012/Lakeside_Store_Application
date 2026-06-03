@@ -7,13 +7,13 @@
 -- It is intentionally NOT part of schema.sql so the demo keeps its open dev policies until
 -- you choose to cut over. schema.sql still ships the dev_all DO-block for the demo.
 --
--- ORDER OF OPERATIONS (see RUNBOOK.md "Go to enforced auth"):
+-- ORDER OF OPERATIONS (see RUNBOOK.md "Turn on login"):
 --   1. Enable Email auth in Supabase (Authentication, Providers, Email). No public sign-up.
---   2. Create the owner account (Authentication, Users, Add user) with a real email + password.
---   3. Run this whole file in the SQL editor.
---   4. Set app_user.auth_id for the owner using the template at the bottom of this file.
---   5. Create accounts for each member, then set their app_user.auth_id the same way.
---   6. Set NEXT_PUBLIC_REQUIRE_AUTH=true in Vercel and redeploy.
+--   2. Create one account per member (Authentication, Users, Add user), each with the SAME email
+--      as its app_user row. The demo emails are owner@/manager@/staff@/lead@robinsons.demo.
+--   3. Run this whole file in the SQL editor. Section 4 links every account to its app_user row
+--      automatically, by email. Re-run it any time you add more accounts (it is idempotent).
+--   4. Set NEXT_PUBLIC_REQUIRE_AUTH=true in Vercel and redeploy.
 --
 -- TEST BEFORE TRUSTING: sign in as one owner and one staff and confirm staff cannot read
 -- another store's rows and cannot see costs. RLS is only as good as its test.
@@ -23,6 +23,19 @@
 -- 1. Link auth.users to app_user. Nullable so existing demo rows stay valid until linked.
 alter table public.app_user
   add column if not exists auth_id uuid unique references auth.users(id);
+
+-- 1a. The email used to match a Supabase Auth account to its app_user row. Added defensively so
+-- this script also works on a database created before email was part of schema.sql.
+alter table public.app_user
+  add column if not exists email text;
+
+-- 1b. Demo email backfill. Sets the known demo emails on the seeded members only where the email
+-- is still null, so auto-linking (section 4) works even if seed.sql was loaded before emails were
+-- added. Harmless on a fresh seed (the emails already match) and safe to keep: it never overwrites.
+update public.app_user set email = 'owner@robinsons.demo'   where full_name = 'Ravi Kiran'   and email is null;
+update public.app_user set email = 'manager@robinsons.demo' where full_name = 'Demo Manager' and email is null;
+update public.app_user set email = 'staff@robinsons.demo'   where full_name = 'Demo Staff'    and email is null;
+update public.app_user set email = 'lead@robinsons.demo'    where full_name = 'Outpost Lead'  and email is null;
 
 -- 2. Helper functions in a dedicated, safe schema (not public, so they are not exposed as
 -- PostgREST RPC by default). They are SECURITY DEFINER and STABLE with a pinned search_path.
@@ -205,8 +218,8 @@ create policy manager_store_write on public.store
 
 -- app_user: every member can read their store's roster. Only managers and owners of the
 -- store may insert, update, or delete members, and only within their own store. NOTE: the
--- first owner's app_user.auth_id must be set out of band (the template below, run as the
--- table owner in the SQL editor, which bypasses RLS) to bootstrap access.
+-- first owner's app_user.auth_id is set by the auto-link in section 4, which runs as the table
+-- owner in the SQL editor and bypasses RLS, so it bootstraps access before anyone is linked.
 create policy member_store_read on public.app_user
   for select
   to authenticated
@@ -248,27 +261,38 @@ create policy member_insert_self on public.activity_log
   to authenticated
   with check (actor_id = (app_auth.app_member()).id);
 
--- 4. TEMPLATE: link the owner's auth account to their app_user row. Run this AFTER you create
--- the owner account in Authentication, Users. It runs as the table owner here in the SQL
--- editor, which bypasses RLS, so it works before any member is linked (the bootstrap step).
+-- 3d. Storage. Supabase enables row-level security on storage.objects, so uploads need a policy
+-- or every capture fails with "new row violates row-level security policy". Drop the dev policy
+-- that allowed the anon key to write, and allow only signed-in members to read and write the
+-- `documents` bucket (invoice photos, payment confirmations). The bucket stays public-read so the
+-- feed thumbnails still load; moving to signed URLs is the documented next hardening step.
+insert into storage.buckets (id, name, public)
+values ('documents', 'documents', true)
+on conflict (id) do update set public = excluded.public;
+
+drop policy if exists "documents_dev_all" on storage.objects;
+drop policy if exists "documents_auth_rw" on storage.objects;
+create policy "documents_auth_rw" on storage.objects
+  for all
+  to authenticated
+  using (bucket_id = 'documents')
+  with check (bucket_id = 'documents');
+
+-- 4. Link Supabase Auth accounts to app_user rows BY EMAIL. Run this AFTER you create each
+-- account in Authentication, Users with the same email as the app_user row (the demo emails are
+-- in section 1b and seed.sql). This runs as the table owner in the SQL editor, which bypasses
+-- RLS, so it bootstraps access before anyone is linked. Idempotent: re-run it after adding more
+-- accounts. Case-insensitive match. A member with no auth_id cannot sign in to any store's data
+-- (every policy denies), which is the safe default.
+update public.app_user u
+  set auth_id = a.id
+  from auth.users a
+  where lower(a.email) = lower(u.email)
+    and u.auth_id is distinct from a.id;
+
+-- Verify the links took (every member you created an account for should show an auth_id):
+--   select full_name, role, store_id, email, auth_id from public.app_user order by full_name;
 --
--- Find the auth user id:
---   select id, email from auth.users order by created_at desc;
---
--- Then set auth_id on the matching app_user row. The seed owner is Ravi Kiran:
---
---   update public.app_user
---     set auth_id = '00000000-0000-0000-0000-000000000000'  -- <- the auth.users.id from above
---     where full_name = 'Ravi Kiran';
---
--- Or match by a known app_user id from seed.sql:
---   update public.app_user
---     set auth_id = '00000000-0000-0000-0000-000000000000'  -- <- the auth.users.id
---     where id = '33333333-0000-0000-0000-000000000001';    -- <- Ravi Kiran (owner)
---
--- Repeat for each member: create the account, copy its auth.users.id, set auth_id on their
--- app_user row. A member with no auth_id cannot sign in to any store's data (every policy
--- denies), which is the safe default.
---
--- Verify a link took:
---   select full_name, role, store_id, auth_id from public.app_user order by full_name;
+-- Manual fallback, if you ever need to link one row by hand (e.g. an email that does not match):
+--   select id, email from auth.users order by created_at desc;   -- find the auth user id
+--   update public.app_user set auth_id = '<auth.users.id>' where full_name = 'Ravi Kiran';

@@ -22,9 +22,13 @@ insert into department (id, store_id, name, parent_department_id, accent_color) 
   ('22222222-0000-0000-0000-000000000008', '11111111-1111-1111-1111-111111111111', 'Chip Stand', null, '#B7791F'),
   ('22222222-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111', 'Garden Center', '22222222-0000-0000-0000-000000000001', '#1E8E5A');
 
-insert into app_user (id, store_id, full_name, role) values
-  ('33333333-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Ravi Kiran', 'owner'),
-  ('33333333-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'Demo Staff', 'staff');
+-- Demo accounts, one per role, so enforced auth can be tested end to end. The email is what
+-- auth_setup.sql links to a Supabase Auth account: create each account with the same email,
+-- then auth_setup links auth_id automatically. owner and manager see money; staff does not.
+insert into app_user (id, store_id, full_name, role, email) values
+  ('33333333-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Ravi Kiran', 'owner', 'owner@robinsons.demo'),
+  ('33333333-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'Demo Manager', 'manager', 'manager@robinsons.demo'),
+  ('33333333-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'Demo Staff', 'staff', 'staff@robinsons.demo');
 
 insert into licence (store_id, name, authority, holder, expiry_date) values
   ('11111111-1111-1111-1111-111111111111', 'Ontario Pesticide Vendor Licence', 'Ontario Ministry of the Environment', 'Ravi Kiran', null);
@@ -253,8 +257,8 @@ update knowledge_note set store_id = '11111111-1111-1111-1111-111111111111' wher
 insert into store (id, name, legal_entity, address) values
   ('11111111-2222-2222-2222-222222222222', 'Lakeside Outpost (sample)', null, 'Sample second location, Ontario (illustrative)');
 
-insert into app_user (id, store_id, full_name, role) values
-  ('33333333-2222-2222-2222-222222222222', '11111111-2222-2222-2222-222222222222', 'Outpost Lead', 'lead');
+insert into app_user (id, store_id, full_name, role, email) values
+  ('33333333-2222-2222-2222-222222222222', '11111111-2222-2222-2222-222222222222', 'Outpost Lead', 'lead', 'lead@robinsons.demo');
 
 -- Its own departments so the store is self-consistent in the scoped dropdowns.
 insert into department (id, store_id, name, parent_department_id, accent_color) values
