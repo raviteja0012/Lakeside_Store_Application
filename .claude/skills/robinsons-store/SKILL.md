@@ -30,8 +30,10 @@ The full plan with evidence, pricing, and citations is in robinsons_store_build_
 robinsons-store/
   README.md
   supabase/schema.sql        full data model, plus the dev row-level security and the documents storage policy
-  supabase/seed.sql          departments, real vendors and invoices from the bookings sheet, demo accounts (one per role)
+  supabase/seed.sql          departments, a curated set of real vendors, demo accounts (one per role)
+  supabase/seed_bookings.sql the full real ledger (125 vendors), generated and validated against the sheet totals
   supabase/auth_setup.sql    the production cutover: auth_id, email auto-link, per-store per-role policies, storage lockdown
+  scripts/generate-seed-bookings.mjs  regenerate seed_bookings.sql from the bookings .xlsx; self-checks against printed totals
   src/app/page.tsx           the department feed home
   src/app/capture/page.tsx   capture, extract, confirm, save (uploads the document to storage)
   src/app/dashboard, reports, overdue, vendors, vendors/[id], inventory, reorder,
@@ -39,7 +41,7 @@ robinsons-store/
   src/app/api/extract, ask, reorder, alerts   the route handlers
   src/app/globals.css        the color tokens
   src/components/  Header (store picker + area switcher), AuthGate (the client auth guard)
-  src/lib/  supabaseClient, types, auth, store, format, status, hr, charts, nav
+  src/lib/  supabaseClient, types, auth, store, format, status, hr, charts, nav, importBookings
   vercel.json                the daily /api/alerts cron
   docs/  STATUS, ARCHITECTURE, DATA_SOURCES, DATA_INVENTORY, SOURCES
   RUNBOOK.md, CONTRIBUTING.md
@@ -62,8 +64,10 @@ Every screen is a client component that reads through useActiveStore() and filte
 - `/maintenance`: property assets and recurring tasks with due dates.
 - `/compliance`: the pesticide licence and its expiry, alongside insurance policies. Premiums money-gated.
 - `/hr` and `/hr/schedule`: employees, effective-dated pay rates, the weekly schedule. Pay and estimated pay money-gated.
+- `/import`: owner and manager tool (Admin area) to upload the 2026 bookings .xlsx and load the full vendor ledger into the active store. Parses with the same logic as scripts/generate-seed-bookings.mjs (shared in src/lib/importBookings.ts), idempotent by vendor name.
+- `/team`: owner and manager tool (Admin area) to create and remove staff logins in-app. Calls /api/admin/users, which uses the Supabase service role to create the auth account and the linked app_user row in one step. Removes the dashboard from day-to-day staff management.
 - `/login`: email and password sign-in. Only reachable and only enforced when REQUIRE_AUTH is on.
-- API routes: `/api/extract` (Claude vision), `/api/ask` (context answer), `/api/reorder` (suggestions + summary), `/api/alerts` (daily due-date email, Resend, cron-guarded by x-cron-secret).
+- API routes: `/api/extract` (Claude vision), `/api/ask` (context answer), `/api/reorder` (suggestions + summary), `/api/alerts` (daily due-date email, Resend, cron-guarded by x-cron-secret), `/api/import` (parse the bookings .xlsx and upsert the ledger), `/api/admin/users` (service-role user management, owner and manager only, store-scoped).
 
 ## Conventions
 Data model rules and the entity list are in references/data-model.md. The short version: snake_case, audit on every write through activity_log plus created_by, a confidence value on every extracted line, low-confidence dollar fields never auto-post, money as numeric dollars in the demo and integer cents before production.
@@ -93,6 +97,7 @@ Storage security: the documents bucket is public-read so feed thumbnails load. U
 ## Environment variables
 - NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY: the Supabase project. Without both, SUPABASE_CONFIGURED is false and every screen shows its "Connection" card.
 - NEXT_PUBLIC_REQUIRE_AUTH: "true" turns on login and the per-role policies. Unset or "false" is open demo mode. Build-time public var, so changing it needs a redeploy.
+- SUPABASE_SERVICE_ROLE_KEY: server-side only, never NEXT_PUBLIC. Powers /api/admin/users (the Team page) to create and delete logins. Without it the Team page shows a note; everything else works.
 - ANTHROPIC_API_KEY, ANTHROPIC_MODEL: the capture extraction, ask, and reorder summary. Missing key makes those routes report it instead of answering.
 - RESEND_API_KEY, ALERT_EMAIL_FROM, ALERT_EMAIL_TO, CRON_SECRET: optional daily due-date alert email. Without them /api/alerts reports email is off and the rest of the app is unaffected.
 

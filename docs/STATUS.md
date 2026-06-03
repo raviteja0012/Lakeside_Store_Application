@@ -21,9 +21,14 @@ HR
 Reports and reorder
 - Spend by department, ordered vs invoiced, outstanding aging, payment-status mix, and a vendor scorecard. Reorder gives formula-based suggestions plus an optional AI summary.
 
+Admin (owners and managers)
+- Import data: upload the 2026 bookings .xlsx and load the full vendor ledger into the active store. Idempotent by vendor name, safe to re-run. The same data can be loaded once by SQL with `supabase/seed_bookings.sql` (all 125 vendors, generated and validated against the sheet's printed totals).
+- Team: create and remove staff logins in the app, no Supabase dashboard. Creates the Supabase Auth account and the linked app_user row in one step, owner and manager only, scoped to the store. Needs `SUPABASE_SERVICE_ROLE_KEY`.
+
 Cross-cutting
-- Header store picker and area switcher (Store Operations, Property and Maintenance, HR, Reports). Reads scoped and writes stamped by the active store. Every write records who and when in activity_log. CAD throughout, Ontario 13 percent HST from a tax table. Daily Resend email of overdue and due-soon invoices (off until the Resend key is set).
-- Authentication and per-store, per-role security, behind a switch. `NEXT_PUBLIC_REQUIRE_AUTH` defaults off, so the demo stays open with the "Acting as" picker. Set it on (after the cutover in RUNBOOK.md) for Supabase email login, a /login page, and per-store, per-role row policies from `supabase/auth_setup.sql`. Cost and margin (unit cost, order and invoice amounts, payments, premiums, pay) are hidden from the staff role in the UI in both modes; floor staff still see quantities, vendors, due-date status, and can capture and count.
+- Header store picker and area switcher (Store Operations, Property and Maintenance, HR, Reports, and an Admin area shown to owners and managers). Reads scoped and writes stamped by the active store. Every write records who and when in activity_log. CAD throughout, Ontario 13 percent HST from a tax table. Daily Resend email of overdue and due-soon invoices (off until the Resend key is set).
+- Capture uploads work: the `documents` storage bucket and its policy ship in `schema.sql` (dev) and are locked to signed-in members in `auth_setup.sql` (production), so uploads no longer fail row-level security.
+- Authentication and per-store, per-role security, ready to turn on in about five minutes. `NEXT_PUBLIC_REQUIRE_AUTH` defaults off, so the demo stays open with the "Acting as" picker. Turn it on (RUNBOOK.md "Turn on login") for Supabase email login, a /login page, and per-store, per-role row policies from `supabase/auth_setup.sql`, which links every account to its member automatically by email. Cost and margin (unit cost, order and invoice amounts, payments, premiums, pay) are hidden from the staff role in the UI in both modes; floor staff still see quantities, vendors, due-date status, and can capture and count.
 
 ## Open items (polish, tractable, no architecture change)
 1. Compliance: insurance policies are read-only; add an add-and-edit form like the licence one.

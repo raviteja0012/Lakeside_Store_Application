@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AREAS, NAV, AREA_KEY, areaForPath, type Area } from "@/lib/nav";
 import { useActiveStore } from "@/lib/store";
-import { REQUIRE_AUTH, useMember, signOut } from "@/lib/auth";
+import { REQUIRE_AUTH, useMember, canManageStore, signOut } from "@/lib/auth";
 
 const navLink = { textDecoration: "none", color: "var(--text-secondary)", fontWeight: 500 } as const;
 const navLinkActive = { textDecoration: "none", color: "var(--primary)", fontWeight: 600 } as const;
@@ -16,6 +16,11 @@ export default function Header() {
   const [area, setArea] = useState<Area>(() => areaForPath(pathname));
   const { stores, storeId, setStore } = useActiveStore();
   const { member } = useMember();
+
+  // Admin tools (Import, Team) are for owners and managers. In open demo mode everyone is
+  // effectively the owner, so the area shows; under enforced auth it shows only for those roles.
+  const canAdmin = !REQUIRE_AUTH || canManageStore(member?.role);
+  const visibleAreas = AREAS.filter((a) => a.key !== "admin" || canAdmin);
 
   async function handleSignOut() {
     await signOut();
@@ -67,7 +72,7 @@ export default function Header() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div role="tablist" aria-label="Area" style={{ display: "flex", gap: 4, background: "#EEF1F4", borderRadius: 8, padding: 3 }}>
-              {AREAS.map((a) => {
+              {visibleAreas.map((a) => {
                 const on = a.key === area;
                 return (
                   <button
