@@ -17,7 +17,7 @@ export const AREAS: { key: Area; label: string }[] = [
 
 export const NAV: Record<Area, NavItem[]> = {
   ops: [
-    { href: "/", label: "Feed" },
+    { href: "/feed", label: "Feed" },
     { href: "/dashboard", label: "Dashboard" },
     { href: "/vendors", label: "Vendors" },
     { href: "/overdue", label: "Overdue" },
@@ -43,6 +43,14 @@ export const NAV: Record<Area, NavItem[]> = {
     { href: "/team", label: "Team" }
   ]
 };
+
+// The flat nav for the staff and lead task experience (and for a manager previewing staff).
+// No area switcher: the few links they need, in one row. No "My Tasks" page yet.
+export const STAFF_NAV: NavItem[] = [
+  { href: "/", label: "Feed" },
+  { href: "/capture", label: "Capture" },
+  { href: "/ask", label: "Ask" }
+];
 
 export const AREA_KEY = "rgs_area";
 
