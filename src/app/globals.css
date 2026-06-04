@@ -21,6 +21,8 @@
   --error-base: #C0362C;
   --error-tint: #FBEAE8;
   --neutral-base: #6B7480;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --tile: #EEF1F4;
 }
 
 * { box-sizing: border-box; }
@@ -39,7 +41,7 @@ body {
 
 .tabular { font-family: var(--font-mono), monospace; font-variant-numeric: tabular-nums; }
 
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-sm); }
 
 .btn-primary { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 10px 16px; font-weight: 600; cursor: pointer; }
 .btn-primary:hover { background: var(--primary-hover); }
@@ -59,6 +61,31 @@ body {
 .chip-neutral { background: #EEF1F4; color: var(--neutral-base); }
 
 .field-flag { border-color: var(--warning-base); background: var(--warning-tint); }
+
+/* Hybrid polish: KPI summary tiles. Calm neutral chrome, color only on the values that
+   encode status. The signature one-glance summary row at the top of the role dashboards. */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-sm); padding: 14px 16px; display: grid; gap: 10px; }
+.kpi-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.kpi-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.kpi-icon { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--tile); color: var(--text-secondary); flex: none; }
+.kpi-value { font-family: var(--font-mono), monospace; font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 600; line-height: 1; color: var(--text-primary); }
+.kpi-value.is-error { color: var(--error-base); }
+.kpi-value.is-warning { color: var(--warning-base); }
+.kpi-value.is-success { color: var(--success-base); }
+.kpi-foot { font-size: 12px; color: var(--text-secondary); }
+
+/* Richer empty state: a soft icon circle, a title, and a line of guidance. */
+.empty { text-align: center; padding: 44px 20px; }
+.empty-icon { width: 56px; height: 56px; border-radius: 999px; background: var(--tile); display: grid; place-items: center; margin: 0 auto 12px; font-size: 24px; }
+.empty-title { font-weight: 600; margin: 0 0 4px; color: var(--text-primary); }
+
+/* Notification bell and its dot. */
+.bell { position: relative; display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel); cursor: pointer; }
+.bell-dot { position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--error-base); color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; border: 2px solid var(--panel); }
+
+/* Soft row hover for tables and lists. */
+.row-hover:hover { background: var(--app-bg); }
 
 /* Totals block on the confirm screen */
 .totals-row { display: flex; justify-content: space-between; padding: 4px 0; }

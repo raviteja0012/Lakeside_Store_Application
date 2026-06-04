@@ -219,7 +219,7 @@ create table maintenance_task (
   title text not null,
   detail text,
   due_date date,
-  recurrence text default 'none' check (recurrence in ('none','weekly','monthly','seasonal','annual')),
+  recurrence text default 'none' check (recurrence in ('none','daily','weekly','monthly','seasonal','annual')),
   status text default 'open' check (status in ('open','in_progress','done')),
   assigned_to uuid references app_user(id),
   completed_at timestamptz,
@@ -273,6 +273,7 @@ create table pay_rate (
 create table shift (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid references employee(id),
+  department_id uuid references department(id),  -- the department this shift covers (staff float across departments)
   work_date date,
   start_time time,
   end_time time,
@@ -280,6 +281,24 @@ create table shift (
   created_by uuid references app_user(id),
   created_at timestamptz default now()
 );
+
+-- Soft delete (void). Transactions and records are kept for the audit trail and the six-year
+-- tax history; "delete" in the app sets voided_at and voided_by and the row drops out of every
+-- list and total (queries filter voided_at is null). Shifts are the exception: they are hard
+-- deleted, so they get no void columns. Additive and idempotent, so this also runs as a migration.
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'vendor','purchase_order','invoice','payment','receiving_event','knowledge_note',
+    'inventory_count','maintenance_asset','maintenance_task','insurance_policy','licence',
+    'employee','pay_rate'
+  ]
+  loop
+    execute format('alter table public.%I add column if not exists voided_at timestamptz;', t);
+    execute format('alter table public.%I add column if not exists voided_by uuid references public.app_user(id);', t);
+  end loop;
+end $$;
 
 -- DEV ONLY row-level security.
 -- These policies allow the anon key to read and write so the demo runs without login.
