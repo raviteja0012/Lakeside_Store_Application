@@ -22,6 +22,7 @@ export default function Overdue() {
       let query = supabase
         .from("invoice")
         .select("id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status, vendor:vendor_id(name)")
+        .is("voided_at", null)
         .in("status", ["unpaid", "postdated"])
         .not("due_date", "is", null)
         .order("due_date", { ascending: true });

@@ -7,6 +7,7 @@ import { chipClass, labelize } from "@/lib/status";
 import { formatCAD, todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, useCurrentRole } from "@/lib/auth";
+import { canEdit, voidRow } from "@/lib/edit";
 import type { FeedRow } from "@/lib/types";
 
 function thumb(path: string | null) {
@@ -33,32 +34,54 @@ export default function StaffFeed() {
   const [rows, setRows] = useState<FeedRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined" && !localStorage.getItem(HOWTO_KEY)) setShowHowTo(true);
   }, []);
 
+  async function load() {
+    let query = supabase
+      .from("receiving_event")
+      .select("id, vendor_name, received_date, status, source_file_path, created_at, department:department_id(name, accent_color), app_user:created_by(full_name), receiving_line(qty, unit_cost)")
+      .is("voided_at", null)
+      .order("created_at", { ascending: false })
+      .limit(40);
+    if (storeId) query = query.eq("store_id", storeId);
+    const { data, error } = await query;
+    if (error) setError(error.message);
+    else setRows((data as unknown as FeedRow[]) || []);
+  }
+
   useEffect(() => {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let query = supabase
-        .from("receiving_event")
-        .select("id, vendor_name, received_date, status, source_file_path, created_at, department:department_id(name, accent_color), app_user:created_by(full_name), receiving_line(qty, unit_cost)")
-        .order("created_at", { ascending: false })
-        .limit(40);
-      if (storeId) query = query.eq("store_id", storeId);
-      const { data, error } = await query;
-      if (error) setError(error.message);
-      else setRows((data as unknown as FeedRow[]) || []);
+      await load();
       setLoading(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, storeId]);
 
   function dismissHowTo() {
     setShowHowTo(false);
     if (typeof window !== "undefined") localStorage.setItem(HOWTO_KEY, "1");
+  }
+
+  // The feed has no actor dropdown, so the void is logged with a null actor.
+  async function removeRow(r: FeedRow) {
+    if (!window.confirm(`Delete the ${r.vendor_name || "unknown vendor"} receiving? It will be hidden but kept for the record.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("receiving_event", r.id, null);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Today strip: group today's posts by department from the rows already loaded. No extra query.
@@ -156,6 +179,9 @@ export default function StaffFeed() {
                   {formatCAD(subtotal)}
                   <div className="help" style={{ fontWeight: 400 }}>subtotal</div>
                 </div>
+              )}
+              {canEdit(role) && (
+                <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base)", flexShrink: 0 }} onClick={() => removeRow(r)} disabled={busy}>Delete</button>
               )}
             </div>
           );

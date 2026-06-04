@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 import { parseWorkbook } from "@/lib/importBookings";
+import { parseSchedule, looksLikeSchedule } from "@/lib/importSchedule";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,78 @@ async function insertChunks(
     inserted += chunk.length;
   }
   return inserted;
+}
+
+// Load the weekly schedule workbook: upsert employees by name, then shifts deduped by
+// (employee, date, start, end). Idempotent, so re-uploading the same week changes nothing and
+// a changed cell adds the new shift without duplicating the unchanged ones.
+async function importScheduleFlow(
+  sb: any,
+  sheets: { name: string; rows: any[][] }[],
+  storeId: string,
+  actorId: string | null
+): Promise<Response> {
+  // Map our departments by lowercased name so the parser can attach a department to each shift.
+  const { data: depts } = await sb.from("department").select("id, name").eq("store_id", storeId);
+  const deptMap: Record<string, string> = {};
+  for (const d of (depts as any[]) || []) deptMap[String(d.name || "").toLowerCase()] = d.id;
+
+  const parsed = parseSchedule(sheets, deptMap);
+
+  // Employees: insert those not already on file (by name), then build a name -> id map.
+  const readEmployees = async () => {
+    const { data } = await sb.from("employee").select("id, full_name").eq("store_id", storeId).is("voided_at", null);
+    const m = new Map<string, string>();
+    for (const e of (data as any[]) || []) m.set(String(e.full_name || "").toLowerCase(), e.id);
+    return m;
+  };
+  let byName = await readEmployees();
+  const newEmpNames = parsed.employees.filter((n) => !byName.has(n.toLowerCase()));
+  if (newEmpNames.length) {
+    const rows = newEmpNames.map((full_name) => ({ store_id: storeId, full_name, status: "active" }));
+    const { error } = await sb.from("employee").insert(rows);
+    if (error) return Response.json({ ok: false, message: `employee: ${error.message}` }, { status: 200 });
+    byName = await readEmployees();
+  }
+
+  // Dedupe shifts against what is already on file for these employees.
+  const empIds = [...byName.values()];
+  const existingKeys = new Set<string>();
+  if (empIds.length) {
+    const { data: ex } = await sb.from("shift").select("employee_id, work_date, start_time, end_time").in("employee_id", empIds);
+    for (const s of (ex as any[]) || []) {
+      existingKeys.add(`${s.employee_id}|${s.work_date}|${String(s.start_time).slice(0, 5)}|${String(s.end_time).slice(0, 5)}`);
+    }
+  }
+
+  const shiftRows: any[] = [];
+  let skipped = 0;
+  for (const s of parsed.shifts) {
+    const empId = byName.get(s.employeeName.toLowerCase());
+    if (!empId) { skipped++; continue; }
+    const key = `${empId}|${s.workDate}|${s.startTime}|${s.endTime}`;
+    if (existingKeys.has(key)) { skipped++; continue; }
+    existingKeys.add(key);
+    shiftRows.push({
+      employee_id: empId,
+      department_id: s.departmentId,
+      work_date: s.workDate,
+      start_time: s.startTime,
+      end_time: s.endTime,
+      notes: s.departmentId ? null : s.departmentKey,
+      created_by: actorId
+    });
+  }
+  const insertedShifts = await insertChunks(sb, "shift", shiftRows);
+
+  return Response.json({
+    ok: true,
+    kind: "schedule",
+    message: `Loaded ${newEmpNames.length} new employees and ${insertedShifts} shifts across ${parsed.summary.weeks} weeks. Skipped ${skipped} shifts already on file.`,
+    summary: { weeks: parsed.summary.weeks, employees: parsed.summary.employees, shifts: parsed.summary.shifts, firstDate: parsed.summary.firstDate, lastDate: parsed.summary.lastDate },
+    inserted: { employees: newEmpNames.length, shifts: insertedShifts },
+    skippedShifts: skipped
+  });
 }
 
 // Upload the 2026 bookings workbook and load the full vendor ledger into a store.
@@ -84,6 +157,12 @@ export async function POST(req: Request) {
       name,
       rows: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows: false, defval: null }) as any[][]
     }));
+    // Route by file type. The weekly schedule has day-name rows and time+name cells; the
+    // bookings ledger has the Vendor and Amount columns. Detect and send to the right loader.
+    if (looksLikeSchedule(sheets)) {
+      return await importScheduleFlow(sb, sheets, storeId, actorId);
+    }
+
     const parsed = parseWorkbook(sheets, storeId);
 
     // Idempotent upsert: keep only vendors whose name is not already in the store.
@@ -125,6 +204,8 @@ export async function POST(req: Request) {
 
     return Response.json({
       ok: true,
+      kind: "bookings",
+      message: `Loaded ${insertedVendors} new vendors, ${insertedOrders} orders, ${insertedInvoices} invoices, ${insertedPayments} payments, and ${insertedNotes} notes. Skipped ${skippedVendors} vendors already in this store.`,
       summary: parsed.summary,
       inserted: {
         vendors: insertedVendors,

@@ -7,6 +7,7 @@ import { chipClass, labelize } from "@/lib/status";
 import { formatCAD } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
+import { canEdit, voidRow } from "@/lib/edit";
 import type { Employee, PayRate, Department, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -33,11 +34,13 @@ export default function HR() {
   // Effective actor and role: the signed-in member in enforced auth, else the dropdown.
   const { effectiveActorId, role } = useEffectiveActor(users, actorId);
   const showMoney = canSeeMoney(role);
+  const mayEdit = canEdit(role);
 
   async function load() {
     let eq = supabase
       .from("employee")
       .select("id, store_id, department_id, full_name, role, phone, email, hire_date, status, notes, department:department_id(name, accent_color)")
+      .is("voided_at", null)
       .order("full_name");
     if (storeId) eq = eq.eq("store_id", storeId);
     const e = await eq;
@@ -46,7 +49,7 @@ export default function HR() {
     setEmployees(emps);
     // Pay rates have no store_id; keep only those for this store's employees.
     const ids = emps.map((x) => x.id);
-    const r = await supabase.from("pay_rate").select("id, employee_id, rate, unit, effective_date").order("effective_date", { ascending: false });
+    const r = await supabase.from("pay_rate").select("id, employee_id, rate, unit, effective_date").is("voided_at", null).order("effective_date", { ascending: false });
     setRates(((r.data as unknown as PayRate[]) || []).filter((x) => x.employee_id && ids.includes(x.employee_id)));
   }
 
@@ -148,6 +151,36 @@ export default function HR() {
     }
   }
 
+  async function delEmp(e: Employee) {
+    if (!window.confirm(`Remove ${e.full_name}? The record is kept for the audit trail but drops off this list.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("employee", e.id, effectiveActorId);
+      if (editEmp === e.id) { setEditEmp(null); setAddEmp(false); }
+      if (rateFor === e.id) setRateFor(null);
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function delRate(r: PayRate) {
+    if (!window.confirm("Remove this pay rate? It is kept for the audit trail but drops off the list and totals.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("pay_rate", r.id, effectiveActorId);
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const ratesFor = (empId: string) => rates.filter((r) => r.employee_id === empId);
   const currentRate = (empId: string) => ratesFor(empId)[0]; // sorted desc by effective_date
 
@@ -231,7 +264,8 @@ export default function HR() {
                   {showMoney && <div className="tabular" style={{ fontWeight: 600 }}>{cr && cr.rate != null ? `${formatCAD(cr.rate)}/${cr.unit === "hour" ? "hr" : "yr"}` : "No rate"}</div>}
                   <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                     {showMoney && <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startRate(e.id)}>{rateFor === e.id ? "Close" : "Pay rates"}</button>}
-                    <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEdit(e)}>Edit</button>
+                    {mayEdit && <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEdit(e)}>Edit</button>}
+                    {mayEdit && <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base)" }} onClick={() => delEmp(e)} disabled={busy}>Delete</button>}
                   </div>
                 </div>
               </div>
@@ -242,9 +276,12 @@ export default function HR() {
                   <div style={{ display: "grid", gap: 4 }}>
                     {list.length === 0 && <span className="help">No pay rates on file.</span>}
                     {list.map((r) => (
-                      <div key={r.id} className="tabular" style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                      <div key={r.id} className="tabular" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13 }}>
                         <span>{r.effective_date || "no date"}</span>
-                        <span>{formatCAD(r.rate)} / {r.unit === "hour" ? "hour" : "salary"}</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span>{formatCAD(r.rate)} / {r.unit === "hour" ? "hour" : "salary"}</span>
+                          {mayEdit && <button className="btn-ghost" style={{ padding: "2px 8px", color: "var(--error-base)" }} onClick={() => delRate(r)} disabled={busy}>Delete</button>}
+                        </span>
                       </div>
                     ))}
                   </div>

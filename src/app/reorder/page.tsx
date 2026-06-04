@@ -37,12 +37,12 @@ export default function Reorder() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let vq = supabase.from("vendor").select("id, name, status, default_terms, notes, department:department_id(name)").order("name");
+      let vq = supabase.from("vendor").select("id, name, status, default_terms, notes, department:department_id(name)").is("voided_at", null).order("name");
       if (storeId) vq = vq.eq("store_id", storeId);
       const v = await vq;
       if (v.error) { setError(v.error.message); setLoading(false); return; }
       setVendors((v.data as unknown as Vend[]) || []);
-      let pq = supabase.from("purchase_order").select("vendor_id, order_amount, ship_date, season_year, status");
+      let pq = supabase.from("purchase_order").select("vendor_id, order_amount, ship_date, season_year, status").is("voided_at", null);
       if (storeId) pq = pq.eq("store_id", storeId);
       const p = await pq;
       setPos((p.data as unknown as PO[]) || []);

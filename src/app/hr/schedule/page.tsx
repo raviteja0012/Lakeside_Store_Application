@@ -7,6 +7,7 @@ import { formatCAD, todayISO } from "@/lib/format";
 import { weekStart, weekDays, addDays, DOW_LABELS, shiftHours, hourlyRateOn } from "@/lib/hr";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
+import { canEdit, deleteRow } from "@/lib/edit";
 import type { Employee, PayRate, Shift, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -25,10 +26,13 @@ export default function Schedule() {
 
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ employee_id: "", work_date: "", start_time: "09:00", end_time: "17:00", notes: "" });
+  const [editShift, setEditShift] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ start_time: "", end_time: "", notes: "" });
 
   // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
   const { effectiveActorId, role } = useEffectiveActor(users, actorId);
   const showMoney = canSeeMoney(role);
+  const mayEdit = canEdit(role);
 
   const days = useMemo(() => weekDays(week), [week]);
   const weekEnd = addDays(week, 6);
@@ -51,7 +55,7 @@ export default function Schedule() {
   useEffect(() => {
     if (!ready) return;
     (async () => {
-      let eq = supabase.from("employee").select("id, store_id, department_id, full_name, role, phone, email, hire_date, status, notes").eq("status", "active").order("full_name");
+      let eq = supabase.from("employee").select("id, store_id, department_id, full_name, role, phone, email, hire_date, status, notes").eq("status", "active").is("voided_at", null).order("full_name");
       if (storeId) eq = eq.eq("store_id", storeId);
       const e = await eq;
       const emps = (e.data as unknown as Employee[]) || [];
@@ -102,6 +106,48 @@ export default function Schedule() {
       if (r.error) throw new Error(r.error.message);
       if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "shift_added", entity: "shift", entity_id: r.data.id as string });
       setAdding(false);
+      await loadShifts();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEditShift(s: Shift) {
+    setAdding(false);
+    setEditShift(s.id);
+    setEditForm({ start_time: (s.start_time || "").slice(0, 5), end_time: (s.end_time || "").slice(0, 5), notes: s.notes || "" });
+  }
+
+  async function saveEditShift() {
+    if (!editShift) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await supabase.from("shift").update({
+        start_time: editForm.start_time || null,
+        end_time: editForm.end_time || null,
+        notes: editForm.notes || null
+      }).eq("id", editShift);
+      if (r.error) throw new Error(r.error.message);
+      if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "shift_edited", entity: "shift", entity_id: editShift });
+      setEditShift(null);
+      await loadShifts();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function delShift(s: Shift) {
+    if (!window.confirm("Delete this shift? This cannot be undone.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteRow("shift", s.id, effectiveActorId);
+      if (editShift === s.id) setEditShift(null);
       await loadShifts();
     } catch (e: any) {
       setError(e.message);
@@ -232,6 +278,41 @@ export default function Schedule() {
               ))}
             </div>
           </div>
+
+          {mayEdit && (
+            <section>
+              <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Edit shifts this week</h2>
+              <p className="help" style={{ marginTop: -6, marginBottom: 10 }}>Adjust the time or notes on a shift, or delete one. Deleting a shift cannot be undone.</p>
+              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                {shifts.length === 0 && <div style={{ padding: 14 }}><span className="help">No shifts this week.</span></div>}
+                {shifts.map((s) => (
+                  <div key={s.id} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "grid", gap: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <div>
+                        <strong style={{ fontSize: 14 }}>{s.employee?.full_name || "Employee"}</strong>
+                        <div className="help tabular">{s.work_date} . {(s.start_time || "").slice(0, 5)}-{(s.end_time || "").slice(0, 5)}{s.notes ? ` . ${s.notes}` : ""}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => (editShift === s.id ? setEditShift(null) : startEditShift(s))}>{editShift === s.id ? "Close" : "Edit"}</button>
+                        <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base)" }} onClick={() => delShift(s)} disabled={busy}>Delete</button>
+                      </div>
+                    </div>
+                    {editShift === s.id && (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, alignItems: "end", borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                        <div><label className="label">Start</label><input className="input tabular" type="time" value={editForm.start_time} onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })} /></div>
+                        <div><label className="label">End</label><input className="input tabular" type="time" value={editForm.end_time} onChange={(e) => setEditForm({ ...editForm, end_time: e.target.value })} /></div>
+                        <div><label className="label">Notes</label><input className="input" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} /></div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button className="btn-primary" onClick={saveEditShift} disabled={busy}>{busy ? "Saving." : "Save shift"}</button>
+                          <button className="btn-ghost" onClick={() => setEditShift(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section>
             <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Hours and pay this week</h2>

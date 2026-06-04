@@ -42,12 +42,12 @@ export default function Reports() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let invq = supabase.from("invoice").select("id, amount, hst_amount, due_date, status, vendor_id, vendor:vendor_id(name, department_id)");
+      let invq = supabase.from("invoice").select("id, amount, hst_amount, due_date, status, vendor_id, vendor:vendor_id(name, department_id)").is("voided_at", null);
       if (storeId) invq = invq.eq("store_id", storeId);
       const inv = await invq;
       if (inv.error) { setError(inv.error.message); setLoading(false); return; }
       setInvoices((inv.data as unknown as Inv[]) || []);
-      let poq = supabase.from("purchase_order").select("vendor_id, order_amount, department_id");
+      let poq = supabase.from("purchase_order").select("vendor_id, order_amount, department_id").is("voided_at", null);
       if (storeId) poq = poq.eq("store_id", storeId);
       const po = await poq;
       setPos((po.data as unknown as PO[]) || []);
@@ -55,7 +55,7 @@ export default function Reports() {
       if (storeId) dq = dq.eq("store_id", storeId);
       const d = await dq;
       setDepts((d.data as unknown as Dept[]) || []);
-      let vq = supabase.from("vendor").select("id, name, department_id");
+      let vq = supabase.from("vendor").select("id, name, department_id").is("voided_at", null);
       if (storeId) vq = vq.eq("store_id", storeId);
       const v = await vq;
       setVendors((v.data as unknown as Vend[]) || []);

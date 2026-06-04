@@ -6,6 +6,7 @@ import { labelize } from "@/lib/status";
 import { daysOverdue, dueBand } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
+import { canEdit, voidRow } from "@/lib/edit";
 import type { MaintenanceAsset, MaintenanceTask, AppUser, Department } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -31,12 +32,13 @@ export default function Maintenance() {
   const [tForm, setTForm] = useState({ title: "", detail: "", asset_id: "", due_date: "", recurrence: "none", assigned_to: "" });
 
   // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
-  const { effectiveActorId } = useEffectiveActor(users, actorId);
+  const { effectiveActorId, role } = useEffectiveActor(users, actorId);
 
   async function load() {
     let aq = supabase
       .from("maintenance_asset")
       .select("id, store_id, department_id, name, category, location, notes, department:department_id(name, accent_color)")
+      .is("voided_at", null)
       .order("name");
     if (storeId) aq = aq.eq("store_id", storeId);
     const a = await aq;
@@ -45,6 +47,7 @@ export default function Maintenance() {
     let tq = supabase
       .from("maintenance_task")
       .select("id, store_id, asset_id, title, detail, due_date, recurrence, status, assigned_to, completed_at, asset:asset_id(name), assignee:assigned_to(full_name)")
+      .is("voided_at", null)
       .order("due_date", { ascending: true });
     if (storeId) tq = tq.eq("store_id", storeId);
     const t = await tq;
@@ -179,6 +182,34 @@ export default function Maintenance() {
     }
   }
 
+  async function deleteAsset(id: string) {
+    if (!window.confirm("Delete this asset? This cannot be undone from here.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("maintenance_asset", id, effectiveActorId);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteTask(id: string) {
+    if (!window.confirm("Delete this task? This cannot be undone from here.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("maintenance_task", id, effectiveActorId);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Group tasks: overdue (open/in_progress past due), due soon (within 7 days), open (rest), done.
   const groups = useMemo(() => {
     const overdue: MaintenanceTask[] = [];
@@ -228,6 +259,9 @@ export default function Maintenance() {
           )}
           {t.status === "done" && (
             <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => setTaskStatus(t.id, "open")} disabled={busy}>Reopen</button>
+          )}
+          {canEdit(role) && (
+            <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base)" }} onClick={() => deleteTask(t.id)} disabled={busy}>Delete</button>
           )}
         </div>
       </div>
@@ -348,7 +382,12 @@ export default function Maintenance() {
                     </div>
                     <div className="help" style={{ marginTop: 4 }}>{[a.location, a.notes].filter(Boolean).join(" . ")}</div>
                   </div>
-                  <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditAsset(a)}>Edit</button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditAsset(a)}>Edit</button>
+                    {canEdit(role) && (
+                      <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base)" }} onClick={() => deleteAsset(a.id)} disabled={busy}>Delete</button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
