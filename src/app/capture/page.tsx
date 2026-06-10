@@ -234,13 +234,15 @@ export default function Capture() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Capture a receiving</h1>
-        <span className="help">Drop the invoice, confirm, done</span>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Capture a receiving</h1>
+          <p className="page-sub">Drop the invoice, confirm, done</p>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 16, display: "grid", gap: 14 }}>
-        <div style={{ display: "grid", gridTemplateColumns: REQUIRE_AUTH ? "1fr" : "1fr 1fr", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: REQUIRE_AUTH ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
           <div>
             <label className="label" htmlFor="dept">Department</label>
             <select id="dept" className="input" value={deptId} onChange={(e) => setDeptId(e.target.value)}>
@@ -261,15 +263,21 @@ export default function Capture() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); pickFile(e.dataTransfer.files?.[0] || null); }}
           onClick={() => inputRef.current?.click()}
-          style={{ border: "2px dashed var(--border)", borderRadius: 12, padding: 24, textAlign: "center", cursor: "pointer", background: "#fff" }}
+          style={{ width: "100%", border: "2px dashed var(--border-strong)", borderRadius: 14, padding: file || preview ? 16 : "44px 20px", textAlign: "center", cursor: "pointer", background: "#fff" }}
         >
           {preview ? (
             <img src={preview} alt="preview" style={{ maxHeight: 220, maxWidth: "100%", borderRadius: 8 }} />
           ) : file ? (
             <p style={{ margin: 0 }}>{file.name}</p>
           ) : (
-            <div>
-              <p style={{ margin: "0 0 4px", fontWeight: 600 }}>Drop a vendor invoice here</p>
+            <div style={{ display: "grid", justifyItems: "center", gap: 4 }}>
+              <span className="kpi-icon" style={{ width: 46, height: 46, borderRadius: 12, marginBottom: 6 }}>
+                <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="7" width="18" height="13" rx="2.5" /><circle cx="12" cy="13.5" r="3.6" /><path d="M9 7l1.4-2.5h3.2L15 7" />
+                </svg>
+              </span>
+              <p style={{ margin: 0, fontWeight: 600, fontSize: 16 }}>Take a photo or choose a file</p>
+              <p style={{ margin: 0, fontWeight: 600, fontSize: 13 }}>Drop a vendor invoice here</p>
               <p className="help" style={{ margin: 0 }}>or click to choose an image or PDF</p>
             </div>
           )}
@@ -277,11 +285,11 @@ export default function Capture() {
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn-primary" onClick={extract} disabled={!file || extracting}>
+          <button className="btn-primary" style={{ flex: "1 1 180px", minWidth: 160 }} onClick={extract} disabled={!file || extracting}>
             {extracting ? "Reading the invoice." : "Extract"}
           </button>
-          {!file && !manual && <button className="btn-ghost" onClick={startManual}>Enter manually</button>}
-          {(file || manual) && <button className="btn-ghost" onClick={() => pickFile(null)}>Clear</button>}
+          {!file && !manual && <button className="btn-ghost" style={{ flex: "1 1 160px", minWidth: 160 }} onClick={startManual}>Enter manually</button>}
+          {(file || manual) && <button className="btn-ghost" style={{ flex: "1 1 160px", minWidth: 160 }} onClick={() => pickFile(null)}>Clear</button>}
         </div>
         {!file && !draft && !saved && (
           <p className="help" style={{ margin: 0 }}>The invoice photo fills the form for you. You confirm one screen, then save. No document? Enter a phone order by hand.</p>
@@ -328,7 +336,7 @@ export default function Capture() {
             <p className="help">No order amount on file for {matchedVendor.name} to compare against.</p>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
             <div>
               <label className="label">Vendor</label>
               <input className="input" value={draft.vendor} onChange={(e) => setDraft({ ...draft, vendor: e.target.value })} />
@@ -341,22 +349,24 @@ export default function Capture() {
 
           <div>
             <label className="label">Line items</label>
-            <div style={{ display: "grid", gap: 8 }}>
-              <div className="help" style={{ display: "grid", gridTemplateColumns: lineGrid, gap: 8 }}>
-                <span>Description</span><span>Qty</span>{showMoney && <span>Unit cost</span>}<span>Retail note</span><span></span>
+            <div className="tbl-wrap">
+              <div style={{ display: "grid", gap: 8, minWidth: showMoney ? 640 : 520 }}>
+                <div className="help" style={{ display: "grid", gridTemplateColumns: lineGrid, gap: 8 }}>
+                  <span>Description</span><span>Qty</span>{showMoney && <span>Unit cost</span>}<span>Retail note</span><span></span>
+                </div>
+                {draft.line_items.map((l, i) => {
+                  const low = l.confidence !== null && l.confidence < LOW_CONFIDENCE;
+                  return (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: lineGrid, gap: 8 }}>
+                      <input className={`input ${low ? "field-flag" : ""}`} style={{ minWidth: 0 }} value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
+                      <input className={`input tabular ${low ? "field-flag" : ""}`} style={{ minWidth: 0 }} value={l.qty ?? ""} onChange={(e) => updateLine(i, { qty: e.target.value === "" ? null : Number(e.target.value) })} />
+                      {showMoney && <input className={`input tabular ${low ? "field-flag" : ""}`} style={{ minWidth: 0 }} value={l.unit_cost ?? ""} onChange={(e) => updateLine(i, { unit_cost: e.target.value === "" ? null : Number(e.target.value) })} />}
+                      <input className="input tabular" style={{ minWidth: 0 }} value={l.retail_price_note ?? ""} onChange={(e) => updateLine(i, { retail_price_note: e.target.value === "" ? null : Number(e.target.value) })} />
+                      <button className="btn-ghost" style={{ padding: "6px 8px" }} onClick={() => removeLine(i)} aria-label="remove line">x</button>
+                    </div>
+                  );
+                })}
               </div>
-              {draft.line_items.map((l, i) => {
-                const low = l.confidence !== null && l.confidence < LOW_CONFIDENCE;
-                return (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: lineGrid, gap: 8 }}>
-                    <input className={`input ${low ? "field-flag" : ""}`} value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
-                    <input className={`input tabular ${low ? "field-flag" : ""}`} value={l.qty ?? ""} onChange={(e) => updateLine(i, { qty: e.target.value === "" ? null : Number(e.target.value) })} />
-                    {showMoney && <input className={`input tabular ${low ? "field-flag" : ""}`} value={l.unit_cost ?? ""} onChange={(e) => updateLine(i, { unit_cost: e.target.value === "" ? null : Number(e.target.value) })} />}
-                    <input className="input tabular" value={l.retail_price_note ?? ""} onChange={(e) => updateLine(i, { retail_price_note: e.target.value === "" ? null : Number(e.target.value) })} />
-                    <button className="btn-ghost" style={{ padding: "6px 8px" }} onClick={() => removeLine(i)} aria-label="remove line">x</button>
-                  </div>
-                );
-              })}
             </div>
             <button className="btn-ghost" style={{ marginTop: 8 }} onClick={addLine}>Add line</button>
           </div>
@@ -374,12 +384,12 @@ export default function Capture() {
             <textarea className="input" rows={2} value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
           </div>
 
-          <div>
-            <button className="btn-primary" onClick={save} disabled={saving || (hasDiscrepancy && !ack)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <button className="btn-primary" style={{ flex: "1 1 200px", minWidth: 160, maxWidth: 360 }} onClick={save} disabled={saving || (hasDiscrepancy && !ack)}>
               {saving ? "Saving." : "Save to feed"}
             </button>
             {hasDiscrepancy && !ack && (
-              <span className="help" style={{ marginLeft: 10 }}>Acknowledge the discrepancy to save.</span>
+              <span className="help">Acknowledge the discrepancy to save.</span>
             )}
           </div>
         </div>
