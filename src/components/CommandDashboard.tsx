@@ -155,10 +155,12 @@ export default function CommandDashboard() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Command dashboard</h1>
-        <span className="help">What the store needs today</span>
-      </div>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Today</h1>
+          <p className="page-sub">What the store needs from you, in one look.</p>
+        </div>
+      </header>
 
       {!SUPABASE_CONFIGURED && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>

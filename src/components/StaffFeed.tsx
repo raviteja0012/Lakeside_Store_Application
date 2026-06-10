@@ -132,8 +132,8 @@ export default function StaffFeed() {
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Recent activity</h1>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
+        <h2 className="page-title" style={{ fontSize: 17 }}>Recent activity</h2>
         <span className="help">Every entry shows who and when</span>
       </div>
 
