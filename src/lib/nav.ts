@@ -1,64 +1,94 @@
-// Header areas and their nav links. Switching the area changes which links show.
-// One area at a time keeps the floor laptop simple. + Capture stays visible in every area.
+// Navigation model for the app shell. Two faces of one app:
+// - Managers and owners get grouped sidebar sections (desktop) and four tabs plus More (phone).
+// - Staff and leads get one short list: the few things they do, nothing else.
+// The shell (src/components/AppShell.tsx) is the only consumer.
 
-export type Area = "ops" | "property" | "hr" | "reports" | "admin";
+export type NavIcon =
+  | "home" | "feed" | "charts" | "capture" | "overdue" | "vendors" | "reports" | "reorder"
+  | "inventory" | "signs" | "knowledge" | "ask" | "people" | "schedule" | "wrench" | "shield"
+  | "import" | "team" | "more";
 
-export type NavItem = { href: string; label: string };
+export type NavItem = { href: string; label: string; icon: NavIcon };
+export type NavGroup = { label: string | null; items: NavItem[]; adminOnly?: boolean };
 
-// Admin is shown only to owners and managers (gated in the Header). It holds the owner tools:
-// loading the bookings sheet and managing staff logins.
-export const AREAS: { key: Area; label: string }[] = [
-  { key: "ops", label: "Store Operations" },
-  { key: "property", label: "Property and Maintenance" },
-  { key: "hr", label: "HR" },
-  { key: "reports", label: "Reports" },
-  { key: "admin", label: "Admin" }
+// The manager and owner sidebar. Group labels are plain words the owner would use,
+// not software words. Admin is gated on the actual role in the shell.
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    label: null,
+    items: [
+      { href: "/", label: "Today", icon: "home" },
+      { href: "/feed", label: "Feed", icon: "feed" },
+      { href: "/dashboard", label: "Charts", icon: "charts" }
+    ]
+  },
+  {
+    label: "Money",
+    items: [
+      { href: "/overdue", label: "Due and overdue", icon: "overdue" },
+      { href: "/vendors", label: "Vendors", icon: "vendors" },
+      { href: "/reports", label: "Reports", icon: "reports" },
+      { href: "/reorder", label: "Reorder", icon: "reorder" }
+    ]
+  },
+  {
+    label: "Store",
+    items: [
+      { href: "/inventory", label: "Inventory", icon: "inventory" },
+      { href: "/price-signs", label: "Price signs", icon: "signs" },
+      { href: "/knowledge", label: "Knowledge", icon: "knowledge" },
+      { href: "/ask", label: "Ask the store", icon: "ask" }
+    ]
+  },
+  {
+    label: "People",
+    items: [
+      { href: "/hr", label: "Employees", icon: "people" },
+      { href: "/hr/schedule", label: "Schedule", icon: "schedule" }
+    ]
+  },
+  {
+    label: "Property",
+    items: [
+      { href: "/maintenance", label: "Maintenance", icon: "wrench" },
+      { href: "/compliance", label: "Compliance", icon: "shield" }
+    ]
+  },
+  {
+    label: "Admin",
+    adminOnly: true,
+    items: [
+      { href: "/import", label: "Import data", icon: "import" },
+      { href: "/team", label: "Team", icon: "team" }
+    ]
+  }
 ];
 
-export const NAV: Record<Area, NavItem[]> = {
-  ops: [
-    { href: "/feed", label: "Feed" },
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/vendors", label: "Vendors" },
-    { href: "/overdue", label: "Overdue" },
-    { href: "/inventory", label: "Inventory" },
-    { href: "/knowledge", label: "Knowledge" },
-    { href: "/ask", label: "Ask" },
-    { href: "/price-signs", label: "Price signs" }
-  ],
-  property: [
-    { href: "/maintenance", label: "Maintenance" },
-    { href: "/compliance", label: "Compliance" }
-  ],
-  hr: [
-    { href: "/hr", label: "Employees" },
-    { href: "/hr/schedule", label: "Schedule" }
-  ],
-  reports: [
-    { href: "/reports", label: "Reports" },
-    { href: "/reorder", label: "Reorder" }
-  ],
-  admin: [
-    { href: "/import", label: "Import data" },
-    { href: "/team", label: "Team" }
-  ]
-};
-
-// The flat nav for the staff and lead task experience (and for a manager previewing staff).
-// No area switcher: the few links they need, in one row. No "My Tasks" page yet.
-export const STAFF_NAV: NavItem[] = [
-  { href: "/", label: "Feed" },
-  { href: "/capture", label: "Capture" },
-  { href: "/ask", label: "Ask" }
+// The staff list: capture-first, then the things a seasonal hire actually opens.
+export const STAFF_ITEMS: NavItem[] = [
+  { href: "/", label: "Today", icon: "home" },
+  { href: "/capture", label: "Capture", icon: "capture" },
+  { href: "/hr/schedule", label: "Schedule", icon: "schedule" },
+  { href: "/ask", label: "Ask", icon: "ask" },
+  { href: "/knowledge", label: "Knowledge", icon: "knowledge" }
 ];
 
-export const AREA_KEY = "rgs_area";
+// Phone tab bars: four destinations plus More. Capture sits in the middle of both.
+export const STAFF_TABS: NavItem[] = STAFF_ITEMS.slice(0, 4);
+export const MANAGER_TABS: NavItem[] = [
+  { href: "/", label: "Today", icon: "home" },
+  { href: "/capture", label: "Capture", icon: "capture" },
+  { href: "/overdue", label: "Due", icon: "overdue" },
+  { href: "/feed", label: "Feed", icon: "feed" }
+];
 
-// Pick the area that owns a path so the right links show on a hard reload or deep link.
-export function areaForPath(path: string): Area {
-  if (path.startsWith("/maintenance") || path.startsWith("/compliance")) return "property";
-  if (path.startsWith("/hr")) return "hr";
-  if (path.startsWith("/reports") || path.startsWith("/reorder")) return "reports";
-  if (path.startsWith("/import") || path.startsWith("/team")) return "admin";
-  return "ops";
+// The single active link: the longest href that matches the path, so /hr/schedule
+// lights Schedule and not Employees, and / lights only on the home page.
+export function activeHref(paths: string[], pathname: string): string | null {
+  let best: string | null = null;
+  for (const href of paths) {
+    const hit = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
+    if (hit && (best === null || href.length > best.length)) best = href;
+  }
+  return best;
 }
