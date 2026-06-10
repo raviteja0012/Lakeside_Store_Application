@@ -129,10 +129,12 @@ export default function Reports() {
 
   return (
     <div style={{ display: "grid", gap: 28 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Reports</h1>
-        <span className="help">From the order and invoice ledger</span>
-      </div>
+      <header className="page-head">
+        <div>
+          <h1 className="page-title">Reports</h1>
+          <p className="page-sub">From the order and invoice ledger</p>
+        </div>
+      </header>
 
       {loading && <p className="help">Loading the reports.</p>}
       {error && (
@@ -213,7 +215,7 @@ export default function Reports() {
 
           <section>
             <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Vendor scorecard</h2>
-            <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+            <div className="card tbl-wrap" style={{ padding: 0 }}>
               <div style={{ minWidth: 560 }}>
                 <div className="help" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.2fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
                   <span>Vendor</span><span style={{ textAlign: "right" }}>Orders</span><span style={{ textAlign: "right" }}>Invoiced</span><span style={{ textAlign: "right" }}>Discrepancies</span>

@@ -107,10 +107,12 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Owner dashboard</h1>
-        <span className="help">Remote oversight at a glance</span>
-      </div>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Owner dashboard</h1>
+          <p className="page-sub">Remote oversight at a glance</p>
+        </div>
+      </header>
 
       {loading && <p className="help">Loading the dashboard.</p>}
       {error && (

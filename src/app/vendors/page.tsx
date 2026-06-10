@@ -121,13 +121,15 @@ export default function Vendors() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Vendors</h1>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <span className="help">{vendors.length} in the directory</span>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Vendors</h1>
+          <p className="page-sub">{vendors.length} in the directory</p>
+        </div>
+        <div className="page-actions">
           <button className="btn-primary" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ Add vendor"}</button>
         </div>
-      </div>
+      </header>
 
       {adding && (
         <div className="card" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 10 }}>

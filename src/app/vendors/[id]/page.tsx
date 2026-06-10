@@ -378,24 +378,24 @@ export default function VendorDetail() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 10 }}>
+      <header className="page-head">
         <div>
           <Link href="/vendors" className="help" style={{ textDecoration: "none" }}>&larr; Vendors</Link>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            <h1 style={{ fontSize: 22, margin: 0 }}>{vendor.name}</h1>
+            <h1 className="page-title">{vendor.name}</h1>
             {vendor.department && <span className="chip" style={{ background: "#EEF1F4", color: vendor.department.accent_color || "#6B7480" }}>{vendor.department.name}</span>}
             <span className={`chip ${chipClass(vendor.status)}`}>{labelize(vendor.status)}</span>
           </div>
         </div>
         {!REQUIRE_AUTH && (
-          <div>
+          <div className="page-actions">
             <label className="help" htmlFor="actor">Acting as </label>
             <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
               {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
             </select>
           </div>
         )}
-      </div>
+      </header>
 
       {error && (
         <div className="card" style={{ padding: 12 }}>
