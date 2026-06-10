@@ -127,11 +127,15 @@ export default function Inventory() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Inventory counts</h1>
-        <button className="btn-primary" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ New count"}</button>
-      </div>
-      <p className="help" style={{ marginTop: -8, marginBottom: 16 }}>Count what is on the shelf, by department. Each count is saved with who and when.</p>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Inventory counts</h1>
+          <p className="page-sub">Count what is on the shelf, by department. Each count is saved with who and when.</p>
+        </div>
+        <div className="page-actions">
+          <button className="btn-primary" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ New count"}</button>
+        </div>
+      </header>
 
       {adding && (
         <div className="card" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 12 }}>

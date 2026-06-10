@@ -42,8 +42,12 @@ export default function Ask() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, margin: "0 0 6px" }}>Ask your store</h1>
-      <p className="help" style={{ marginBottom: 16 }}>Ask about vendors, money owed, reorder rules, or anything in the knowledge base. Answers use only your store data.</p>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Ask your store</h1>
+          <p className="page-sub">Ask about vendors, money owed, reorder rules, or anything in the knowledge base. Answers use only your store data.</p>
+        </div>
+      </header>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
         <input

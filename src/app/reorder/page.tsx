@@ -145,10 +145,14 @@ export default function Reorder() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Reorder suggestions</h1>
-        <span className="help">{suggested.length} flagged</span>
-      </div>
+      <header className="page-head">
+        <div>
+          <h1 className="page-title">Reorder suggestions</h1>
+        </div>
+        <div className="page-actions">
+          <span className="help">{suggested.length} flagged</span>
+        </div>
+      </header>
       <div className="card" style={{ padding: 12, borderColor: "var(--progress-base)" }}>
         <span className="chip chip-progress">Formula-based</span>
         <p className="help" style={{ margin: "8px 0 0", color: "var(--text-primary)" }}>

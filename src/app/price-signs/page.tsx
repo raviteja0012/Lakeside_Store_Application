@@ -79,10 +79,14 @@ export default function PriceSigns() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Price signs</h1>
-        <span className="help">{chosen.length} selected</span>
-      </div>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Price signs</h1>
+        </div>
+        <div className="page-actions">
+          <span className="help">{chosen.length} selected</span>
+        </div>
+      </header>
 
       <input className="input" placeholder="Search items" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 12 }} aria-label="Search items" />
 

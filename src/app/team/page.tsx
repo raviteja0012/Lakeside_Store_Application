@@ -148,7 +148,11 @@ export default function Team() {
   if (REQUIRE_AUTH && ready && !canManage) {
     return (
       <div style={{ display: "grid", gap: 20 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Team</h1>
+        <header className="page-head">
+          <div>
+            <h1 className="page-title">Team</h1>
+          </div>
+        </header>
         <div className="card" style={{ padding: 24, textAlign: "center" }}>
           <p className="help" style={{ margin: 0 }}>Owners and managers only.</p>
         </div>
@@ -158,12 +162,14 @@ export default function Team() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Team</h1>
-      </div>
-      <p className="help" style={{ marginTop: -12 }}>
-        Create and manage staff logins here. Each member gets a real account and can sign in with their email and password.
-      </p>
+      <header className="page-head">
+        <div>
+          <h1 className="page-title">Team</h1>
+          <p className="page-sub">
+            Create and manage staff logins here. Each member gets a real account and can sign in with their email and password.
+          </p>
+        </div>
+      </header>
 
       {!REQUIRE_AUTH && (
         <div className="card" style={{ padding: 16 }}>
@@ -221,27 +227,27 @@ export default function Team() {
       )}
 
       {!loading && members.length > 0 && (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <div className="card tbl-wrap" style={{ padding: 0 }}>
+          <table className="tbl">
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
-                <th style={{ padding: "10px 14px", fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>Name</th>
-                <th style={{ padding: "10px 14px", fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>Role</th>
-                <th style={{ padding: "10px 14px", fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>Email</th>
-                <th style={{ padding: "10px 14px", fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>Login</th>
-                <th style={{ padding: "10px 14px" }} />
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Email</th>
+                <th>Login</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {members.map((m) => (
-                <tr key={m.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                  <td style={{ padding: "10px 14px" }}><strong style={{ fontSize: 14 }}>{m.full_name}</strong></td>
-                  <td style={{ padding: "10px 14px" }}><span className="chip chip-neutral">{m.role}</span></td>
-                  <td style={{ padding: "10px 14px" }} className="help">{m.email || "no email"}</td>
-                  <td style={{ padding: "10px 14px" }}>
+                <tr key={m.id} className="row-hover">
+                  <td><strong style={{ fontSize: 14 }}>{m.full_name}</strong></td>
+                  <td><span className="chip chip-neutral">{m.role}</span></td>
+                  <td className="help">{m.email || "no email"}</td>
+                  <td>
                     {m.auth_id ? <span className="chip chip-success">linked</span> : <span className="chip chip-neutral">not linked</span>}
                   </td>
-                  <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                  <td style={{ textAlign: "right" }}>
                     {member?.id !== m.id && (
                       <button className="btn-ghost" style={{ padding: "4px 10px" }} disabled={busy} onClick={() => removeMember(m)}>Remove</button>
                     )}

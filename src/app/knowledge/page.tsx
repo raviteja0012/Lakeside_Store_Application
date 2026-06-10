@@ -146,11 +146,15 @@ export default function Knowledge() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Knowledge base</h1>
-        <button className="btn-primary" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ Add note"}</button>
-      </div>
-      <p className="help" style={{ marginTop: -8, marginBottom: 16 }}>The rules and exceptions that used to live only in the owner&apos;s head. Search them, add to them.</p>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Knowledge base</h1>
+          <p className="page-sub">The rules and exceptions that used to live only in the owner&apos;s head. Search them, add to them.</p>
+        </div>
+        <div className="page-actions">
+          <button className="btn-primary" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ Add note"}</button>
+        </div>
+      </header>
 
       {adding && (
         <div className="card" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 12 }}>

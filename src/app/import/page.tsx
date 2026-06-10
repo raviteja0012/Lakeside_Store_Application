@@ -68,12 +68,16 @@ export default function Import() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <h1 style={{ fontSize: 22, margin: 0 }}>Import a spreadsheet</h1>
-      <p className="help" style={{ marginTop: -12 }}>
-        Upload the 2026 bookings workbook or the weekly schedule. It detects which one and loads it into the
-        current store: vendors, orders, invoices, and notes from the ledger, or employees and shifts from the
-        schedule. Anything already on file is skipped, so it is safe to re-run.
-      </p>
+      <header className="page-head">
+        <div>
+          <h1 className="page-title">Import a spreadsheet</h1>
+          <p className="page-sub">
+            Upload the 2026 bookings workbook or the weekly schedule. It detects which one and loads it into the
+            current store: vendors, orders, invoices, and notes from the ledger, or employees and shifts from the
+            schedule. Anything already on file is skipped, so it is safe to re-run.
+          </p>
+        </div>
+      </header>
 
       <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
         <div>
