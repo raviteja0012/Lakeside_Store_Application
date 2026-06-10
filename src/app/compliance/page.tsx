@@ -178,18 +178,22 @@ export default function Compliance() {
 
   return (
     <div style={{ display: "grid", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Compliance</h1>
-        {!REQUIRE_AUTH && (
-          <div>
-            <label className="help" htmlFor="actor">Acting as </label>
-            <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-            </select>
-          </div>
-        )}
-      </div>
-      <p className="help" style={{ marginTop: -16 }}>Licences, certifications, and insurance renewals. The store sells regulated pesticides under an Ontario vendor licence that must be kept current.</p>
+      <header className="page-head">
+        <div>
+          <h1 className="page-title">Compliance</h1>
+          <p className="page-sub">Licences, certifications, and insurance renewals. The store sells regulated pesticides under an Ontario vendor licence that must be kept current.</p>
+        </div>
+        <div className="page-actions">
+          {!REQUIRE_AUTH && (
+            <div>
+              <label className="help" htmlFor="actor">Acting as </label>
+              <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+      </header>
 
       {loading && <p className="help">Loading.</p>}
       {error && (

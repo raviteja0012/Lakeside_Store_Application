@@ -186,9 +186,12 @@ export default function HR() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Employees</h1>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+      <header className="page-head">
+        <div>
+          <h1 className="page-title">Employees</h1>
+          <p className="page-sub">Staff records hold personal data under PIPEDA. Collect with consent, limit who can see it, keep it in the Canadian region.</p>
+        </div>
+        <div className="page-actions">
           <Link href="/hr/schedule" className="help" style={{ textDecoration: "none" }}>Schedule and hours &rarr;</Link>
           {!REQUIRE_AUTH && (
             <div>
@@ -200,8 +203,7 @@ export default function HR() {
           )}
           <button className="btn-primary" onClick={startAdd}>{addEmp ? "Close" : "+ Add employee"}</button>
         </div>
-      </div>
-      <p className="help" style={{ marginTop: -12 }}>Staff records hold personal data under PIPEDA. Collect with consent, limit who can see it, keep it in the Canadian region.</p>
+      </header>
 
       {(addEmp || editEmp) && (
         <div className="card" style={{ padding: 16, display: "grid", gap: 10 }}>

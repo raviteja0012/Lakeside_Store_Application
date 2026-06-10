@@ -192,20 +192,22 @@ export default function Schedule() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+      <header className="page-head">
         <div>
           <Link href="/hr" className="help" style={{ textDecoration: "none" }}>&larr; Employees</Link>
-          <h1 style={{ fontSize: 22, margin: "8px 0 0" }}>Weekly schedule</h1>
+          <h1 className="page-title" style={{ marginTop: 8 }}>Weekly schedule</h1>
         </div>
-        {!REQUIRE_AUTH && (
-          <div>
-            <label className="help" htmlFor="actor">Acting as </label>
-            <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-            </select>
-          </div>
-        )}
-      </div>
+        <div className="page-actions">
+          {!REQUIRE_AUTH && (
+            <div>
+              <label className="help" htmlFor="actor">Acting as </label>
+              <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+      </header>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <button className="btn-ghost" onClick={() => setWeek(addDays(week, -7))}>&larr; Previous</button>
@@ -249,7 +251,7 @@ export default function Schedule() {
 
       {!loading && !error && employees.length > 0 && (
         <>
-          <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+          <div className="card tbl-wrap" style={{ padding: 0 }}>
             <div style={{ minWidth: 720 }}>
               <div className="help" style={{ display: "grid", gridTemplateColumns: "160px repeat(7, 1fr)", gap: 1, padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
                 <span>Employee</span>
