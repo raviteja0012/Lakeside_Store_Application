@@ -2,7 +2,13 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-06-11, on branch claude/great-johnson-CFSbi (PR #8, awaiting the owner's merge).
+Last updated: 2026-06-12, on branch claude/great-johnson-CFSbi (PR #8, finalized and awaiting the owner's merge).
+
+Owner decisions (2026-06-12):
+- Direction: finalize and ship what exists; build no new features for now. The two production code-gates (signed document URLs, server-side low-confidence gate) are deferred by the owner's choice to ship as-is. Residual risk noted in the gates table below; recommend closing them before real staff handle invoices.
+- Confirmed the store runs a POS and QuickBooks. This makes two roadmap items feasible and moves them to the top of the expansion list: a one-click QuickBooks export of invoices and payments, and a sales import from the POS that unlocks real margin, shrinkage, and demand-based reorder.
+
+Product review against industry standards (2026-06-12): the app is strong on the buy side (vendors, orders, invoices, payments, counts) and absent on the sell side. Gaps found, in priority order: (1) sales/POS data and a QuickBooks export, now confirmed feasible; (2) three-way match (purchase order, receiving, invoice) before paying, an accounts-payable fraud and overpay control that uses data already in the app; (3) a food-safety compliance module (fridge and freezer temperature logs, sanitation logs, food-handler certifications with expiry, pest-control records) required under Ontario HPPA and O. Reg. 493/17, a natural fit for the existing Compliance screen and capture model; (4) perpetual inventory and CRM, lower priority. None are built; all are recorded here so the review is not repeated.
 
 ## Current state
 Deployed to Vercel from main, backed by Supabase Postgres in ca-central (Toronto). Store-aware with two seeded stores and the real 2026 bookings data (125 vendors, validated against the sheet's printed totals). Locked stack unchanged: Next.js App Router on Vercel, Supabase, Claude Sonnet vision via the Anthropic API.

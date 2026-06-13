@@ -25,6 +25,7 @@ Where the record lives:
 | Importer auto-detect (bookings vs weekly schedule), idempotent loads | e042f3a (PR #8) | Machine gates; dedupe keys reviewed (vendor name; employee plus date plus times) | Verified, awaiting owner |
 | Redesign: app shell, navigation, design system, Today homes | de8459f, fe03392 (PR #8) | Machine gates; class-contract check (all existing class names kept); print rules re-checked for price signs | Verified, awaiting owner |
 | Screen consistency pass and phone-first capture | e28828a, 7f46721, 27e1938, 7aa36d3 (PR #8) | Machine gates per batch; each agent confirmed presentation-only diffs with queries, gating, and handlers untouched | Verified, awaiting owner |
+| edit_delete.sql completeness vs code | f30bc64 (PR #8) | Audited: the 13 tables with voidRow calls equal the 13 the migration adds voided_at/voided_by to; shift.department_id and the daily cadence covered; no read filters voided_at on shift, department, or any child table; migration is additive and idempotent | Verified; merge is safe once the owner runs it |
 
 ## Known-good environment facts (do not re-derive)
 - The build must pass with blank env; auth and data helpers degrade to null rather than throw.
