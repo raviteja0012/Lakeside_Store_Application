@@ -37,8 +37,9 @@ export default function Login() {
   }
 
   return (
-    <div style={{ maxWidth: 380, margin: "8vh auto 0" }}>
-      <div className="card" style={{ padding: 24, display: "grid", gap: 16 }}>
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--app-bg)", padding: 16 }}>
+      <div className="card" style={{ padding: 24, display: "grid", gap: 16, width: "100%", maxWidth: 380 }}>
+        <div className="brand" style={{ marginBottom: 8 }}><span className="brand-mark">R</span><span className="brand-name">Robinsons<br/>General Store</span></div>
         <div>
           <h1 style={{ fontSize: 20, margin: "0 0 4px" }}>Sign in</h1>
           <p className="help" style={{ margin: 0 }}>Robinsons General Store</p>

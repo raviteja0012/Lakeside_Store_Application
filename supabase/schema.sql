@@ -66,9 +66,11 @@ create table receiving_event (
   vendor_id uuid references vendor(id),
   vendor_name text,                 -- raw extracted vendor name before matching
   received_date date,
+  notes text,                       -- free-text notes typed on the capture confirm screen
   source_file_path text,            -- the original invoice or photo in storage
   status text default 'confirmed' check (status in ('pending_document','parsed','validation_error','awaiting_arrival','partial_received','fully_received','disputed','confirmed','closed','cancelled')),
   discrepancy_ack boolean default false,  -- set true when a human acknowledged an order-vs-invoiced difference
+  low_confidence_ack boolean default false, -- set true when a human confirmed the low-confidence (amber) lines
   created_by uuid references app_user(id),
   created_at timestamptz default now()
 );
@@ -83,6 +85,32 @@ create table receiving_line (
   retail_price_note numeric,        -- the price scribbled on the invoice
   confidence numeric                -- model confidence 0 to 1, low values get flagged
 );
+
+-- Database backstop for the human-in-the-loop rule on dollars: a line the model read with low
+-- confidence and that carries a unit cost can only post when its receiving event records the
+-- capture screen's explicit acknowledgement. The UI enforces this first; the trigger makes the
+-- rule hold for any other write path too.
+create or replace function public.enforce_line_confidence()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.confidence is not null and new.confidence < 0.7 and new.unit_cost is not null then
+    if not exists (
+      select 1 from public.receiving_event e
+      where e.id = new.receiving_event_id and e.low_confidence_ack
+    ) then
+      raise exception 'low-confidence dollar line needs the capture acknowledgement before it posts';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists receiving_line_confidence_gate on public.receiving_line;
+create trigger receiving_line_confidence_gate
+  before insert or update on public.receiving_line
+  for each row execute function public.enforce_line_confidence();
 
 create table invoice (
   id uuid primary key default gen_random_uuid(),
@@ -219,7 +247,7 @@ create table maintenance_task (
   title text not null,
   detail text,
   due_date date,
-  recurrence text default 'none' check (recurrence in ('none','weekly','monthly','seasonal','annual')),
+  recurrence text default 'none' check (recurrence in ('none','daily','weekly','monthly','seasonal','annual')),
   status text default 'open' check (status in ('open','in_progress','done')),
   assigned_to uuid references app_user(id),
   completed_at timestamptz,
@@ -273,6 +301,7 @@ create table pay_rate (
 create table shift (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid references employee(id),
+  department_id uuid references department(id),  -- the department this shift covers (staff float across departments)
   work_date date,
   start_time time,
   end_time time,
@@ -280,6 +309,24 @@ create table shift (
   created_by uuid references app_user(id),
   created_at timestamptz default now()
 );
+
+-- Soft delete (void). Transactions and records are kept for the audit trail and the six-year
+-- tax history; "delete" in the app sets voided_at and voided_by and the row drops out of every
+-- list and total (queries filter voided_at is null). Shifts are the exception: they are hard
+-- deleted, so they get no void columns. Additive and idempotent, so this also runs as a migration.
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'vendor','purchase_order','invoice','payment','receiving_event','knowledge_note',
+    'inventory_count','maintenance_asset','maintenance_task','insurance_policy','licence',
+    'employee','pay_rate'
+  ]
+  loop
+    execute format('alter table public.%I add column if not exists voided_at timestamptz;', t);
+    execute format('alter table public.%I add column if not exists voided_by uuid references public.app_user(id);', t);
+  end loop;
+end $$;
 
 -- DEV ONLY row-level security.
 -- These policies allow the anon key to read and write so the demo runs without login.

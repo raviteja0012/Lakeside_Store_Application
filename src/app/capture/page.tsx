@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
 import { formatCAD, round2 } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
-import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
+import { REQUIRE_AUTH, authHeader, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import type { AppUser, Department, Draft, LineItem } from "@/lib/types";
 
 type VendorLite = { id: string; name: string; department_id: string | null; default_terms: string | null };
@@ -38,6 +38,7 @@ export default function Capture() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [manual, setManual] = useState(false);
   const [ack, setAck] = useState(false);
+  const [lowAck, setLowAck] = useState(false);
 
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -58,10 +59,10 @@ export default function Capture() {
       if (storeId) dq = dq.eq("store_id", storeId);
       const { data: depts } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
-      let vq = supabase.from("vendor").select("id, name, department_id, default_terms");
+      let vq = supabase.from("vendor").select("id, name, department_id, default_terms").is("voided_at", null);
       if (storeId) vq = vq.eq("store_id", storeId);
       const { data: vs } = await vq;
-      let pq = supabase.from("purchase_order").select("vendor_id, order_amount");
+      let pq = supabase.from("purchase_order").select("vendor_id, order_amount").is("voided_at", null);
       if (storeId) pq = pq.eq("store_id", storeId);
       const { data: po } = await pq;
       const { data: tr } = await supabase.from("tax_rules").select("rate").eq("region", "Ontario").limit(1).maybeSingle();
@@ -84,6 +85,7 @@ export default function Capture() {
     setDraft(null);
     setManual(false);
     setAck(false);
+    setLowAck(false);
     setFile(f);
     if (preview) URL.revokeObjectURL(preview);
     setPreview(f && f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
@@ -98,6 +100,7 @@ export default function Capture() {
     if (preview) URL.revokeObjectURL(preview);
     setPreview(null);
     setAck(false);
+    setLowAck(false);
     setManual(true);
     setDraft({ vendor: "", invoice_date: "", notes: "", line_items: [{ description: "", qty: null, unit_cost: null, retail_price_note: null, confidence: 1 }] });
   }
@@ -110,12 +113,13 @@ export default function Capture() {
       const imageBase64 = await fileToBase64(file);
       const resp = await fetch("/api/extract", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({ imageBase64, mediaType: file.type })
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || data.error || "extraction failed");
       setAck(false);
+      setLowAck(false);
       setDraft({
         vendor: data.vendor || "",
         invoice_date: data.invoice_date || "",
@@ -138,7 +142,10 @@ export default function Capture() {
   function updateLine(i: number, patch: Partial<LineItem>) {
     if (!draft) return;
     const next = [...draft.line_items];
-    next[i] = { ...next[i], ...patch };
+    // A human retyping the description, qty, or unit cost IS the verification, so the
+    // edit clears the line's low-confidence flag.
+    const humanKeyed = "description" in patch || "qty" in patch || "unit_cost" in patch;
+    next[i] = { ...next[i], ...patch, ...(humanKeyed ? { confidence: 1 } : {}) };
     setDraft({ ...draft, line_items: next });
   }
 
@@ -168,9 +175,17 @@ export default function Capture() {
   // gates the save) for roles that can see money. Staff capture quantities and post.
   const hasDiscrepancy = showMoney && discrepancy != null && Math.abs(discrepancy) >= 0.01;
 
+  // The hard low-confidence gate: any line still flagged amber blocks the save until the
+  // person either fixes it (editing clears the flag) or explicitly confirms they checked it.
+  // The acknowledgement is stored on the event, and the database trigger refuses a
+  // low-confidence dollar line whose event lacks it, so the rule holds outside this screen too.
+  const lowLines = draft ? draft.line_items.filter((l) => l.confidence !== null && l.confidence < LOW_CONFIDENCE).length : 0;
+  const hasLowFlags = lowLines > 0;
+
   async function save() {
     if (!draft || (!file && !manual) || !deptId || !effectiveActorId) return;
     if (hasDiscrepancy && !ack) return;
+    if (hasLowFlags && !lowAck) return;
     setSaving(true);
     setError(null);
     try {
@@ -190,9 +205,11 @@ export default function Capture() {
           vendor_id: matchedVendor?.id ?? null,
           vendor_name: draft.vendor,
           received_date: draft.invoice_date || null,
+          notes: draft.notes || null,
           source_file_path: path,
           status: "confirmed",
           discrepancy_ack: hasDiscrepancy ? ack : false,
+          low_confidence_ack: hasLowFlags ? lowAck : false,
           created_by: effectiveActorId
         })
         .select("id")
@@ -224,6 +241,7 @@ export default function Capture() {
       if (preview) URL.revokeObjectURL(preview);
       setPreview(null);
       setAck(false);
+      setLowAck(false);
       setTimeout(() => router.push("/"), 900);
     } catch (e: any) {
       setError(e.message);
@@ -234,13 +252,15 @@ export default function Capture() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Capture a receiving</h1>
-        <span className="help">Drop the invoice, confirm, done</span>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Capture a receiving</h1>
+          <p className="page-sub">Drop the invoice, confirm, done</p>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 16, display: "grid", gap: 14 }}>
-        <div style={{ display: "grid", gridTemplateColumns: REQUIRE_AUTH ? "1fr" : "1fr 1fr", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: REQUIRE_AUTH ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
           <div>
             <label className="label" htmlFor="dept">Department</label>
             <select id="dept" className="input" value={deptId} onChange={(e) => setDeptId(e.target.value)}>
@@ -261,15 +281,21 @@ export default function Capture() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); pickFile(e.dataTransfer.files?.[0] || null); }}
           onClick={() => inputRef.current?.click()}
-          style={{ border: "2px dashed var(--border)", borderRadius: 12, padding: 24, textAlign: "center", cursor: "pointer", background: "#fff" }}
+          style={{ width: "100%", border: "2px dashed var(--border-strong)", borderRadius: 14, padding: file || preview ? 16 : "44px 20px", textAlign: "center", cursor: "pointer", background: "#fff" }}
         >
           {preview ? (
             <img src={preview} alt="preview" style={{ maxHeight: 220, maxWidth: "100%", borderRadius: 8 }} />
           ) : file ? (
             <p style={{ margin: 0 }}>{file.name}</p>
           ) : (
-            <div>
-              <p style={{ margin: "0 0 4px", fontWeight: 600 }}>Drop a vendor invoice here</p>
+            <div style={{ display: "grid", justifyItems: "center", gap: 4 }}>
+              <span className="kpi-icon" style={{ width: 46, height: 46, borderRadius: 12, marginBottom: 6 }}>
+                <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="7" width="18" height="13" rx="2.5" /><circle cx="12" cy="13.5" r="3.6" /><path d="M9 7l1.4-2.5h3.2L15 7" />
+                </svg>
+              </span>
+              <p style={{ margin: 0, fontWeight: 600, fontSize: 16 }}>Take a photo or choose a file</p>
+              <p style={{ margin: 0, fontWeight: 600, fontSize: 13 }}>Drop a vendor invoice here</p>
               <p className="help" style={{ margin: 0 }}>or click to choose an image or PDF</p>
             </div>
           )}
@@ -277,11 +303,11 @@ export default function Capture() {
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn-primary" onClick={extract} disabled={!file || extracting}>
+          <button className="btn-primary" style={{ flex: "1 1 180px", minWidth: 160 }} onClick={extract} disabled={!file || extracting}>
             {extracting ? "Reading the invoice." : "Extract"}
           </button>
-          {!file && !manual && <button className="btn-ghost" onClick={startManual}>Enter manually</button>}
-          {(file || manual) && <button className="btn-ghost" onClick={() => pickFile(null)}>Clear</button>}
+          {!file && !manual && <button className="btn-ghost" style={{ flex: "1 1 160px", minWidth: 160 }} onClick={startManual}>Enter manually</button>}
+          {(file || manual) && <button className="btn-ghost" style={{ flex: "1 1 160px", minWidth: 160 }} onClick={() => pickFile(null)}>Clear</button>}
         </div>
         {!file && !draft && !saved && (
           <p className="help" style={{ margin: 0 }}>The invoice photo fills the form for you. You confirm one screen, then save. No document? Enter a phone order by hand.</p>
@@ -328,7 +354,21 @@ export default function Capture() {
             <p className="help">No order amount on file for {matchedVendor.name} to compare against.</p>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
+          {hasLowFlags && (
+            <div className="card" style={{ padding: 12, background: "var(--warning-tint)", borderColor: "var(--warning-base)" }}>
+              <span className="chip chip-warning">&#9888; Uncertain fields</span>
+              <p className="help" style={{ marginTop: 8, color: "var(--text-primary)" }}>
+                {lowLines === 1 ? "1 line was" : `${lowLines} lines were`} read with low confidence and {lowLines === 1 ? "is" : "are"} shown in amber.
+                Retype anything wrong (that clears the flag), then confirm you checked the rest.
+              </p>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, fontSize: 13 }}>
+                <input type="checkbox" checked={lowAck} onChange={(e) => setLowAck(e.target.checked)} />
+                I checked every amber line
+              </label>
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
             <div>
               <label className="label">Vendor</label>
               <input className="input" value={draft.vendor} onChange={(e) => setDraft({ ...draft, vendor: e.target.value })} />
@@ -341,22 +381,24 @@ export default function Capture() {
 
           <div>
             <label className="label">Line items</label>
-            <div style={{ display: "grid", gap: 8 }}>
-              <div className="help" style={{ display: "grid", gridTemplateColumns: lineGrid, gap: 8 }}>
-                <span>Description</span><span>Qty</span>{showMoney && <span>Unit cost</span>}<span>Retail note</span><span></span>
+            <div className="tbl-wrap">
+              <div style={{ display: "grid", gap: 8, minWidth: showMoney ? 640 : 520 }}>
+                <div className="help" style={{ display: "grid", gridTemplateColumns: lineGrid, gap: 8 }}>
+                  <span>Description</span><span>Qty</span>{showMoney && <span>Unit cost</span>}<span>Retail note</span><span></span>
+                </div>
+                {draft.line_items.map((l, i) => {
+                  const low = l.confidence !== null && l.confidence < LOW_CONFIDENCE;
+                  return (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: lineGrid, gap: 8 }}>
+                      <input className={`input ${low ? "field-flag" : ""}`} style={{ minWidth: 0 }} value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
+                      <input className={`input tabular ${low ? "field-flag" : ""}`} style={{ minWidth: 0 }} value={l.qty ?? ""} onChange={(e) => updateLine(i, { qty: e.target.value === "" ? null : Number(e.target.value) })} />
+                      {showMoney && <input className={`input tabular ${low ? "field-flag" : ""}`} style={{ minWidth: 0 }} value={l.unit_cost ?? ""} onChange={(e) => updateLine(i, { unit_cost: e.target.value === "" ? null : Number(e.target.value) })} />}
+                      <input className="input tabular" style={{ minWidth: 0 }} value={l.retail_price_note ?? ""} onChange={(e) => updateLine(i, { retail_price_note: e.target.value === "" ? null : Number(e.target.value) })} />
+                      <button className="btn-ghost" style={{ padding: "6px 8px" }} onClick={() => removeLine(i)} aria-label="remove line">x</button>
+                    </div>
+                  );
+                })}
               </div>
-              {draft.line_items.map((l, i) => {
-                const low = l.confidence !== null && l.confidence < LOW_CONFIDENCE;
-                return (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: lineGrid, gap: 8 }}>
-                    <input className={`input ${low ? "field-flag" : ""}`} value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
-                    <input className={`input tabular ${low ? "field-flag" : ""}`} value={l.qty ?? ""} onChange={(e) => updateLine(i, { qty: e.target.value === "" ? null : Number(e.target.value) })} />
-                    {showMoney && <input className={`input tabular ${low ? "field-flag" : ""}`} value={l.unit_cost ?? ""} onChange={(e) => updateLine(i, { unit_cost: e.target.value === "" ? null : Number(e.target.value) })} />}
-                    <input className="input tabular" value={l.retail_price_note ?? ""} onChange={(e) => updateLine(i, { retail_price_note: e.target.value === "" ? null : Number(e.target.value) })} />
-                    <button className="btn-ghost" style={{ padding: "6px 8px" }} onClick={() => removeLine(i)} aria-label="remove line">x</button>
-                  </div>
-                );
-              })}
             </div>
             <button className="btn-ghost" style={{ marginTop: 8 }} onClick={addLine}>Add line</button>
           </div>
@@ -374,12 +416,15 @@ export default function Capture() {
             <textarea className="input" rows={2} value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
           </div>
 
-          <div>
-            <button className="btn-primary" onClick={save} disabled={saving || (hasDiscrepancy && !ack)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <button className="btn-primary" style={{ flex: "1 1 200px", minWidth: 160, maxWidth: 360 }} onClick={save} disabled={saving || (hasDiscrepancy && !ack) || (hasLowFlags && !lowAck)}>
               {saving ? "Saving." : "Save to feed"}
             </button>
             {hasDiscrepancy && !ack && (
-              <span className="help" style={{ marginLeft: 10 }}>Acknowledge the discrepancy to save.</span>
+              <span className="help">Acknowledge the discrepancy to save.</span>
+            )}
+            {hasLowFlags && !lowAck && (
+              <span className="help">Check the amber lines to save.</span>
             )}
           </div>
         </div>

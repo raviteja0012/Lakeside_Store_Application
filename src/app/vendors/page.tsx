@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
+import { canEdit, voidRow } from "@/lib/edit";
 import type { Vendor, Department, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -25,12 +26,13 @@ export default function Vendors() {
   const [form, setForm] = useState({ name: "", department_id: "", rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active" });
 
   // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
-  const { effectiveActorId } = useEffectiveActor(users, actorId);
+  const { effectiveActorId, role } = useEffectiveActor(users, actorId);
 
   async function load() {
     let query = supabase
       .from("vendor")
       .select("id, name, rep_name, phone, email, products_we_carry, default_terms, status, notes, department:department_id(name, accent_color)")
+      .is("voided_at", null)
       .order("name");
     if (storeId) query = query.eq("store_id", storeId);
     const { data, error } = await query;
@@ -92,6 +94,20 @@ export default function Vendors() {
     }
   }
 
+  async function removeVendor(v: Vendor) {
+    if (!window.confirm(`Delete ${v.name}? It will be hidden from the directory but kept for the tax history.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("vendor", v.id, effectiveActorId);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return vendors;
@@ -105,13 +121,15 @@ export default function Vendors() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Vendors</h1>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <span className="help">{vendors.length} in the directory</span>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Vendors</h1>
+          <p className="page-sub">{vendors.length} in the directory</p>
+        </div>
+        <div className="page-actions">
           <button className="btn-primary" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ Add vendor"}</button>
         </div>
-      </div>
+      </header>
 
       {adding && (
         <div className="card" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 10 }}>
@@ -174,6 +192,16 @@ export default function Vendors() {
               {v.department && <span className="chip" style={{ background: "#EEF1F4", color: v.department.accent_color || "#6B7480" }}>{v.department.name}</span>}
               <span className={`chip ${chipClass(v.status)}`}>{labelize(v.status)}</span>
               {v.default_terms && <span className="chip chip-neutral">{v.default_terms}</span>}
+              {canEdit(role) && (
+                <button
+                  className="btn-ghost"
+                  style={{ marginLeft: "auto", padding: "4px 10px" }}
+                  disabled={busy}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeVendor(v); }}
+                >
+                  Delete
+                </button>
+              )}
             </div>
             {v.products_we_carry && <div className="help" style={{ marginTop: 6 }}>{v.products_we_carry}</div>}
             {(v.rep_name || v.phone) && (

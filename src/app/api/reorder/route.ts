@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { resolveMember, memberSeesMoney } from "@/lib/serverMember";
 
 export const runtime = "nodejs";
 
@@ -8,6 +8,7 @@ const CURRENT_SEASON = new Date().getFullYear();
 // Reorder summary. Pulls the same order ledger and knowledge notes the /reorder screen uses
 // and asks the model to summarize the likely reorders. Mirrors /api/ask: no-op (200 with a
 // clear message) when ANTHROPIC_API_KEY is missing, so the screen never crashes.
+// The summary quotes order amounts, so in enforced mode it is limited to money roles.
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -16,11 +17,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "AI summary is off. Set ANTHROPIC_API_KEY to enable it. The formula-based list above still works." });
     }
 
+    const resolved = await resolveMember(req);
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.message }, { status: resolved.status });
+    }
+    const { client: db, member } = resolved;
+    if (member && !memberSeesMoney(member.role)) {
+      return NextResponse.json({ error: "The reorder summary quotes order amounts, so it needs a lead, manager, or owner login." }, { status: 403 });
+    }
+
     const body = await req.json().catch(() => ({}));
-    const storeId: string | null = body?.store_id || null;
-    const scopeVendor = supabase.from("vendor").select("name, status, default_terms, notes, department:department_id(name)");
-    const scopePo = supabase.from("purchase_order").select("vendor_id, order_amount, ship_date, season_year, status, vendor:vendor_id(name)");
-    const scopeNote = supabase.from("knowledge_note").select("topic, body, tags");
+    const storeId: string | null = member?.store_id || body?.store_id || null;
+    const scopeVendor = db.from("vendor").select("name, status, default_terms, notes, department:department_id(name)").is("voided_at", null);
+    const scopePo = db.from("purchase_order").select("vendor_id, order_amount, ship_date, season_year, status, vendor:vendor_id(name)").is("voided_at", null);
+    const scopeNote = db.from("knowledge_note").select("topic, body, tags").is("voided_at", null);
     const [vendors, pos, notes] = await Promise.all([
       storeId ? scopeVendor.eq("store_id", storeId) : scopeVendor,
       storeId ? scopePo.eq("store_id", storeId) : scopePo,

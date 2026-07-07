@@ -117,6 +117,11 @@ export async function POST(req: Request) {
     if (!(VALID_ROLES as readonly string[]).includes(role)) {
       return Response.json({ ok: false, message: "Pick a role of staff, lead, manager, or owner." }, { status: 200 });
     }
+    // Only an owner can mint another owner. Without this, a manager could create an owner
+    // account and climb to full control of the store.
+    if (role === "owner" && caller.role !== "owner") {
+      return Response.json({ ok: false, message: "Only the owner can create another owner." }, { status: 403 });
+    }
 
     const created = await db.auth.admin.createUser({ email, password, email_confirm: true });
     if (created.error || !created.data?.user) {
@@ -165,12 +170,16 @@ export async function DELETE(req: Request) {
 
     const { data: target } = await db
       .from("app_user")
-      .select("id, store_id, auth_id")
+      .select("id, store_id, auth_id, role")
       .eq("id", id)
       .maybeSingle();
 
     if (!target || target.store_id !== caller.store_id) {
       return Response.json({ ok: false, message: "That member is not in your store." }, { status: 200 });
+    }
+    // A manager cannot remove the owner. Same escalation guard as on create.
+    if (target.role === "owner" && caller.role !== "owner") {
+      return Response.json({ ok: false, message: "Only the owner can remove an owner." }, { status: 403 });
     }
 
     if (target.auth_id) {

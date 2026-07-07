@@ -34,24 +34,28 @@ robinsons-store/
   supabase/seed_bookings.sql the full real ledger (125 vendors), generated and validated against the sheet totals
   supabase/auth_setup.sql    the production cutover: auth_id, email auto-link, per-store per-role policies, storage lockdown
   scripts/generate-seed-bookings.mjs  regenerate seed_bookings.sql from the bookings .xlsx; self-checks against printed totals
-  src/app/page.tsx           the department feed home
+  src/app/page.tsx           role-driven home: Today dashboard (manager/owner) or staff Today + feed
   src/app/capture/page.tsx   capture, extract, confirm, save (uploads the document to storage)
   src/app/dashboard, reports, overdue, vendors, vendors/[id], inventory, reorder,
     price-signs, knowledge, ask, maintenance, compliance, hr, hr/schedule, login
   src/app/api/extract, ask, reorder, alerts   the route handlers
-  src/app/globals.css        the color tokens
-  src/components/  Header (store picker + area switcher), AuthGate (the client auth guard)
-  src/lib/  supabaseClient, types, auth, store, format, status, hr, charts, nav, importBookings
+  src/app/globals.css        the design system: tokens, app shell layout, page scaffolding, controls
+  src/components/  AppShell (all chrome: sidebar, topbar, phone tab bar, More sheet), AuthGate,
+    NotificationBell, CommandDashboard (manager Today home), KpiRow, StaffFeed
+  src/lib/  supabaseClient, types, auth, store, format, status, hr, charts, importBookings,
+    importSchedule, nav (grouped sidebar model), view (View-as preview),
+    edit (canEdit, soft-delete voidRow, hard deleteRow), notify (bell items)
   vercel.json                the daily /api/alerts cron
-  docs/  STATUS, ARCHITECTURE, DATA_SOURCES, DATA_INVENTORY, SOURCES
+  docs/  STATUS, VERIFICATION (per-feature sign-off record), ARCHITECTURE, DATA_SOURCES,
+    DATA_INVENTORY, SOURCES
   RUNBOOK.md, CONTRIBUTING.md
   .claude/skills/robinsons-store/  this skill, so it travels with the code
 ```
 
 ## Screen and route map
 Every screen is a client component that reads through useActiveStore() and filters by the active store_id. Money is gated where noted.
-- `/` feed: the department feed of recent receiving events, with document thumbnails from the documents bucket (getPublicUrl). Line totals are money-gated.
-- `/capture`: the core loop. Upload an invoice photo or PDF, /api/extract returns structured lines with per-line confidence, a confirm screen flags low-confidence fields and an order-vs-invoiced discrepancy a human must acknowledge, then save() uploads the file and writes receiving_event plus receiving_line plus an activity_log row. Has a manual-entry path with no file (phone orders).
+- `/` feed: the department feed of recent receiving events, with document thumbnails resolved through docUrls() in src/lib/docs.ts (signed URLs, public fallback in demo). Line totals are money-gated.
+- `/capture`: the core loop. Upload an invoice photo or PDF, /api/extract returns structured lines with per-line confidence, a confirm screen flags low-confidence (amber) lines and an order-vs-invoiced discrepancy. The save is hard-blocked until every amber line is fixed (a human edit sets confidence to 1) or the person checks "I checked every amber line"; that acknowledgement is stored on receiving_event.low_confidence_ack and a database trigger (receiving_line_confidence_gate) refuses a low-confidence dollar line without it. Then save() uploads the file and writes receiving_event plus receiving_line plus an activity_log row. Has a manual-entry path with no file (phone orders).
 - `/dashboard`: KPIs and charts (src/lib/charts, Okabe-Ito palette).
 - `/reports`: reporting views. Money-gated figures.
 - `/overdue`: invoices overdue or due soon, by dueBand(). Money-gated.
@@ -64,7 +68,7 @@ Every screen is a client component that reads through useActiveStore() and filte
 - `/maintenance`: property assets and recurring tasks with due dates.
 - `/compliance`: the pesticide licence and its expiry, alongside insurance policies. Premiums money-gated.
 - `/hr` and `/hr/schedule`: employees, effective-dated pay rates, the weekly schedule. Pay and estimated pay money-gated.
-- `/import`: owner and manager tool (Admin area) to upload the 2026 bookings .xlsx and load the full vendor ledger into the active store. Parses with the same logic as scripts/generate-seed-bookings.mjs (shared in src/lib/importBookings.ts), idempotent by vendor name.
+- `/import`: owner and manager tool (Admin group) that accepts either the 2026 bookings .xlsx or the weekly schedule .xlsx; /api/import detects which and loads it idempotently (vendors by name via src/lib/importBookings.ts; employees by name and shifts deduped by employee, date, start, end via src/lib/importSchedule.ts).
 - `/team`: owner and manager tool (Admin area) to create and remove staff logins in-app. Calls /api/admin/users, which uses the Supabase service role to create the auth account and the linked app_user row in one step. Removes the dashboard from day-to-day staff management.
 - `/login`: email and password sign-in. Only reachable and only enforced when REQUIRE_AUTH is on.
 - API routes: `/api/extract` (Claude vision), `/api/ask` (context answer), `/api/reorder` (suggestions + summary), `/api/alerts` (daily due-date email, Resend, cron-guarded by x-cron-secret), `/api/import` (parse the bookings .xlsx and upsert the ledger), `/api/admin/users` (service-role user management, owner and manager only, store-scoped).
@@ -73,11 +77,13 @@ Every screen is a client component that reads through useActiveStore() and filte
 Data model rules and the entity list are in references/data-model.md. The short version: snake_case, audit on every write through activity_log plus created_by, a confidence value on every extracted line, low-confidence dollar fields never auto-post, money as numeric dollars in the demo and integer cents before production.
 
 App conventions to apply on every screen:
-- Multi-store: read through useActiveStore() and filter every query by the active store_id; stamp store_id on every insert. The header has a store picker and an area switcher (Store Operations, Property and Maintenance, HR, Reports) defined in src/lib/nav.ts.
+- Multi-store: read through useActiveStore() and filter every query by the active store_id; stamp store_id on every insert. All chrome lives in AppShell: managers and owners get the grouped sidebar (Today, Money, Store, People, Property, Admin) from src/lib/nav.ts plus a topbar with View as, the bell, and Capture; staff get a four-item list; phones get a bottom tab bar and a More sheet. Screens never draw their own nav.
+- Page scaffolding: every screen opens with the page-head pattern (page-title, page-sub, page-actions) and uses tbl-wrap/tbl for tables. New screens must follow it.
+- Edit and delete: gate with canEdit(role) from src/lib/edit.ts (owner and manager only), confirm every delete, use voidRow for soft deletes (ledger and master data) and deleteRow only for shifts, and filter every read with .is("voided_at", null) on voidable tables. Requires the columns from supabase/edit_delete.sql.
 - Author: use useEffectiveActor() for created_by and activity_log.actor_id (the signed-in member in enforced auth, the "Acting as" dropdown in demo). Hide the dropdown with {!REQUIRE_AUTH && ...}.
 - Money by role: hide cost and margin (unit cost, order and invoice amounts, payments, premiums, pay) from the staff role with canSeeMoney(role) from src/lib/auth. Retail, customer-facing prices are not hidden.
 - Money and dates: format money with formatCAD(); compare dates with todayISO(), daysOverdue(), and dueBand() from src/lib/format.
-- Documents: upload captured files to the `documents` bucket via supabase.storage; store the path on source_file_path or confirmation_file_path. Read thumbnails with getPublicUrl. The bucket and its policy are created by schema.sql (dev) and locked to signed-in users by auth_setup.sql (production).
+- Documents: upload captured files to the `documents` bucket via supabase.storage; store the path on source_file_path or confirmation_file_path. Read thumbnails through docUrls() from src/lib/docs.ts (signed URLs with a public fallback), never getPublicUrl directly. The bucket and its policy are created by schema.sql (dev, public) and made private and authenticated-only by auth_setup.sql (production).
 
 ## Auth and security model
 The app runs in two modes, switched by the build-time env var NEXT_PUBLIC_REQUIRE_AUTH (src/lib/auth.ts reads it once as REQUIRE_AUTH).
@@ -92,7 +98,7 @@ How identity resolves:
 
 Turning on real auth (the production cutover, about five minutes, in RUNBOOK.md "Turn on login"): enable Email auth, create one account per role with the SAME email as the seeded member (owner@/manager@/staff@/lead@robinsons.demo), run auth_setup.sql (it links every account to its member automatically by email, replaces the dev policies with per-store per-role ones, and locks the documents bucket to signed-in users), then set NEXT_PUBLIC_REQUIRE_AUTH=true in Vercel and redeploy. Login cannot be the compiled default because the accounts have to exist first and only the owner can create them in their Supabase; the security is fully built and ready, the switch-on is the owner's five-minute step.
 
-Storage security: the documents bucket is public-read so feed thumbnails load. Uploads require a policy on storage.objects or every capture fails with "new row violates row-level security policy". schema.sql opens the bucket for the demo (anon write); auth_setup.sql narrows it to authenticated. Moving to signed URLs (so a staff role cannot open an invoice image URL and read amounts the UI hides) is the documented next hardening step, not done yet.
+Storage security: the app reads document thumbnails through docUrls() in src/lib/docs.ts, which creates signed, expiring URLs and falls back to the public URL only for the open demo bucket. Uploads require a policy on storage.objects or every capture fails with "new row violates row-level security policy". schema.sql opens the bucket for the demo (anon write, public-read); auth_setup.sql makes the bucket PRIVATE and narrows access to authenticated members, so in production no permanent public link to an invoice photo exists. Never reintroduce getPublicUrl as the primary read path.
 
 ## Environment variables
 - NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY: the Supabase project. Without both, SUPABASE_CONFIGURED is false and every screen shows its "Connection" card.
@@ -144,7 +150,7 @@ Exact color tokens, the one-meaning-per-hue status mapping, and the form and acc
 - Keep secrets out of the repo and out of chat. Env values go straight into Supabase and Vercel.
 
 ## Build sequence
-Phases 1-6 plus property, HR, compliance, multi-store, and the auth cutover are shipped; see docs/STATUS.md. Deferred: pgvector at scale, ML reorder, SMS, signed-URL document storage, integer-cents money.
+Phases 1-6 plus property, HR, compliance, multi-store, the auth cutover, signed-URL document storage, and the hard low-confidence gate are shipped; see docs/STATUS.md. Deferred: pgvector at scale, ML reorder, SMS, integer-cents money.
 
 ## Output and communication rules for this project
 - Lead with the answer, then context. Short and direct. No hedging or caveats unless asked.

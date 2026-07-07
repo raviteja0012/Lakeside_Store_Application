@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, dueBand } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
+import { canEdit, voidRow } from "@/lib/edit";
 import type { Licence, InsurancePolicy, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -32,12 +33,12 @@ export default function Compliance() {
   const showMoney = canSeeMoney(role);
 
   async function load() {
-    let lq = supabase.from("licence").select("id, store_id, name, authority, number, holder, expiry_date").order("expiry_date", { ascending: true, nullsFirst: false });
+    let lq = supabase.from("licence").select("id, store_id, name, authority, number, holder, expiry_date").is("voided_at", null).order("expiry_date", { ascending: true, nullsFirst: false });
     if (storeId) lq = lq.eq("store_id", storeId);
     const l = await lq;
     if (l.error) { setError(l.error.message); return; }
     setLicences((l.data as unknown as Licence[]) || []);
-    let pq = supabase.from("insurance_policy").select("id, store_id, name, provider, policy_number, coverage, premium, renewal_date, notes").order("renewal_date", { ascending: true, nullsFirst: false });
+    let pq = supabase.from("insurance_policy").select("id, store_id, name, provider, policy_number, coverage, premium, renewal_date, notes").is("voided_at", null).order("renewal_date", { ascending: true, nullsFirst: false });
     if (storeId) pq = pq.eq("store_id", storeId);
     const p = await pq;
     setPolicies((p.data as unknown as InsurancePolicy[]) || []);
@@ -147,20 +148,52 @@ export default function Compliance() {
     }
   }
 
+  async function deleteLic(id: string) {
+    if (!window.confirm("Delete this licence? This cannot be undone from here.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("licence", id, effectiveActorId);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deletePol(id: string) {
+    if (!window.confirm("Delete this policy? This cannot be undone from here.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("insurance_policy", id, effectiveActorId);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div style={{ display: "grid", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Compliance</h1>
-        {!REQUIRE_AUTH && (
-          <div>
-            <label className="help" htmlFor="actor">Acting as </label>
-            <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
-            </select>
-          </div>
-        )}
-      </div>
-      <p className="help" style={{ marginTop: -16 }}>Licences, certifications, and insurance renewals. The store sells regulated pesticides under an Ontario vendor licence that must be kept current.</p>
+      <header className="page-head">
+        <div>
+          <h1 className="page-title">Compliance</h1>
+          <p className="page-sub">Licences, certifications, and insurance renewals. The store sells regulated pesticides under an Ontario vendor licence that must be kept current.</p>
+        </div>
+        <div className="page-actions">
+          {!REQUIRE_AUTH && (
+            <div>
+              <label className="help" htmlFor="actor">Acting as </label>
+              <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+      </header>
 
       {loading && <p className="help">Loading.</p>}
       {error && (
@@ -209,7 +242,12 @@ export default function Compliance() {
                         {[l.authority, l.number ? `no. ${l.number}` : "", l.holder, l.expiry_date ? `expiry ${l.expiry_date}` : ""].filter(Boolean).join(" . ")}
                       </div>
                     </div>
-                    <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEdit(l)}>Edit</button>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEdit(l)}>Edit</button>
+                      {canEdit(role) && (
+                        <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base)" }} onClick={() => deleteLic(l.id)} disabled={busy}>Delete</button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -258,7 +296,12 @@ export default function Compliance() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       {showMoney && p.premium != null && <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(p.premium)}<div className="help" style={{ fontWeight: 400 }}>premium</div></div>}
-                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditPol(p)}>Edit</button>
+                      {canEdit(role) && (
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditPol(p)}>Edit</button>
+                          <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base)" }} onClick={() => deletePol(p.id)} disabled={busy}>Delete</button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

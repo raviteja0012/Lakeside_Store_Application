@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
+import { canEdit, voidRow } from "@/lib/edit";
 import type { KnowledgeNote, Department, AppUser } from "@/lib/types";
 
 export default function Knowledge() {
@@ -24,13 +25,21 @@ export default function Knowledge() {
   const [userId, setUserId] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // inline edit of an existing note (owners and managers only)
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editTopic, setEditTopic] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [busy, setBusy] = useState(false);
+
   // Effective actor: the signed-in member in enforced auth, else the chosen author.
-  const { effectiveActorId } = useEffectiveActor(users, userId);
+  const { effectiveActorId, role } = useEffectiveActor(users, userId);
 
   async function load() {
     let query = supabase
       .from("knowledge_note")
       .select("id, department_id, topic, body, tags, created_at, department:department_id(name, accent_color), app_user:created_by(full_name)")
+      .is("voided_at", null)
       .order("created_at", { ascending: false });
     if (storeId) query = query.eq("store_id", storeId);
     const { data, error } = await query;
@@ -92,13 +101,60 @@ export default function Knowledge() {
     }
   }
 
+  function startEdit(n: KnowledgeNote) {
+    setEditId(n.id);
+    setEditTopic(n.topic || "");
+    setEditBody(n.body || "");
+    setEditTags((n.tags || []).join(", "));
+  }
+
+  async function saveEdit() {
+    if (!editId || !editTopic.trim() || !editBody.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const tagArr = editTags.split(",").map((t) => t.trim()).filter(Boolean);
+      const up = await supabase.from("knowledge_note").update({
+        topic: editTopic.trim(),
+        body: editBody.trim(),
+        tags: tagArr.length ? tagArr : null
+      }).eq("id", editId);
+      if (up.error) throw new Error(up.error.message);
+      if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "note_edited", entity: "knowledge_note", entity_id: editId });
+      setEditId(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeNote(n: KnowledgeNote) {
+    if (!window.confirm(`Delete "${n.topic || "this note"}"? It will be hidden but kept for the record.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("knowledge_note", n.id, effectiveActorId);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Knowledge base</h1>
-        <button className="btn-primary" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ Add note"}</button>
-      </div>
-      <p className="help" style={{ marginTop: -8, marginBottom: 16 }}>The rules and exceptions that used to live only in the owner&apos;s head. Search them, add to them.</p>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Knowledge base</h1>
+          <p className="page-sub">The rules and exceptions that used to live only in the owner&apos;s head. Search them, add to them.</p>
+        </div>
+        <div className="page-actions">
+          <button className="btn-primary" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ Add note"}</button>
+        </div>
+      </header>
 
       {adding && (
         <div className="card" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 12 }}>
@@ -157,15 +213,44 @@ export default function Knowledge() {
       <div style={{ display: "grid", gap: 10 }}>
         {filtered.map((n) => (
           <div key={n.id} className="card" style={{ padding: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <strong style={{ fontSize: 15 }}>{n.topic}</strong>
-              {n.department && <span className="chip" style={{ background: "#EEF1F4", color: n.department.accent_color || "#6B7480" }}>{n.department.name}</span>}
-            </div>
-            <p style={{ margin: "8px 0 0" }}>{n.body}</p>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-              {(n.tags || []).map((t) => <span key={t} className="chip chip-neutral">{t}</span>)}
-            </div>
-            <div className="help" style={{ marginTop: 8 }}>{n.app_user?.full_name || "Unknown"} . {new Date(n.created_at).toLocaleDateString()}</div>
+            {editId === n.id ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                <div>
+                  <label className="label">Topic</label>
+                  <input className="input" value={editTopic} onChange={(e) => setEditTopic(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Note</label>
+                  <textarea className="input" rows={3} value={editBody} onChange={(e) => setEditBody(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Tags (comma separated)</label>
+                  <input className="input" value={editTags} onChange={(e) => setEditTags(e.target.value)} placeholder="reorder, payments" />
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn-primary" onClick={saveEdit} disabled={busy || !editTopic.trim() || !editBody.trim()}>{busy ? "Saving." : "Save"}</button>
+                  <button className="btn-ghost" onClick={() => setEditId(null)} disabled={busy}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <strong style={{ fontSize: 15 }}>{n.topic}</strong>
+                  {n.department && <span className="chip" style={{ background: "#EEF1F4", color: n.department.accent_color || "#6B7480" }}>{n.department.name}</span>}
+                  {canEdit(role) && (
+                    <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEdit(n)} disabled={busy}>Edit</button>
+                      <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base)" }} onClick={() => removeNote(n)} disabled={busy}>Delete</button>
+                    </span>
+                  )}
+                </div>
+                <p style={{ margin: "8px 0 0" }}>{n.body}</p>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                  {(n.tags || []).map((t) => <span key={t} className="chip chip-neutral">{t}</span>)}
+                </div>
+                <div className="help" style={{ marginTop: 8 }}>{n.app_user?.full_name || "Unknown"} . {new Date(n.created_at).toLocaleDateString()}</div>
+              </>
+            )}
           </div>
         ))}
       </div>

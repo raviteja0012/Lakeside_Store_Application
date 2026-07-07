@@ -194,6 +194,11 @@ export function parseWorkbook(
     if (!rows) continue;
     const c = cfg.col;
     let orderSum = 0, invSum = 0, vendorCount = 0;
+    // A vendor can appear on more than one row of a sheet (a second order or invoice). The
+    // deterministic ids are keyed on sheet+name, so without this occurrence counter the second
+    // row would collide on the same primary keys and abort the whole import. Repeat rows keep
+    // the same vendor id (their children attach to the one vendor) and suffix the child ids.
+    const seen = new Map<string, number>();
 
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i] || [];
@@ -203,6 +208,11 @@ export function parseWorkbook(
       // Skip blank vendor cells (the printed total rows) and empty section dividers.
       if (name === "") continue;
       if (DIVIDERS.has(name.toLowerCase()) && amount === null && invAmount === null) continue;
+
+      const seenKey = `${sheetName}|${name.toLowerCase()}`;
+      const occurrence = seen.get(seenKey) || 0;
+      seen.set(seenKey, occurrence + 1);
+      const dupSuffix = occurrence > 0 ? `|${occurrence}` : "";
 
       const vId = uuid(`v|${sheetName}|${name.toLowerCase()}`);
       const comments = text(r[c.comments]);
@@ -216,6 +226,8 @@ export function parseWorkbook(
 
       if (amount !== null) orderSum += amount;
       if (invAmount !== null) invSum += invAmount;
+
+      if (occurrence === 0) {
       vendorCount++;
 
       vendors.push({
@@ -231,10 +243,11 @@ export function parseWorkbook(
         status,
         notes: noteText
       });
+      }
 
       if (amount !== null) {
         orders.push({
-          id: uuid(`po|${sheetName}|${name.toLowerCase()}`),
+          id: uuid(`po|${sheetName}|${name.toLowerCase()}${dupSuffix}`),
           store_id: storeId,
           vendor_id: vId,
           department_id: dept,
@@ -249,7 +262,7 @@ export function parseWorkbook(
       const paid = isPaid(r, c);
       let invId: string | null = null;
       if (invAmount !== null) {
-        invId = uuid(`inv|${sheetName}|${name.toLowerCase()}`);
+        invId = uuid(`inv|${sheetName}|${name.toLowerCase()}${dupSuffix}`);
         invoices.push({
           id: invId,
           store_id: storeId,
@@ -264,7 +277,7 @@ export function parseWorkbook(
 
       if (invId && paid) {
         payments.push({
-          id: uuid(`pay|${sheetName}|${name.toLowerCase()}`),
+          id: uuid(`pay|${sheetName}|${name.toLowerCase()}${dupSuffix}`),
           invoice_id: invId,
           amount: invAmount as number,
           method: payMethod(terms),
@@ -274,7 +287,7 @@ export function parseWorkbook(
 
       if (noteText) {
         notes.push({
-          id: uuid(`note|${sheetName}|${name.toLowerCase()}`),
+          id: uuid(`note|${sheetName}|${name.toLowerCase()}${dupSuffix}`),
           store_id: storeId,
           department_id: dept,
           topic: "Vendor: " + name,

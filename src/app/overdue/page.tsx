@@ -22,6 +22,7 @@ export default function Overdue() {
       let query = supabase
         .from("invoice")
         .select("id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status, vendor:vendor_id(name)")
+        .is("voided_at", null)
         .in("status", ["unpaid", "postdated"])
         .not("due_date", "is", null)
         .order("due_date", { ascending: true });
@@ -46,10 +47,14 @@ export default function Overdue() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Outstanding and overdue</h1>
-        {showMoney && <span className="tabular help">{formatCAD(outstanding)} owed</span>}
-      </div>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Outstanding and overdue</h1>
+        </div>
+        <div className="page-actions">
+          {showMoney && <span className="tabular help">{formatCAD(outstanding)} owed</span>}
+        </div>
+      </header>
 
       {loading && <p className="help">Loading invoices.</p>}
       {error && (

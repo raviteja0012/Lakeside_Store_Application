@@ -6,14 +6,17 @@ import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, useMember } from "@/lib/auth";
 import { formatCAD } from "@/lib/format";
 
-// The shape the import API returns. perSheet drives the result card.
-type PerSheet = { sheet: string; vendors: number; orderSum: number; invSum: number };
+// The shape the import API returns. The route auto-detects the bookings ledger vs the weekly
+// schedule and tags the result with `kind`; `message` summarizes what loaded, and the bookings
+// result also carries a per-sheet breakdown.
 type ImportResult = {
   ok: boolean;
+  kind?: "bookings" | "schedule";
   message?: string;
+  summary?: any;
+  inserted?: Record<string, number>;
   skippedVendors?: number;
-  summary?: { vendors: number; orders: number; invoices: number; payments: number; notes: number; perSheet: PerSheet[] };
-  inserted?: { vendors: number; orders: number; invoices: number; payments: number; notes: number };
+  skippedShifts?: number;
 };
 
 // Current session access token for the Authorization header. Null when not signed in or when
@@ -65,15 +68,20 @@ export default function Import() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <h1 style={{ fontSize: 22, margin: 0 }}>Import the bookings sheet</h1>
-      <p className="help" style={{ marginTop: -12 }}>
-        Upload the 2026 bookings workbook. It loads vendors, orders, invoices, and notes into the current store,
-        skips any vendor already present, and is safe to re-run.
-      </p>
+      <header className="page-head">
+        <div>
+          <h1 className="page-title">Import a spreadsheet</h1>
+          <p className="page-sub">
+            Upload the 2026 bookings workbook or the weekly schedule. It detects which one and loads it into the
+            current store: vendors, orders, invoices, and notes from the ledger, or employees and shifts from the
+            schedule. Anything already on file is skipped, so it is safe to re-run.
+          </p>
+        </div>
+      </header>
 
       <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
         <div>
-          <label className="label" htmlFor="bookings-file">Bookings workbook (.xlsx)</label>
+          <label className="label" htmlFor="bookings-file">Workbook (.xlsx): bookings ledger or weekly schedule</label>
           <input
             id="bookings-file"
             className="input"
@@ -100,29 +108,25 @@ export default function Import() {
         </div>
       )}
 
-      {result?.ok && result.summary && result.inserted && (
+      {result?.ok && (
         <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
           <span className="chip chip-progress">Done</span>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            {result.summary.perSheet.map((s) => (
-              <div
-                key={s.sheet}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}
-              >
-                <strong style={{ fontSize: 14 }}>{s.sheet}</strong>
-                <span className="help tabular">
-                  {s.vendors} vendors . orders {formatCAD(s.orderSum)} . invoices {formatCAD(s.invSum)}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <p className="help" style={{ margin: 0 }}>
-            Loaded {result.inserted.vendors} vendors, {result.inserted.orders} orders, {result.inserted.invoices} invoices,
-            {" "}{result.inserted.payments} payments, and {result.inserted.notes} notes.
-            {" "}Skipped {result.skippedVendors ?? 0} vendors already in this store.
-          </p>
+          {result.message && <p style={{ margin: 0 }}>{result.message}</p>}
+          {result.kind === "bookings" && Array.isArray(result.summary?.perSheet) && (
+            <div style={{ display: "grid", gap: 8 }}>
+              {result.summary.perSheet.map((s: any) => (
+                <div
+                  key={s.sheet}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}
+                >
+                  <strong style={{ fontSize: 14 }}>{s.sheet}</strong>
+                  <span className="help tabular">
+                    {s.vendors} vendors . orders {formatCAD(s.orderSum)} . invoices {formatCAD(s.invSum)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

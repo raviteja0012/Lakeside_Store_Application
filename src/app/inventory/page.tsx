@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
+import { canEdit, voidRow } from "@/lib/edit";
 import type { Department, AppUser, Item } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -34,12 +35,13 @@ export default function Inventory() {
   const [qty, setQty] = useState<Record<string, string>>({});
 
   // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
-  const { effectiveActorId } = useEffectiveActor(users, actorId);
+  const { effectiveActorId, role } = useEffectiveActor(users, actorId);
 
   async function load() {
     let query = supabase
       .from("inventory_count")
       .select("id, counted_date, created_at, department:department_id(name, accent_color), inventory_count_line(counted_qty)")
+      .is("voided_at", null)
       .order("created_at", { ascending: false })
       .limit(30);
     if (storeId) query = query.eq("store_id", storeId);
@@ -108,13 +110,32 @@ export default function Inventory() {
     }
   }
 
+  async function removeCount(c: CountRow) {
+    const label = c.department?.name ? `${c.department.name} count` : "this count";
+    if (!window.confirm(`Delete ${label}? It will be hidden but kept for the record.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("inventory_count", c.id, effectiveActorId);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Inventory counts</h1>
-        <button className="btn-primary" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ New count"}</button>
-      </div>
-      <p className="help" style={{ marginTop: -8, marginBottom: 16 }}>Count what is on the shelf, by department. Each count is saved with who and when.</p>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Inventory counts</h1>
+          <p className="page-sub">Count what is on the shelf, by department. Each count is saved with who and when.</p>
+        </div>
+        <div className="page-actions">
+          <button className="btn-primary" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ New count"}</button>
+        </div>
+      </header>
 
       {adding && (
         <div className="card" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 12 }}>
@@ -185,8 +206,13 @@ export default function Inventory() {
                 {c.department && <span className="chip" style={{ background: "#EEF1F4", color: c.department.accent_color || "#6B7480" }}>{c.department.name}</span>}
                 <span className="help">{c.counted_date || new Date(c.created_at).toLocaleDateString()}</span>
               </div>
-              <div className="tabular" style={{ textAlign: "right" }}>
-                <strong>{lines.length}</strong> <span className="help">items</span> . <strong>{totalQty}</strong> <span className="help">units</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="tabular" style={{ textAlign: "right" }}>
+                  <strong>{lines.length}</strong> <span className="help">items</span> . <strong>{totalQty}</strong> <span className="help">units</span>
+                </div>
+                {canEdit(role) && (
+                  <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base)" }} onClick={() => removeCount(c)} disabled={busy}>Delete</button>
+                )}
               </div>
             </div>
           );

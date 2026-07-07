@@ -42,12 +42,12 @@ export default function Reports() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let invq = supabase.from("invoice").select("id, amount, hst_amount, due_date, status, vendor_id, vendor:vendor_id(name, department_id)");
+      let invq = supabase.from("invoice").select("id, amount, hst_amount, due_date, status, vendor_id, vendor:vendor_id(name, department_id)").is("voided_at", null);
       if (storeId) invq = invq.eq("store_id", storeId);
       const inv = await invq;
       if (inv.error) { setError(inv.error.message); setLoading(false); return; }
       setInvoices((inv.data as unknown as Inv[]) || []);
-      let poq = supabase.from("purchase_order").select("vendor_id, order_amount, department_id");
+      let poq = supabase.from("purchase_order").select("vendor_id, order_amount, department_id").is("voided_at", null);
       if (storeId) poq = poq.eq("store_id", storeId);
       const po = await poq;
       setPos((po.data as unknown as PO[]) || []);
@@ -55,7 +55,7 @@ export default function Reports() {
       if (storeId) dq = dq.eq("store_id", storeId);
       const d = await dq;
       setDepts((d.data as unknown as Dept[]) || []);
-      let vq = supabase.from("vendor").select("id, name, department_id");
+      let vq = supabase.from("vendor").select("id, name, department_id").is("voided_at", null);
       if (storeId) vq = vq.eq("store_id", storeId);
       const v = await vq;
       setVendors((v.data as unknown as Vend[]) || []);
@@ -129,10 +129,12 @@ export default function Reports() {
 
   return (
     <div style={{ display: "grid", gap: 28 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Reports</h1>
-        <span className="help">From the order and invoice ledger</span>
-      </div>
+      <header className="page-head">
+        <div>
+          <h1 className="page-title">Reports</h1>
+          <p className="page-sub">From the order and invoice ledger</p>
+        </div>
+      </header>
 
       {loading && <p className="help">Loading the reports.</p>}
       {error && (
@@ -213,7 +215,7 @@ export default function Reports() {
 
           <section>
             <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Vendor scorecard</h2>
-            <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+            <div className="card tbl-wrap" style={{ padding: 0 }}>
               <div style={{ minWidth: 560 }}>
                 <div className="help" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.2fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
                   <span>Vendor</span><span style={{ textAlign: "right" }}>Orders</span><span style={{ textAlign: "right" }}>Invoiced</span><span style={{ textAlign: "right" }}>Discrepancies</span>

@@ -38,7 +38,7 @@ export default function Dashboard() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let invq = supabase.from("invoice").select("id, amount, hst_amount, due_date, status, vendor:vendor_id(name, department_id)");
+      let invq = supabase.from("invoice").select("id, amount, hst_amount, due_date, status, vendor:vendor_id(name, department_id)").is("voided_at", null);
       if (storeId) invq = invq.eq("store_id", storeId);
       const inv = await invq;
       if (inv.error) {
@@ -47,7 +47,7 @@ export default function Dashboard() {
         return;
       }
       setInvoices((inv.data as unknown as Inv[]) || []);
-      let poq = supabase.from("purchase_order").select("order_amount, status, department_id");
+      let poq = supabase.from("purchase_order").select("order_amount, status, department_id").is("voided_at", null);
       if (storeId) poq = poq.eq("store_id", storeId);
       const po = await poq;
       setPos((po.data as unknown as PO[]) || []);
@@ -55,11 +55,11 @@ export default function Dashboard() {
       if (storeId) dq = dq.eq("store_id", storeId);
       const d = await dq;
       setDepts((d.data as unknown as Dept[]) || []);
-      let vq = supabase.from("vendor").select("id, department_id, status");
+      let vq = supabase.from("vendor").select("id, department_id, status").is("voided_at", null);
       if (storeId) vq = vq.eq("store_id", storeId);
       const v = await vq;
       setVendors((v.data as unknown as Vend[]) || []);
-      let req = supabase.from("receiving_event").select("id", { count: "exact", head: true });
+      let req = supabase.from("receiving_event").select("id", { count: "exact", head: true }).is("voided_at", null);
       if (storeId) req = req.eq("store_id", storeId);
       const re = await req;
       setRecentCount(re.count || 0);
@@ -107,10 +107,12 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>Owner dashboard</h1>
-        <span className="help">Remote oversight at a glance</span>
-      </div>
+      <header className="page-head" style={{ marginBottom: 16 }}>
+        <div>
+          <h1 className="page-title">Owner dashboard</h1>
+          <p className="page-sub">Remote oversight at a glance</p>
+        </div>
+      </header>
 
       {loading && <p className="help">Loading the dashboard.</p>}
       {error && (

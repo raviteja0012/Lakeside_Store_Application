@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
 import { formatCAD, daysOverdue } from "@/lib/format";
 import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
+import { canEdit, voidRow } from "@/lib/edit";
 import type { Vendor, PurchaseOrder, Invoice, Payment, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -34,6 +35,11 @@ export default function VendorDetail() {
   const [payFor, setPayFor] = useState<string | null>(null);
   const [payForm, setPayForm] = useState({ amount: "", method: "cheque", paid_date: "" });
 
+  const [editInvId, setEditInvId] = useState<string | null>(null);
+  const [editInvForm, setEditInvForm] = useState({ invoice_number: "", amount: "", hst_amount: "", terms: "", due_date: "", status: "unpaid" });
+  const [editPoId, setEditPoId] = useState<string | null>(null);
+  const [editPoForm, setEditPoForm] = useState({ order_amount: "", ship_date: "", status: "ordered", notes: "" });
+
   // Effective role and actor: in enforced auth the signed-in member, else the dropdown.
   const { effectiveActorId, role } = useEffectiveActor(users, actorId);
   const showMoney = canSeeMoney(role);
@@ -43,20 +49,21 @@ export default function VendorDetail() {
       .from("vendor")
       .select("id, store_id, department_id, name, rep_name, phone, email, products_we_carry, default_terms, status, notes, department:department_id(name, accent_color)")
       .eq("id", id)
+      .is("voided_at", null)
       .maybeSingle();
     if (ve) {
       setError(ve.message);
       return;
     }
     setVendor((v as unknown as Vendor) || null);
-    const { data: po } = await supabase.from("purchase_order").select("id, vendor_id, order_amount, ship_date, delivery_commit, status, season_year, notes, department_id").eq("vendor_id", id).order("ship_date", { ascending: false });
+    const { data: po } = await supabase.from("purchase_order").select("id, vendor_id, order_amount, ship_date, delivery_commit, status, season_year, notes, department_id").eq("vendor_id", id).is("voided_at", null).order("ship_date", { ascending: false });
     setOrders((po as unknown as PurchaseOrder[]) || []);
-    const { data: inv } = await supabase.from("invoice").select("id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status").eq("vendor_id", id).order("due_date", { ascending: true });
+    const { data: inv } = await supabase.from("invoice").select("id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status").eq("vendor_id", id).is("voided_at", null).order("due_date", { ascending: true });
     const invList = (inv as unknown as Invoice[]) || [];
     setInvoices(invList);
     const ids = invList.map((i) => i.id);
     if (ids.length) {
-      const { data: pay } = await supabase.from("payment").select("id, invoice_id, amount, method, paid_date").in("invoice_id", ids).order("paid_date", { ascending: false });
+      const { data: pay } = await supabase.from("payment").select("id, invoice_id, amount, method, paid_date").in("invoice_id", ids).is("voided_at", null).order("paid_date", { ascending: false });
       setPayments((pay as unknown as Payment[]) || []);
     } else {
       setPayments([]);
@@ -194,6 +201,132 @@ export default function VendorDetail() {
     }
   }
 
+  function startEditInvoice(i: Invoice) {
+    setEditInvId(i.id);
+    setEditInvForm({
+      invoice_number: i.invoice_number || "",
+      amount: i.amount != null ? String(i.amount) : "",
+      hst_amount: i.hst_amount != null ? String(i.hst_amount) : "",
+      terms: i.terms || "",
+      due_date: i.due_date || "",
+      status: i.status || "unpaid"
+    });
+  }
+
+  async function saveInvoice() {
+    if (!editInvId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await supabase.from("invoice").update({
+        invoice_number: editInvForm.invoice_number || null,
+        amount: num(editInvForm.amount),
+        hst_amount: num(editInvForm.hst_amount) ?? 0,
+        terms: editInvForm.terms || null,
+        due_date: editInvForm.due_date || null,
+        status: editInvForm.status
+      }).eq("id", editInvId);
+      if (r.error) throw new Error(r.error.message);
+      await log("invoice_edited", "invoice", editInvId);
+      setEditInvId(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeInvoice(i: Invoice) {
+    if (!window.confirm(`Delete invoice ${i.invoice_number || ""}? It will be hidden but kept for the tax history.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("invoice", i.id, effectiveActorId);
+      if (editInvId === i.id) setEditInvId(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEditPO(o: PurchaseOrder) {
+    setEditPoId(o.id);
+    setEditPoForm({
+      order_amount: o.order_amount != null ? String(o.order_amount) : "",
+      ship_date: o.ship_date || "",
+      status: o.status || "ordered",
+      notes: o.notes || ""
+    });
+  }
+
+  async function savePO() {
+    if (!editPoId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await supabase.from("purchase_order").update({
+        order_amount: num(editPoForm.order_amount),
+        ship_date: editPoForm.ship_date || null,
+        status: editPoForm.status,
+        notes: editPoForm.notes || null
+      }).eq("id", editPoId);
+      if (r.error) throw new Error(r.error.message);
+      await log("order_edited", "purchase_order", editPoId);
+      setEditPoId(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removePO(o: PurchaseOrder) {
+    if (!window.confirm(`Delete this ${o.season_year || ""} order? It will be hidden but kept for the tax history.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("purchase_order", o.id, effectiveActorId);
+      if (editPoId === o.id) setEditPoId(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removePayment(p: Payment) {
+    if (!window.confirm("Delete this payment? It will be hidden but kept for the tax history.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("payment", p.id, effectiveActorId);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeVendor() {
+    if (!vendor) return;
+    if (!window.confirm(`Delete ${vendor.name}? It will be hidden from the directory but kept for the tax history.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("vendor", vendor.id, effectiveActorId);
+      window.location.href = "/vendors";
+    } catch (e: any) {
+      setError(e.message);
+      setBusy(false);
+    }
+  }
+
   function startPay(i: Invoice) {
     setPayFor(i.id);
     setPayForm({ amount: String((Number(i.amount) || 0) + (Number(i.hst_amount) || 0)), method: "cheque", paid_date: "" });
@@ -245,24 +378,24 @@ export default function VendorDetail() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 10 }}>
+      <header className="page-head">
         <div>
           <Link href="/vendors" className="help" style={{ textDecoration: "none" }}>&larr; Vendors</Link>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            <h1 style={{ fontSize: 22, margin: 0 }}>{vendor.name}</h1>
+            <h1 className="page-title">{vendor.name}</h1>
             {vendor.department && <span className="chip" style={{ background: "#EEF1F4", color: vendor.department.accent_color || "#6B7480" }}>{vendor.department.name}</span>}
             <span className={`chip ${chipClass(vendor.status)}`}>{labelize(vendor.status)}</span>
           </div>
         </div>
         {!REQUIRE_AUTH && (
-          <div>
+          <div className="page-actions">
             <label className="help" htmlFor="actor">Acting as </label>
             <select id="actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorId} onChange={(e) => setActor(e.target.value)}>
               {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
             </select>
           </div>
         )}
-      </div>
+      </header>
 
       {error && (
         <div className="card" style={{ padding: 12 }}>
@@ -290,7 +423,12 @@ export default function VendorDetail() {
         </div>
         {vendor.products_we_carry && <div><div className="help">Products</div><div>{vendor.products_we_carry}</div></div>}
         {vendor.notes && <div><div className="help">Notes and rules</div><div>{vendor.notes}</div></div>}
-        {!editVendor && <button className="btn-ghost" style={{ justifySelf: "start" }} onClick={startEditVendor}>Edit vendor</button>}
+        {!editVendor && canEdit(role) && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn-ghost" onClick={startEditVendor}>Edit vendor</button>
+            <button className="btn-ghost" onClick={removeVendor} disabled={busy}>Delete vendor</button>
+          </div>
+        )}
 
         {editVendor && (
           <div style={{ display: "grid", gap: 10, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
@@ -355,10 +493,34 @@ export default function VendorDetail() {
                   {showMoney && (
                     <div style={{ textAlign: "right" }}>
                       <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(invoiceTotal(i))}</div>
-                      {i.status !== "paid" && <button className="btn-ghost" style={{ padding: "4px 10px", marginTop: 4 }} onClick={() => startPay(i)}>Record payment</button>}
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4, flexWrap: "wrap" }}>
+                        {i.status !== "paid" && <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startPay(i)}>Record payment</button>}
+                        {canEdit(role) && <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditInvoice(i)} disabled={busy}>Edit</button>}
+                        {canEdit(role) && <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removeInvoice(i)} disabled={busy}>Delete</button>}
+                      </div>
                     </div>
                   )}
                 </div>
+                {canEdit(role) && editInvId === i.id && (
+                  <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+                      <div><label className="label">Invoice number</label><input className="input" value={editInvForm.invoice_number} onChange={(e) => setEditInvForm({ ...editInvForm, invoice_number: e.target.value })} /></div>
+                      <div><label className="label">Amount (pre-tax)</label><input className="input tabular" type="number" step="0.01" value={editInvForm.amount} onChange={(e) => setEditInvForm({ ...editInvForm, amount: e.target.value })} /></div>
+                      <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={editInvForm.hst_amount} onChange={(e) => setEditInvForm({ ...editInvForm, hst_amount: e.target.value })} /></div>
+                      <div><label className="label">Terms</label><input className="input" value={editInvForm.terms} onChange={(e) => setEditInvForm({ ...editInvForm, terms: e.target.value })} /></div>
+                      <div><label className="label">Due date</label><input className="input" type="date" value={editInvForm.due_date} onChange={(e) => setEditInvForm({ ...editInvForm, due_date: e.target.value })} /></div>
+                      <div><label className="label">Status</label>
+                        <select className="input" value={editInvForm.status} onChange={(e) => setEditInvForm({ ...editInvForm, status: e.target.value })}>
+                          {["unpaid", "paid", "postdated"].map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="btn-primary" onClick={saveInvoice} disabled={busy}>{busy ? "Saving." : "Save invoice"}</button>
+                      <button className="btn-ghost" onClick={() => setEditInvId(null)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
                 {showMoney && payFor === i.id && (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, alignItems: "end" }}>
                     <div><label className="label">Amount</label><input className="input tabular" type="number" step="0.01" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} /></div>
@@ -405,17 +567,45 @@ export default function VendorDetail() {
         {orders.length === 0 && <p className="help">No orders on file.</p>}
         <div style={{ display: "grid", gap: 8 }}>
           {orders.map((o) => (
-            <div key={o.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <strong>{o.season_year || ""} order</strong>
-                  <select className="input" style={{ width: "auto", padding: "2px 6px", fontSize: 12 }} value={o.status} onChange={(e) => updatePOStatus(o.id, e.target.value)} disabled={busy} aria-label="order status">
-                    {["draft", "ordered", "confirmed", "shipped", "received", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
+            <div key={o.id} className="card" style={{ padding: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <strong>{o.season_year || ""} order</strong>
+                    <select className="input" style={{ width: "auto", padding: "2px 6px", fontSize: 12 }} value={o.status} onChange={(e) => updatePOStatus(o.id, e.target.value)} disabled={busy || !canEdit(role)} aria-label="order status">
+                      {["draft", "ordered", "confirmed", "shipped", "received", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div className="help" style={{ marginTop: 4 }}>{o.ship_date ? `ship ${o.ship_date}` : ""}{o.notes ? ` . ${o.notes}` : ""}</div>
                 </div>
-                <div className="help" style={{ marginTop: 4 }}>{o.ship_date ? `ship ${o.ship_date}` : ""}{o.notes ? ` . ${o.notes}` : ""}</div>
+                <div style={{ textAlign: "right" }}>
+                  {showMoney && <div className="tabular" style={{ fontWeight: 600 }}>{o.order_amount != null ? formatCAD(o.order_amount) : "n/a"}</div>}
+                  {canEdit(role) && (
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4, flexWrap: "wrap" }}>
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditPO(o)} disabled={busy}>Edit</button>
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePO(o)} disabled={busy}>Delete</button>
+                    </div>
+                  )}
+                </div>
               </div>
-              {showMoney && <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{o.order_amount != null ? formatCAD(o.order_amount) : "n/a"}</div>}
+              {canEdit(role) && editPoId === o.id && (
+                <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+                    <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={editPoForm.order_amount} onChange={(e) => setEditPoForm({ ...editPoForm, order_amount: e.target.value })} /></div>
+                    <div><label className="label">Ship date</label><input className="input" type="date" value={editPoForm.ship_date} onChange={(e) => setEditPoForm({ ...editPoForm, ship_date: e.target.value })} /></div>
+                    <div><label className="label">Status</label>
+                      <select className="input" value={editPoForm.status} onChange={(e) => setEditPoForm({ ...editPoForm, status: e.target.value })}>
+                        {["draft", "ordered", "confirmed", "shipped", "received", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div><label className="label">Notes</label><input className="input" value={editPoForm.notes} onChange={(e) => setEditPoForm({ ...editPoForm, notes: e.target.value })} /></div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn-primary" onClick={savePO} disabled={busy}>{busy ? "Saving." : "Save order"}</button>
+                    <button className="btn-ghost" onClick={() => setEditPoId(null)}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -432,7 +622,10 @@ export default function VendorDetail() {
                   <strong>{labelize(p.method) || "Payment"}</strong>
                   <div className="help" style={{ marginTop: 4 }}>{p.paid_date ? `paid ${p.paid_date}` : ""}</div>
                 </div>
-                <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(p.amount)}</div>
+                <div style={{ textAlign: "right" }}>
+                  <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
+                  {canEdit(role) && <button className="btn-ghost" style={{ padding: "4px 10px", marginTop: 4 }} onClick={() => removePayment(p)} disabled={busy}>Delete</button>}
+                </div>
               </div>
             ))}
           </div>

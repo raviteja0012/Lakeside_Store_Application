@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
+import { REQUIRE_AUTH_SERVER } from "@/lib/serverMember";
 
 export const runtime = "nodejs";
 
@@ -7,29 +9,41 @@ export const runtime = "nodejs";
 // short summary via Resend. Designed to run on a daily Vercel cron (see vercel.json).
 // - Missing RESEND_API_KEY returns 200 with a clear message; it never crashes the cron.
 // - Protected by CRON_SECRET checked against the x-cron-secret header (Vercel cron sends it via
-//   the Authorization: Bearer header, which is accepted too). If CRON_SECRET is unset, it runs
-//   open for local testing.
+//   the Authorization: Bearer header, which is accepted too). If CRON_SECRET is unset, the route
+//   only runs open in demo mode; with login enforced it fails closed, because the response and
+//   the email hold invoice dollar totals.
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // no secret configured: allow, for local and first-run testing
+  if (!secret) return !REQUIRE_AUTH_SERVER; // open only for demo and local first-run testing
   const header = req.headers.get("x-cron-secret");
   const bearer = req.headers.get("authorization");
   return header === secret || bearer === `Bearer ${secret}`;
+}
+
+// The cron has no user session, so once the production RLS is on, the anon client reads zero
+// rows and the alert would silently report nothing due. Use the service role when it is set
+// (it already is for the Team page); fall back to the anon client for the open demo.
+function alertsClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (url && serviceKey) return createClient(url, serviceKey, { auth: { persistSession: false } });
+  return supabase;
 }
 
 const ms = (d: string) => Date.parse(d + "T00:00:00Z");
 
 async function run(req: NextRequest) {
   if (!authorized(req)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "unauthorized. Set CRON_SECRET and send it as x-cron-secret." }, { status: 401 });
   }
 
   // Pull unpaid invoices with a due date and split into overdue and due within 7 days.
-  const { data, error } = await supabase
+  const { data, error } = await alertsClient()
     .from("invoice")
     .select("invoice_number, amount, hst_amount, due_date, vendor:vendor_id(name), store:store_id(name)")
     .eq("status", "unpaid")
+    .is("voided_at", null)
     .not("due_date", "is", null)
     .order("due_date", { ascending: true });
   if (error) {

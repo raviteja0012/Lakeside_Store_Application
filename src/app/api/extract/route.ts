@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveMember } from "@/lib/serverMember";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,13 @@ Rules: amounts are in CAD as plain numbers with no currency symbol. retail_price
 
 export async function POST(req: NextRequest) {
   try {
+    // Any signed-in member can extract (capture is the staff job); what enforced mode blocks
+    // is anonymous use of the store's Anthropic key as a free OCR proxy. Demo mode stays open.
+    const resolved = await resolveMember(req);
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.message }, { status: resolved.status });
+    }
+
     const { imageBase64, mediaType } = await req.json();
     if (!imageBase64 || !mediaType) {
       return NextResponse.json({ error: "imageBase64 and mediaType are required" }, { status: 400 });
@@ -54,7 +62,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!resp.ok) {
-      const detail = await resp.text();
+      const detail = (await resp.text()).slice(0, 300);
       return NextResponse.json({ error: "model call failed", detail }, { status: 502 });
     }
 
