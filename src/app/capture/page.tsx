@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
 import { formatCAD, round2 } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
-import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
+import { REQUIRE_AUTH, authHeader, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import type { AppUser, Department, Draft, LineItem } from "@/lib/types";
 
 type VendorLite = { id: string; name: string; department_id: string | null; default_terms: string | null };
@@ -38,6 +38,7 @@ export default function Capture() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [manual, setManual] = useState(false);
   const [ack, setAck] = useState(false);
+  const [lowAck, setLowAck] = useState(false);
 
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -58,10 +59,10 @@ export default function Capture() {
       if (storeId) dq = dq.eq("store_id", storeId);
       const { data: depts } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
-      let vq = supabase.from("vendor").select("id, name, department_id, default_terms");
+      let vq = supabase.from("vendor").select("id, name, department_id, default_terms").is("voided_at", null);
       if (storeId) vq = vq.eq("store_id", storeId);
       const { data: vs } = await vq;
-      let pq = supabase.from("purchase_order").select("vendor_id, order_amount");
+      let pq = supabase.from("purchase_order").select("vendor_id, order_amount").is("voided_at", null);
       if (storeId) pq = pq.eq("store_id", storeId);
       const { data: po } = await pq;
       const { data: tr } = await supabase.from("tax_rules").select("rate").eq("region", "Ontario").limit(1).maybeSingle();
@@ -84,6 +85,7 @@ export default function Capture() {
     setDraft(null);
     setManual(false);
     setAck(false);
+    setLowAck(false);
     setFile(f);
     if (preview) URL.revokeObjectURL(preview);
     setPreview(f && f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
@@ -98,6 +100,7 @@ export default function Capture() {
     if (preview) URL.revokeObjectURL(preview);
     setPreview(null);
     setAck(false);
+    setLowAck(false);
     setManual(true);
     setDraft({ vendor: "", invoice_date: "", notes: "", line_items: [{ description: "", qty: null, unit_cost: null, retail_price_note: null, confidence: 1 }] });
   }
@@ -110,12 +113,13 @@ export default function Capture() {
       const imageBase64 = await fileToBase64(file);
       const resp = await fetch("/api/extract", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({ imageBase64, mediaType: file.type })
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || data.error || "extraction failed");
       setAck(false);
+      setLowAck(false);
       setDraft({
         vendor: data.vendor || "",
         invoice_date: data.invoice_date || "",
@@ -138,7 +142,10 @@ export default function Capture() {
   function updateLine(i: number, patch: Partial<LineItem>) {
     if (!draft) return;
     const next = [...draft.line_items];
-    next[i] = { ...next[i], ...patch };
+    // A human retyping the description, qty, or unit cost IS the verification, so the
+    // edit clears the line's low-confidence flag.
+    const humanKeyed = "description" in patch || "qty" in patch || "unit_cost" in patch;
+    next[i] = { ...next[i], ...patch, ...(humanKeyed ? { confidence: 1 } : {}) };
     setDraft({ ...draft, line_items: next });
   }
 
@@ -168,9 +175,17 @@ export default function Capture() {
   // gates the save) for roles that can see money. Staff capture quantities and post.
   const hasDiscrepancy = showMoney && discrepancy != null && Math.abs(discrepancy) >= 0.01;
 
+  // The hard low-confidence gate: any line still flagged amber blocks the save until the
+  // person either fixes it (editing clears the flag) or explicitly confirms they checked it.
+  // The acknowledgement is stored on the event, and the database trigger refuses a
+  // low-confidence dollar line whose event lacks it, so the rule holds outside this screen too.
+  const lowLines = draft ? draft.line_items.filter((l) => l.confidence !== null && l.confidence < LOW_CONFIDENCE).length : 0;
+  const hasLowFlags = lowLines > 0;
+
   async function save() {
     if (!draft || (!file && !manual) || !deptId || !effectiveActorId) return;
     if (hasDiscrepancy && !ack) return;
+    if (hasLowFlags && !lowAck) return;
     setSaving(true);
     setError(null);
     try {
@@ -190,9 +205,11 @@ export default function Capture() {
           vendor_id: matchedVendor?.id ?? null,
           vendor_name: draft.vendor,
           received_date: draft.invoice_date || null,
+          notes: draft.notes || null,
           source_file_path: path,
           status: "confirmed",
           discrepancy_ack: hasDiscrepancy ? ack : false,
+          low_confidence_ack: hasLowFlags ? lowAck : false,
           created_by: effectiveActorId
         })
         .select("id")
@@ -224,6 +241,7 @@ export default function Capture() {
       if (preview) URL.revokeObjectURL(preview);
       setPreview(null);
       setAck(false);
+      setLowAck(false);
       setTimeout(() => router.push("/"), 900);
     } catch (e: any) {
       setError(e.message);
@@ -336,6 +354,20 @@ export default function Capture() {
             <p className="help">No order amount on file for {matchedVendor.name} to compare against.</p>
           )}
 
+          {hasLowFlags && (
+            <div className="card" style={{ padding: 12, background: "var(--warning-tint)", borderColor: "var(--warning-base)" }}>
+              <span className="chip chip-warning">&#9888; Uncertain fields</span>
+              <p className="help" style={{ marginTop: 8, color: "var(--text-primary)" }}>
+                {lowLines === 1 ? "1 line was" : `${lowLines} lines were`} read with low confidence and {lowLines === 1 ? "is" : "are"} shown in amber.
+                Retype anything wrong (that clears the flag), then confirm you checked the rest.
+              </p>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, fontSize: 13 }}>
+                <input type="checkbox" checked={lowAck} onChange={(e) => setLowAck(e.target.checked)} />
+                I checked every amber line
+              </label>
+            </div>
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
             <div>
               <label className="label">Vendor</label>
@@ -385,11 +417,14 @@ export default function Capture() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <button className="btn-primary" style={{ flex: "1 1 200px", minWidth: 160, maxWidth: 360 }} onClick={save} disabled={saving || (hasDiscrepancy && !ack)}>
+            <button className="btn-primary" style={{ flex: "1 1 200px", minWidth: 160, maxWidth: 360 }} onClick={save} disabled={saving || (hasDiscrepancy && !ack) || (hasLowFlags && !lowAck)}>
               {saving ? "Saving." : "Save to feed"}
             </button>
             {hasDiscrepancy && !ack && (
               <span className="help">Acknowledge the discrepancy to save.</span>
+            )}
+            {hasLowFlags && !lowAck && (
+              <span className="help">Check the amber lines to save.</span>
             )}
           </div>
         </div>

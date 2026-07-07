@@ -5,6 +5,7 @@
 
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, todayISO, daysOverdue } from "@/lib/format";
+import { canSeeMoney, type Role } from "@/lib/auth";
 
 export type Notification = {
   id: string;
@@ -23,10 +24,12 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-export async function loadNotifications(storeId: string): Promise<Notification[]> {
+export async function loadNotifications(storeId: string, role?: Role | null): Promise<Notification[]> {
   if (!storeId) return [];
   const out: Notification[] = [];
   const today = todayISO();
+  // The bell shows for every role, so dollar details only render for money roles.
+  const showMoney = canSeeMoney(role);
 
   try {
     // Overdue invoices: unpaid and past due. One rolled-up item with the total past due.
@@ -52,7 +55,7 @@ export async function loadNotifications(storeId: string): Promise<Notification[]
           id: "overdue-invoices",
           severity: "error",
           title: `${plural(count, "invoice", "invoices")} overdue`,
-          detail: formatCAD(total),
+          detail: showMoney ? formatCAD(total) : undefined,
           href: "/overdue"
         });
       }

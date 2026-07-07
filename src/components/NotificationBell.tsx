@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SUPABASE_CONFIGURED } from "@/lib/supabaseClient";
 import { useActiveStore } from "@/lib/store";
+import { useCurrentRole } from "@/lib/auth";
 import { loadNotifications, type Notification } from "@/lib/notify";
 
 const chipFor: Record<Notification["severity"], string> = {
@@ -19,19 +20,20 @@ const chipFor: Record<Notification["severity"], string> = {
 
 export default function NotificationBell() {
   const { storeId, ready } = useActiveStore();
+  const { role, ready: roleReady } = useCurrentRole();
   const [items, setItems] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!ready || !storeId || !SUPABASE_CONFIGURED) return;
+    if (!ready || !roleReady || !storeId || !SUPABASE_CONFIGURED) return;
     let alive = true;
     (async () => {
-      const list = await loadNotifications(storeId);
+      const list = await loadNotifications(storeId, role);
       if (alive) setItems(list);
     })();
     return () => { alive = false; };
-  }, [ready, storeId]);
+  }, [ready, roleReady, storeId, role]);
 
   // Close on outside click or Escape, only while the panel is open.
   useEffect(() => {

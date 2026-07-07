@@ -2,19 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
 import { formatCAD, todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
-import { canSeeMoney, useCurrentRole } from "@/lib/auth";
+import { REQUIRE_AUTH, canSeeMoney, useCurrentRole, useMember } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
+import { docUrls } from "@/lib/docs";
 import type { FeedRow } from "@/lib/types";
-
-function thumb(path: string | null) {
-  if (!path) return null;
-  const { data } = supabase.storage.from(DOCUMENTS_BUCKET).getPublicUrl(path);
-  return data?.publicUrl || null;
-}
 
 function rowSubtotal(r: FeedRow): number {
   return (r.receiving_line || []).reduce((sum, l) => sum + (Number(l.qty) || 0) * (Number(l.unit_cost) || 0), 0);
@@ -30,8 +25,10 @@ const HOWTO_KEY = "rgs_seen_howto";
 export default function StaffFeed() {
   const { storeId, ready } = useActiveStore();
   const { role } = useCurrentRole();
+  const { member } = useMember();
   const showMoney = canSeeMoney(role);
   const [rows, setRows] = useState<FeedRow[]>([]);
+  const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,7 +48,11 @@ export default function StaffFeed() {
     if (storeId) query = query.eq("store_id", storeId);
     const { data, error } = await query;
     if (error) setError(error.message);
-    else setRows((data as unknown as FeedRow[]) || []);
+    else {
+      const loaded = (data as unknown as FeedRow[]) || [];
+      setRows(loaded);
+      setThumbs(await docUrls(loaded.map((r) => r.source_file_path)));
+    }
   }
 
   useEffect(() => {
@@ -69,13 +70,18 @@ export default function StaffFeed() {
     if (typeof window !== "undefined") localStorage.setItem(HOWTO_KEY, "1");
   }
 
-  // The feed has no actor dropdown, so the void is logged with a null actor.
+  // The feed has no actor dropdown, so attribute the void to the signed-in member in
+  // enforced mode, or the Acting-as pick (rgs_actor) in demo mode. Never a silent null
+  // when an identity is known: the audit trail must say who deleted.
   async function removeRow(r: FeedRow) {
     if (!window.confirm(`Delete the ${r.vendor_name || "unknown vendor"} receiving? It will be hidden but kept for the record.`)) return;
     setBusy(true);
     setError(null);
     try {
-      await voidRow("receiving_event", r.id, null);
+      const actor = REQUIRE_AUTH
+        ? member?.id ?? null
+        : (typeof window !== "undefined" ? localStorage.getItem("rgs_actor") : null);
+      await voidRow("receiving_event", r.id, actor);
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -155,7 +161,7 @@ export default function StaffFeed() {
 
       <div style={{ display: "grid", gap: 12 }}>
         {rows.map((r) => {
-          const url = thumb(r.source_file_path);
+          const url = r.source_file_path ? thumbs.get(r.source_file_path) || null : null;
           const subtotal = rowSubtotal(r);
           return (
             <div key={r.id} className="card" style={{ padding: 12, display: "flex", gap: 12, alignItems: "center" }}>

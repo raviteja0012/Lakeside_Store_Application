@@ -61,7 +61,7 @@ export default function Schedule() {
       const emps = (e.data as unknown as Employee[]) || [];
       setEmployees(emps);
       const ids = emps.map((x) => x.id);
-      const r = await supabase.from("pay_rate").select("id, employee_id, rate, unit, effective_date").order("effective_date", { ascending: false });
+      const r = await supabase.from("pay_rate").select("id, employee_id, rate, unit, effective_date").is("voided_at", null).order("effective_date", { ascending: false });
       setRates(((r.data as unknown as PayRate[]) || []).filter((x) => x.employee_id && ids.includes(x.employee_id)));
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
       const usr = (us as AppUser[]) || [];

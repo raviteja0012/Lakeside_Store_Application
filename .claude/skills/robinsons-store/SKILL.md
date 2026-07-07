@@ -54,8 +54,8 @@ robinsons-store/
 
 ## Screen and route map
 Every screen is a client component that reads through useActiveStore() and filters by the active store_id. Money is gated where noted.
-- `/` feed: the department feed of recent receiving events, with document thumbnails from the documents bucket (getPublicUrl). Line totals are money-gated.
-- `/capture`: the core loop. Upload an invoice photo or PDF, /api/extract returns structured lines with per-line confidence, a confirm screen flags low-confidence fields and an order-vs-invoiced discrepancy a human must acknowledge, then save() uploads the file and writes receiving_event plus receiving_line plus an activity_log row. Has a manual-entry path with no file (phone orders).
+- `/` feed: the department feed of recent receiving events, with document thumbnails resolved through docUrls() in src/lib/docs.ts (signed URLs, public fallback in demo). Line totals are money-gated.
+- `/capture`: the core loop. Upload an invoice photo or PDF, /api/extract returns structured lines with per-line confidence, a confirm screen flags low-confidence (amber) lines and an order-vs-invoiced discrepancy. The save is hard-blocked until every amber line is fixed (a human edit sets confidence to 1) or the person checks "I checked every amber line"; that acknowledgement is stored on receiving_event.low_confidence_ack and a database trigger (receiving_line_confidence_gate) refuses a low-confidence dollar line without it. Then save() uploads the file and writes receiving_event plus receiving_line plus an activity_log row. Has a manual-entry path with no file (phone orders).
 - `/dashboard`: KPIs and charts (src/lib/charts, Okabe-Ito palette).
 - `/reports`: reporting views. Money-gated figures.
 - `/overdue`: invoices overdue or due soon, by dueBand(). Money-gated.
@@ -83,7 +83,7 @@ App conventions to apply on every screen:
 - Author: use useEffectiveActor() for created_by and activity_log.actor_id (the signed-in member in enforced auth, the "Acting as" dropdown in demo). Hide the dropdown with {!REQUIRE_AUTH && ...}.
 - Money by role: hide cost and margin (unit cost, order and invoice amounts, payments, premiums, pay) from the staff role with canSeeMoney(role) from src/lib/auth. Retail, customer-facing prices are not hidden.
 - Money and dates: format money with formatCAD(); compare dates with todayISO(), daysOverdue(), and dueBand() from src/lib/format.
-- Documents: upload captured files to the `documents` bucket via supabase.storage; store the path on source_file_path or confirmation_file_path. Read thumbnails with getPublicUrl. The bucket and its policy are created by schema.sql (dev) and locked to signed-in users by auth_setup.sql (production).
+- Documents: upload captured files to the `documents` bucket via supabase.storage; store the path on source_file_path or confirmation_file_path. Read thumbnails through docUrls() from src/lib/docs.ts (signed URLs with a public fallback), never getPublicUrl directly. The bucket and its policy are created by schema.sql (dev, public) and made private and authenticated-only by auth_setup.sql (production).
 
 ## Auth and security model
 The app runs in two modes, switched by the build-time env var NEXT_PUBLIC_REQUIRE_AUTH (src/lib/auth.ts reads it once as REQUIRE_AUTH).
@@ -98,7 +98,7 @@ How identity resolves:
 
 Turning on real auth (the production cutover, about five minutes, in RUNBOOK.md "Turn on login"): enable Email auth, create one account per role with the SAME email as the seeded member (owner@/manager@/staff@/lead@robinsons.demo), run auth_setup.sql (it links every account to its member automatically by email, replaces the dev policies with per-store per-role ones, and locks the documents bucket to signed-in users), then set NEXT_PUBLIC_REQUIRE_AUTH=true in Vercel and redeploy. Login cannot be the compiled default because the accounts have to exist first and only the owner can create them in their Supabase; the security is fully built and ready, the switch-on is the owner's five-minute step.
 
-Storage security: the documents bucket is public-read so feed thumbnails load. Uploads require a policy on storage.objects or every capture fails with "new row violates row-level security policy". schema.sql opens the bucket for the demo (anon write); auth_setup.sql narrows it to authenticated. Moving to signed URLs (so a staff role cannot open an invoice image URL and read amounts the UI hides) is the documented next hardening step, not done yet.
+Storage security: the app reads document thumbnails through docUrls() in src/lib/docs.ts, which creates signed, expiring URLs and falls back to the public URL only for the open demo bucket. Uploads require a policy on storage.objects or every capture fails with "new row violates row-level security policy". schema.sql opens the bucket for the demo (anon write, public-read); auth_setup.sql makes the bucket PRIVATE and narrows access to authenticated members, so in production no permanent public link to an invoice photo exists. Never reintroduce getPublicUrl as the primary read path.
 
 ## Environment variables
 - NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY: the Supabase project. Without both, SUPABASE_CONFIGURED is false and every screen shows its "Connection" card.
@@ -150,7 +150,7 @@ Exact color tokens, the one-meaning-per-hue status mapping, and the form and acc
 - Keep secrets out of the repo and out of chat. Env values go straight into Supabase and Vercel.
 
 ## Build sequence
-Phases 1-6 plus property, HR, compliance, multi-store, and the auth cutover are shipped; see docs/STATUS.md. Deferred: pgvector at scale, ML reorder, SMS, signed-URL document storage, integer-cents money.
+Phases 1-6 plus property, HR, compliance, multi-store, the auth cutover, signed-URL document storage, and the hard low-confidence gate are shipped; see docs/STATUS.md. Deferred: pgvector at scale, ML reorder, SMS, integer-cents money.
 
 ## Output and communication rules for this project
 - Lead with the answer, then context. Short and direct. No hedging or caveats unless asked.

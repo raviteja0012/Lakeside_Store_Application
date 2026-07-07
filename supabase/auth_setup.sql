@@ -110,6 +110,7 @@ begin
     'insurance_policy','employee','licence'
   ]
   loop
+    execute format('drop policy if exists member_store_rw on public.%I;', t);
     execute format($f$
       create policy member_store_rw on public.%I
         for all
@@ -124,6 +125,7 @@ end $$;
 -- reaches rows that roll up to their store. Membership is enforced at the parent.
 
 -- receiving_line via its receiving_event.
+drop policy if exists member_store_rw on public.receiving_line;
 create policy member_store_rw on public.receiving_line
   for all
   to authenticated
@@ -135,6 +137,7 @@ create policy member_store_rw on public.receiving_line
     where e.id = receiving_line.receiving_event_id and e.store_id = app_auth.my_store_id()));
 
 -- payment via its invoice.
+drop policy if exists member_store_rw on public.payment;
 create policy member_store_rw on public.payment
   for all
   to authenticated
@@ -146,6 +149,7 @@ create policy member_store_rw on public.payment
     where i.id = payment.invoice_id and i.store_id = app_auth.my_store_id()));
 
 -- inventory_count_line via its inventory_count.
+drop policy if exists member_store_rw on public.inventory_count_line;
 create policy member_store_rw on public.inventory_count_line
   for all
   to authenticated
@@ -157,6 +161,7 @@ create policy member_store_rw on public.inventory_count_line
     where c.id = inventory_count_line.inventory_count_id and c.store_id = app_auth.my_store_id()));
 
 -- pay_rate via its employee. PIPEDA personal data, kept inside the member's store.
+drop policy if exists member_store_rw on public.pay_rate;
 create policy member_store_rw on public.pay_rate
   for all
   to authenticated
@@ -168,6 +173,7 @@ create policy member_store_rw on public.pay_rate
     where e.id = pay_rate.employee_id and e.store_id = app_auth.my_store_id()));
 
 -- shift via its employee. PIPEDA personal data, kept inside the member's store.
+drop policy if exists member_store_rw on public.shift;
 create policy member_store_rw on public.shift
   for all
   to authenticated
@@ -180,6 +186,7 @@ create policy member_store_rw on public.shift
 
 -- retail_price via its item. Not named in the cutover list, but RLS-on with no policy would
 -- deny it for everyone, so scope it through item like the other store-scoped children.
+drop policy if exists member_store_rw on public.retail_price;
 create policy member_store_rw on public.retail_price
   for all
   to authenticated
@@ -195,10 +202,12 @@ create policy member_store_rw on public.retail_price
 -- department: readable by any member of the store. Writes scoped to the member's store
 -- (the cutover only restricts app_user and store writes to manager/owner; department edits
 -- stay open to members of the store, but never cross-store).
+drop policy if exists member_store_read on public.department;
 create policy member_store_read on public.department
   for select
   to authenticated
   using (store_id = app_auth.my_store_id());
+drop policy if exists member_store_write on public.department;
 create policy member_store_write on public.department
   for all
   to authenticated
@@ -206,10 +215,12 @@ create policy member_store_write on public.department
   with check (store_id = app_auth.my_store_id());
 
 -- store: readable by its members. Writes restricted to managers and owners of that store.
+drop policy if exists member_store_read on public.store;
 create policy member_store_read on public.store
   for select
   to authenticated
   using (id = app_auth.my_store_id());
+drop policy if exists manager_store_write on public.store;
 create policy manager_store_write on public.store
   for all
   to authenticated
@@ -220,10 +231,12 @@ create policy manager_store_write on public.store
 -- store may insert, update, or delete members, and only within their own store. NOTE: the
 -- first owner's app_user.auth_id is set by the auto-link in section 4, which runs as the table
 -- owner in the SQL editor and bypasses RLS, so it bootstraps access before anyone is linked.
+drop policy if exists member_store_read on public.app_user;
 create policy member_store_read on public.app_user
   for select
   to authenticated
   using (store_id = app_auth.my_store_id());
+drop policy if exists manager_store_write on public.app_user;
 create policy manager_store_write on public.app_user
   for all
   to authenticated
@@ -235,10 +248,12 @@ create policy manager_store_write on public.app_user
 -- app_user and store for the manager/owner write limit, but the tax rate drives every total,
 -- so we deny edits to staff and leads rather than over-expose. Adjust if a broader write is
 -- wanted. (Noted in the PR.)
+drop policy if exists member_read on public.tax_rules;
 create policy member_read on public.tax_rules
   for select
   to authenticated
   using (true);
+drop policy if exists manager_write on public.tax_rules;
 create policy manager_write on public.tax_rules
   for all
   to authenticated
@@ -250,12 +265,14 @@ create policy manager_write on public.tax_rules
 -- themselves, so the log cannot be forged for another member or store. No update or delete
 -- policy is defined, so the audit trail is append-only for members (the service role, used by
 -- migrations and server jobs, still bypasses RLS).
+drop policy if exists member_store_read on public.activity_log;
 create policy member_store_read on public.activity_log
   for select
   to authenticated
   using (exists (
     select 1 from public.app_user a
     where a.id = activity_log.actor_id and a.store_id = app_auth.my_store_id()));
+drop policy if exists member_insert_self on public.activity_log;
 create policy member_insert_self on public.activity_log
   for insert
   to authenticated
@@ -264,10 +281,11 @@ create policy member_insert_self on public.activity_log
 -- 3d. Storage. Supabase enables row-level security on storage.objects, so uploads need a policy
 -- or every capture fails with "new row violates row-level security policy". Drop the dev policy
 -- that allowed the anon key to write, and allow only signed-in members to read and write the
--- `documents` bucket (invoice photos, payment confirmations). The bucket stays public-read so the
--- feed thumbnails still load; moving to signed URLs is the documented next hardening step.
+-- `documents` bucket (invoice photos, payment confirmations). The bucket goes PRIVATE here:
+-- the app reads thumbnails through signed, expiring URLs (src/lib/docs.ts), so no permanent
+-- public link to an invoice photo exists and a logged-out visitor gets nothing.
 insert into storage.buckets (id, name, public)
-values ('documents', 'documents', true)
+values ('documents', 'documents', false)
 on conflict (id) do update set public = excluded.public;
 
 drop policy if exists "documents_dev_all" on storage.objects;

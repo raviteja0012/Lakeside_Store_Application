@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 import { parseWorkbook } from "@/lib/importBookings";
 import { parseSchedule, looksLikeSchedule } from "@/lib/importSchedule";
+import { REQUIRE_AUTH_SERVER } from "@/lib/serverMember";
 
 export const runtime = "nodejs";
 
@@ -119,6 +120,11 @@ export async function POST(req: Request) {
     }
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     const token = authHeader?.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : null;
+    // With login enforced, a token is mandatory. Without this, an anonymous caller could skip
+    // the owner/manager gate below and still write through the service-role key.
+    if (REQUIRE_AUTH_SERVER && !token) {
+      return Response.json({ ok: false, message: "Sign in as an owner or manager to import." }, { status: 401 });
+    }
     // When a member token is present without a service key, run every call as that member so the
     // per-store RLS policies apply (import works in enforced auth with just the anon key). With a
     // service key the header is harmless; in demo mode there is no token and the dev policies apply.

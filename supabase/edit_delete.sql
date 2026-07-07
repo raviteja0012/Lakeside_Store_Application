@@ -29,3 +29,33 @@ alter table public.maintenance_task add constraint maintenance_task_recurrence_c
 -- belongs on the shift, not only on the employee. Lets the schedule import and the department
 -- filter group shifts by the department they cover.
 alter table public.shift add column if not exists department_id uuid references public.department(id);
+
+-- 4. The hard low-confidence gate. The capture screen stores an explicit acknowledgement when
+-- a person confirms the amber (low-confidence) lines, and this trigger refuses to post a
+-- low-confidence dollar line without it, so the human-in-the-loop rule holds at the database.
+alter table public.receiving_event add column if not exists low_confidence_ack boolean default false;
+
+-- 4a. The capture screen's free-text Notes, previously collected but never stored.
+alter table public.receiving_event add column if not exists notes text;
+
+create or replace function public.enforce_line_confidence()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.confidence is not null and new.confidence < 0.7 and new.unit_cost is not null then
+    if not exists (
+      select 1 from public.receiving_event e
+      where e.id = new.receiving_event_id and e.low_confidence_ack
+    ) then
+      raise exception 'low-confidence dollar line needs the capture acknowledgement before it posts';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists receiving_line_confidence_gate on public.receiving_line;
+create trigger receiving_line_confidence_gate
+  before insert or update on public.receiving_line
+  for each row execute function public.enforce_line_confidence();

@@ -572,7 +572,7 @@ export default function VendorDetail() {
                 <div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <strong>{o.season_year || ""} order</strong>
-                    <select className="input" style={{ width: "auto", padding: "2px 6px", fontSize: 12 }} value={o.status} onChange={(e) => updatePOStatus(o.id, e.target.value)} disabled={busy} aria-label="order status">
+                    <select className="input" style={{ width: "auto", padding: "2px 6px", fontSize: 12 }} value={o.status} onChange={(e) => updatePOStatus(o.id, e.target.value)} disabled={busy || !canEdit(role)} aria-label="order status">
                       {["draft", "ordered", "confirmed", "shipped", "received", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>

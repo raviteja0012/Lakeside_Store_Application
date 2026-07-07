@@ -48,6 +48,15 @@ export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
 }
 
+// Authorization header for calls to our own API routes. Empty in demo mode so requests look
+// exactly as before; carries the session token in enforced mode, where the routes require it.
+export async function authHeader(): Promise<Record<string, string>> {
+  if (!REQUIRE_AUTH) return {};
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
 // Current Supabase Auth user, or null. Subscribes to auth state so a sign-in or sign-out
 // in this tab updates immediately. `ready` flips true once the first session check returns.
 export function useAuthUser(): { user: User | null; ready: boolean } {

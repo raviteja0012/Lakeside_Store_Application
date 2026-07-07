@@ -5,7 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
-import { canSeeMoney, useCurrentRole } from "@/lib/auth";
+import { authHeader, canSeeMoney, useCurrentRole } from "@/lib/auth";
 
 const CURRENT_SEASON = new Date().getFullYear();
 const LOW_STOCK = 3; // a latest count at or below this flags the item for a restock look
@@ -46,7 +46,7 @@ export default function Reorder() {
       if (storeId) pq = pq.eq("store_id", storeId);
       const p = await pq;
       setPos((p.data as unknown as PO[]) || []);
-      let nq = supabase.from("knowledge_note").select("topic, body, tags");
+      let nq = supabase.from("knowledge_note").select("topic, body, tags").is("voided_at", null);
       if (storeId) nq = nq.eq("store_id", storeId);
       const n = await nq;
       setNotes((n.data as unknown as Note[]) || []);
@@ -54,8 +54,12 @@ export default function Reorder() {
       if (storeId) iq = iq.eq("store_id", storeId);
       const it = await iq;
       setItems((it.data as unknown as ItemRow[]) || []);
-      // Count lines carry no store_id; filter by the parent count's store after fetching.
-      const cl = await supabase.from("inventory_count_line").select("item_id, counted_qty, inventory_count:inventory_count_id(counted_date, store_id)");
+      // Count lines carry no store_id; the inner join scopes them through the parent count,
+      // which also drops lines of voided (deleted) counts.
+      const cl = await supabase
+        .from("inventory_count_line")
+        .select("item_id, counted_qty, inventory_count:inventory_count_id!inner(counted_date, store_id)")
+        .is("inventory_count.voided_at", null);
       const lines = ((cl.data as unknown as CountLine[]) || []).filter((l) => !storeId || l.inventory_count?.store_id === storeId);
       setCountLines(lines);
       setLoading(false);
@@ -132,7 +136,7 @@ export default function Reorder() {
     setAiMsg(null);
     setSummary(null);
     try {
-      const resp = await fetch("/api/reorder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ store_id: storeId }) });
+      const resp = await fetch("/api/reorder", { method: "POST", headers: { "content-type": "application/json", ...(await authHeader()) }, body: JSON.stringify({ store_id: storeId }) });
       const data = await resp.json();
       if (data.answer) setSummary(data.answer);
       else setAiMsg(data.message || data.error || "No summary came back.");
@@ -161,7 +165,7 @@ export default function Reorder() {
       </div>
 
       <div>
-        <button className="btn-ghost" onClick={runAI} disabled={aiLoading}>{aiLoading ? "Summarizing." : "Summarize with AI"}</button>
+        {showMoney && <button className="btn-ghost" onClick={runAI} disabled={aiLoading}>{aiLoading ? "Summarizing." : "Summarize with AI"}</button>}
         {aiMsg && <span className="help" style={{ marginLeft: 10 }}>{aiMsg}</span>}
       </div>
       {summary && (

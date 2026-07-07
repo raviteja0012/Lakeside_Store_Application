@@ -66,9 +66,11 @@ create table receiving_event (
   vendor_id uuid references vendor(id),
   vendor_name text,                 -- raw extracted vendor name before matching
   received_date date,
+  notes text,                       -- free-text notes typed on the capture confirm screen
   source_file_path text,            -- the original invoice or photo in storage
   status text default 'confirmed' check (status in ('pending_document','parsed','validation_error','awaiting_arrival','partial_received','fully_received','disputed','confirmed','closed','cancelled')),
   discrepancy_ack boolean default false,  -- set true when a human acknowledged an order-vs-invoiced difference
+  low_confidence_ack boolean default false, -- set true when a human confirmed the low-confidence (amber) lines
   created_by uuid references app_user(id),
   created_at timestamptz default now()
 );
@@ -83,6 +85,32 @@ create table receiving_line (
   retail_price_note numeric,        -- the price scribbled on the invoice
   confidence numeric                -- model confidence 0 to 1, low values get flagged
 );
+
+-- Database backstop for the human-in-the-loop rule on dollars: a line the model read with low
+-- confidence and that carries a unit cost can only post when its receiving event records the
+-- capture screen's explicit acknowledgement. The UI enforces this first; the trigger makes the
+-- rule hold for any other write path too.
+create or replace function public.enforce_line_confidence()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.confidence is not null and new.confidence < 0.7 and new.unit_cost is not null then
+    if not exists (
+      select 1 from public.receiving_event e
+      where e.id = new.receiving_event_id and e.low_confidence_ack
+    ) then
+      raise exception 'low-confidence dollar line needs the capture acknowledgement before it posts';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists receiving_line_confidence_gate on public.receiving_line;
+create trigger receiving_line_confidence_gate
+  before insert or update on public.receiving_line
+  for each row execute function public.enforce_line_confidence();
 
 create table invoice (
   id uuid primary key default gen_random_uuid(),

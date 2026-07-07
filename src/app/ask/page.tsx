@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useActiveStore } from "@/lib/store";
+import { authHeader } from "@/lib/auth";
 
 const EXAMPLES = [
   "Which gift vendors should we skip in 2026 and why?",
@@ -27,7 +28,7 @@ export default function Ask() {
     try {
       const resp = await fetch("/api/ask", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({ question: text, store_id: storeId })
       });
       const data = await resp.json();

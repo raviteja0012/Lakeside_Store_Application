@@ -41,35 +41,48 @@ export default function CommandDashboard() {
     if (!ready) return;
     setLoading(true);
     setError(null);
+    // Cancellation guard: switching stores mid-load must not let the slower store's
+    // responses land after the faster one's, mixing KPIs from two stores.
+    let cancelled = false;
     (async () => {
       let rq = supabase.from("receiving_event").select("created_at, department_id").is("voided_at", null);
       if (storeId) rq = rq.eq("store_id", storeId);
       const r = await rq;
+      if (cancelled) return;
       if (r.error) { setError(r.error.message); setLoading(false); return; }
       setRecv((r.data as unknown as Recv[]) || []);
 
       let iq = supabase.from("invoice").select("amount, due_date, status, vendor_id").is("voided_at", null);
       if (storeId) iq = iq.eq("store_id", storeId);
       const i = await iq;
+      if (cancelled) return;
+      if (i.error) { setError(i.error.message); setLoading(false); return; }
       setInvoices((i.data as unknown as Inv[]) || []);
 
       let pq = supabase.from("purchase_order").select("vendor_id, ship_date, status, season_year").is("voided_at", null);
       if (storeId) pq = pq.eq("store_id", storeId);
       const p = await pq;
+      if (cancelled) return;
+      if (p.error) { setError(p.error.message); setLoading(false); return; }
       setPos((p.data as unknown as PO[]) || []);
 
       let vq = supabase.from("vendor").select("id, status").is("voided_at", null);
       if (storeId) vq = vq.eq("store_id", storeId);
       const v = await vq;
+      if (cancelled) return;
+      if (v.error) { setError(v.error.message); setLoading(false); return; }
       setVendors((v.data as unknown as Vend[]) || []);
 
       let dq = supabase.from("department").select("id, name").order("name");
       if (storeId) dq = dq.eq("store_id", storeId);
       const d = await dq;
+      if (cancelled) return;
+      if (d.error) { setError(d.error.message); setLoading(false); return; }
       setDepts((d.data as unknown as Dept[]) || []);
 
       setLoading(false);
     })();
+    return () => { cancelled = true; };
   }, [ready, storeId]);
 
   const kpis = useMemo<KpiItem[]>(() => {

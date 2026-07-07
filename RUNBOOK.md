@@ -98,9 +98,12 @@ and redeploy, and re-run the dev storage and table policies from `schema.sql` if
 anonymous writes again (otherwise reads and writes keep requiring a linked session).
 
 ## Before real staff use (later hardening, not blockers)
-- Move document storage to signed URLs. The `documents` bucket is public-read so feed thumbnails
-  load; a determined staff member could open an invoice image URL and read amounts the UI hides.
-  Signed URLs close that. Do this before real money data with a staff role that should not see it.
+- Signed document URLs: DONE. The app reads thumbnails through signed, expiring URLs
+  (src/lib/docs.ts) and `auth_setup.sql` now makes the `documents` bucket private, so no
+  permanent public link to an invoice photo exists once you run the cutover.
+- Low-confidence dollar gate: DONE. Capture blocks the save until every amber line is fixed or
+  explicitly confirmed, records the acknowledgement on the event, and a database trigger
+  (in `schema.sql` and `edit_delete.sql`) refuses a low-confidence dollar line without it.
 - Column-level cost hiding is enforced in the UI today and by the row-level DB policies in
   `auth_setup.sql`. Revoking the cost columns from the staff Postgres role is a further step.
 - Rotate the Anthropic key and remove the credit-card number from the Lawson PO Drive doc (see
