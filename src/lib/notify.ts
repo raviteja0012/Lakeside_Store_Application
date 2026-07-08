@@ -20,8 +20,42 @@ type LicRow = { id: string; name: string; expiry_date: string | null };
 type PolRow = { id: string; name: string; renewal_date: string | null };
 type TaskRow = { id: string; due_date: string | null; status: string };
 
+// A latest count at or below this flags the item as low, matching the Reorder screen.
+const LOW_STOCK = 3;
+
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+// Low stock, bounded: only the lines of the ten most recent counts are read (the bell is a
+// hint, not a report; /reorder is the full view). Latest-per-item ties resolve by count
+// recency, matching how a same-day recount supersedes the morning's numbers.
+async function lowStockCount(storeId: string): Promise<number> {
+  const { data: counts, error } = await supabase
+    .from("inventory_count")
+    .select("id")
+    .eq("store_id", storeId)
+    .is("voided_at", null)
+    .order("counted_date", { ascending: false })
+    .limit(10);
+  if (error || !counts?.length) return 0;
+  const ordered = (counts as { id: string }[]).map((c) => c.id);
+  const { data: lines, error: le } = await supabase
+    .from("inventory_count_line")
+    .select("item_id, counted_qty, inventory_count_id")
+    .in("inventory_count_id", ordered);
+  if (le) return 0;
+  const rank = new Map(ordered.map((id, idx) => [id, idx]));
+  const latest = new Map<string, { qty: number; rank: number }>();
+  for (const l of (lines as { item_id: string | null; counted_qty: number | null; inventory_count_id: string }[]) || []) {
+    if (!l.item_id || l.counted_qty == null) continue;
+    const rk = rank.get(l.inventory_count_id) ?? Number.MAX_SAFE_INTEGER;
+    const cur = latest.get(l.item_id);
+    if (!cur || rk < cur.rank) latest.set(l.item_id, { qty: Number(l.counted_qty), rank: rk });
+  }
+  let low = 0;
+  for (const v of latest.values()) if (v.qty <= LOW_STOCK) low++;
+  return low;
 }
 
 export async function loadNotifications(storeId: string, role?: Role | null): Promise<Notification[]> {
@@ -32,13 +66,17 @@ export async function loadNotifications(storeId: string, role?: Role | null): Pr
   const showMoney = canSeeMoney(role);
 
   try {
+    // The five checks are independent; run them together so the bell costs one round trip
+    // of latency, not five.
+    const [inv, lic, pol, task, low] = await Promise.all([
+      supabase.from("invoice").select("amount, due_date, status").eq("store_id", storeId).is("voided_at", null).eq("status", "unpaid"),
+      supabase.from("licence").select("id, name, expiry_date").eq("store_id", storeId).is("voided_at", null),
+      supabase.from("insurance_policy").select("id, name, renewal_date").eq("store_id", storeId).is("voided_at", null),
+      supabase.from("maintenance_task").select("id, due_date, status").eq("store_id", storeId).is("voided_at", null).neq("status", "done"),
+      lowStockCount(storeId)
+    ]);
+
     // Overdue invoices: unpaid and past due. One rolled-up item with the total past due.
-    const inv = await supabase
-      .from("invoice")
-      .select("amount, due_date, status")
-      .eq("store_id", storeId)
-      .is("voided_at", null)
-      .eq("status", "unpaid");
     if (!inv.error) {
       const rows = (inv.data as unknown as InvRow[]) || [];
       let count = 0;
@@ -62,11 +100,6 @@ export async function loadNotifications(storeId: string, role?: Role | null): Pr
     }
 
     // Licence expiry: each licence within 30 days or already past gets an item.
-    const lic = await supabase
-      .from("licence")
-      .select("id, name, expiry_date")
-      .eq("store_id", storeId)
-      .is("voided_at", null);
     if (!lic.error) {
       for (const l of ((lic.data as unknown as LicRow[]) || [])) {
         const d = daysOverdue(l.expiry_date);
@@ -93,11 +126,6 @@ export async function loadNotifications(storeId: string, role?: Role | null): Pr
     }
 
     // Insurance renewals: each policy within 30 days or past renewal date gets an item.
-    const pol = await supabase
-      .from("insurance_policy")
-      .select("id, name, renewal_date")
-      .eq("store_id", storeId)
-      .is("voided_at", null);
     if (!pol.error) {
       for (const p of ((pol.data as unknown as PolRow[]) || [])) {
         const d = daysOverdue(p.renewal_date);
@@ -117,12 +145,6 @@ export async function loadNotifications(storeId: string, role?: Role | null): Pr
     }
 
     // Maintenance due: open or in-progress tasks due within the next 7 days (or already due).
-    const task = await supabase
-      .from("maintenance_task")
-      .select("id, due_date, status")
-      .eq("store_id", storeId)
-      .is("voided_at", null)
-      .neq("status", "done");
     if (!task.error) {
       const rows = (task.data as unknown as TaskRow[]) || [];
       let due = 0;
@@ -139,6 +161,18 @@ export async function loadNotifications(storeId: string, role?: Role | null): Pr
           href: "/maintenance"
         });
       }
+    }
+
+    // Low stock: items whose most recent count is at or below the threshold. Quantities are
+    // not money, so every role sees this one.
+    if (low > 0) {
+      out.push({
+        id: "low-stock",
+        severity: "info",
+        title: `${plural(low, "item looks", "items look")} low`,
+        detail: `at or below ${LOW_STOCK} on the last count`,
+        href: "/reorder"
+      });
     }
   } catch {
     return [];

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { labelize } from "@/lib/status";
 import { daysOverdue, dueBand } from "@/lib/format";
+import { completeTask, completedToday } from "@/lib/tasks";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
@@ -11,7 +12,7 @@ import type { MaintenanceAsset, MaintenanceTask, AppUser, Department } from "@/l
 
 const ACTOR_KEY = "rgs_actor";
 const CATEGORIES = ["building", "refrigeration", "equipment", "grounds", "safety", "other"];
-const RECURRENCES = ["none", "weekly", "monthly", "seasonal", "annual"];
+const RECURRENCES = ["none", "daily", "weekly", "monthly", "seasonal", "annual"];
 
 export default function Maintenance() {
   const { storeId, ready } = useActiveStore();
@@ -165,15 +166,34 @@ export default function Maintenance() {
     }
   }
 
-  async function setTaskStatus(taskId: string, status: string) {
+  // Status moves preserve the completion stamp: Start on a duty already ticked today must
+  // not erase today's record. Only reopening a finished task clears it.
+  async function setTaskStatus(taskId: string, status: string, clearCompleted = false) {
     setBusy(true);
     setError(null);
     try {
-      const r = await supabase.from("maintenance_task")
-        .update({ status, completed_at: status === "done" ? new Date().toISOString() : null })
-        .eq("id", taskId);
+      const patch: Record<string, unknown> = { status };
+      if (status === "done") patch.completed_at = new Date().toISOString();
+      else if (clearCompleted) patch.completed_at = null;
+      const r = await supabase.from("maintenance_task").update(patch).eq("id", taskId);
       if (r.error) throw new Error(r.error.message);
       await log(status === "done" ? "task_completed" : "task_status_changed", "maintenance_task", taskId);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Ticking a task off goes through the shared write in src/lib/tasks.ts, the same one the
+  // home checklist uses, so both screens roll recurring due dates identically.
+  async function completeOne(t: MaintenanceTask) {
+    setBusy(true);
+    setError(null);
+    try {
+      const err = await completeTask(t, effectiveActorId);
+      if (err) throw new Error(err);
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -236,6 +256,7 @@ export default function Maintenance() {
               <strong>{t.title}</strong>
               <span className={`chip ${band.cls}`}>{t.status === "done" ? "done" : (t.due_date ? band.text : "no due date")}</span>
               {t.recurrence !== "none" && <span className="chip chip-neutral">{t.recurrence}</span>}
+              {t.recurrence !== "none" && completedToday(t) && <span className="chip chip-success">done today</span>}
               <span className={`chip ${t.status === "in_progress" ? "chip-progress" : "chip-neutral"}`}>{labelize(t.status)}</span>
             </div>
             <div className="help" style={{ marginTop: 4 }}>
@@ -254,11 +275,17 @@ export default function Maintenance() {
           {t.status !== "done" && t.status !== "in_progress" && (
             <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => setTaskStatus(t.id, "in_progress")} disabled={busy}>Start</button>
           )}
-          {t.status !== "done" && (
-            <button className="btn-primary" style={{ padding: "4px 10px" }} onClick={() => setTaskStatus(t.id, "done")} disabled={busy}>Mark complete</button>
+          {t.status !== "done" && t.recurrence === "none" && (
+            <button className="btn-primary" style={{ padding: "4px 10px" }} onClick={() => completeOne(t)} disabled={busy}>Mark complete</button>
+          )}
+          {t.status !== "done" && t.recurrence !== "none" && !completedToday(t) && (
+            <button className="btn-primary" style={{ padding: "4px 10px" }} onClick={() => completeOne(t)} disabled={busy}>Done today</button>
+          )}
+          {t.status !== "done" && t.recurrence !== "none" && canEdit(role) && (
+            <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => setTaskStatus(t.id, "done")} disabled={busy} title="End this recurring task for good">Finish for good</button>
           )}
           {t.status === "done" && (
-            <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => setTaskStatus(t.id, "open")} disabled={busy}>Reopen</button>
+            <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => setTaskStatus(t.id, "open", true)} disabled={busy}>Reopen</button>
           )}
           {canEdit(role) && (
             <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base)" }} onClick={() => deleteTask(t.id)} disabled={busy}>Delete</button>

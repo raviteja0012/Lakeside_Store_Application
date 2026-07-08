@@ -18,6 +18,7 @@ create table department (
   name text not null,
   parent_department_id uuid references department(id),
   accent_color text,
+  target_margin numeric,            -- default retail margin percent for the margin calculator
   created_at timestamptz default now()
 );
 

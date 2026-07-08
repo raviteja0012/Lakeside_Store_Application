@@ -11,12 +11,14 @@ import { supabase, SUPABASE_CONFIGURED } from "@/lib/supabaseClient";
 import { formatCAD, todayISO, daysOverdue } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, useCurrentRole } from "@/lib/auth";
+import { completedToday, dueToday, type TaskLite } from "@/lib/tasks";
 
 type Recv = { created_at: string; department_id: string | null };
 type Inv = { amount: number | null; due_date: string | null; status: string; vendor_id: string | null };
 type PO = { vendor_id: string | null; ship_date: string | null; status: string; season_year: number | null };
 type Vend = { id: string; status: string };
 type Dept = { id: string; name: string };
+type Duty = TaskLite & { id: string };
 
 // Local date as YYYY-MM-DD, matching the feed so "today" and "this month" line up across screens.
 function localISO(ts: string): string {
@@ -34,6 +36,7 @@ export default function CommandDashboard() {
   const [pos, setPos] = useState<PO[]>([]);
   const [vendors, setVendors] = useState<Vend[]>([]);
   const [depts, setDepts] = useState<Dept[]>([]);
+  const [duties, setDuties] = useState<Duty[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,41 +48,27 @@ export default function CommandDashboard() {
     // responses land after the faster one's, mixing KPIs from two stores.
     let cancelled = false;
     (async () => {
-      let rq = supabase.from("receiving_event").select("created_at, department_id").is("voided_at", null);
-      if (storeId) rq = rq.eq("store_id", storeId);
-      const r = await rq;
+      const scoped = (q: any) => (storeId ? q.eq("store_id", storeId) : q);
+      // Open tasks plus the last two days of completions, so finished one-offs still count
+      // toward today's tally (completedToday applies the exact local-day cut client-side).
+      const since = new Date(Date.now() - 2 * 86400000).toISOString();
+      const [r, i, p, v, d, t] = await Promise.all([
+        scoped(supabase.from("receiving_event").select("created_at, department_id").is("voided_at", null)),
+        scoped(supabase.from("invoice").select("amount, due_date, status, vendor_id").is("voided_at", null)),
+        scoped(supabase.from("purchase_order").select("vendor_id, ship_date, status, season_year").is("voided_at", null)),
+        scoped(supabase.from("vendor").select("id, status").is("voided_at", null)),
+        scoped(supabase.from("department").select("id, name").order("name")),
+        scoped(supabase.from("maintenance_task").select("id, due_date, recurrence, status, completed_at").is("voided_at", null).or(`status.neq.done,completed_at.gte.${since}`))
+      ]);
       if (cancelled) return;
-      if (r.error) { setError(r.error.message); setLoading(false); return; }
+      const firstError = [r, i, p, v, d, t].find((x) => x.error);
+      if (firstError?.error) { setError(firstError.error.message); setLoading(false); return; }
       setRecv((r.data as unknown as Recv[]) || []);
-
-      let iq = supabase.from("invoice").select("amount, due_date, status, vendor_id").is("voided_at", null);
-      if (storeId) iq = iq.eq("store_id", storeId);
-      const i = await iq;
-      if (cancelled) return;
-      if (i.error) { setError(i.error.message); setLoading(false); return; }
       setInvoices((i.data as unknown as Inv[]) || []);
-
-      let pq = supabase.from("purchase_order").select("vendor_id, ship_date, status, season_year").is("voided_at", null);
-      if (storeId) pq = pq.eq("store_id", storeId);
-      const p = await pq;
-      if (cancelled) return;
-      if (p.error) { setError(p.error.message); setLoading(false); return; }
       setPos((p.data as unknown as PO[]) || []);
-
-      let vq = supabase.from("vendor").select("id, status").is("voided_at", null);
-      if (storeId) vq = vq.eq("store_id", storeId);
-      const v = await vq;
-      if (cancelled) return;
-      if (v.error) { setError(v.error.message); setLoading(false); return; }
       setVendors((v.data as unknown as Vend[]) || []);
-
-      let dq = supabase.from("department").select("id, name").order("name");
-      if (storeId) dq = dq.eq("store_id", storeId);
-      const d = await dq;
-      if (cancelled) return;
-      if (d.error) { setError(d.error.message); setLoading(false); return; }
       setDepts((d.data as unknown as Dept[]) || []);
-
+      setDuties((t.data as unknown as Duty[]) || []);
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -119,8 +108,20 @@ export default function CommandDashboard() {
     );
     const toReorder = vendors.filter((v) => v.status === "active" && !orderedThisSeason.has(v.id)).length;
 
+    // Tasks today: daily duties plus anything due or overdue, against what got ticked off
+    // today (recurring and one-off alike).
+    const dueNow = duties.filter((t) => dueToday(t)).length;
+    const doneToday = duties.filter((t) => completedToday(t)).length;
+
     const items: KpiItem[] = [
       { title: "Captures today", value: String(capturesToday), icon: "📦", foot: "captures" },
+      {
+        title: "Tasks today",
+        value: `${doneToday}/${doneToday + dueNow}`,
+        icon: "✅",
+        tone: dueNow > 0 ? "warning" : undefined,
+        foot: dueNow > 0 ? `${dueNow} still to do` : "all done"
+      },
       {
         title: "Outstanding",
         value: showMoney ? formatCAD(outstanding) : "—",
@@ -150,7 +151,7 @@ export default function CommandDashboard() {
       }
     ];
     return items;
-  }, [recv, invoices, pos, vendors, showMoney]);
+  }, [recv, invoices, pos, vendors, duties, showMoney]);
 
   // By department: receiving events this calendar month, per department.
   const byDept = useMemo(() => {

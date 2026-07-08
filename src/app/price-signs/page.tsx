@@ -4,7 +4,147 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
+import { canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
+import { canEdit } from "@/lib/edit";
 import type { Item } from "@/lib/types";
+
+type DeptMargin = { id: string; name: string; target_margin: number | null };
+
+// Retail price from cost and a margin percent of the retail price: price = cost / (1 - m).
+// The .99 suggestion is the nearest x.99 at or above the exact price.
+function priceFromMargin(cost: number, marginPct: number): { exact: number; psych: number } | null {
+  if (!(cost > 0) || !(marginPct >= 0) || marginPct >= 100) return null;
+  const exact = cost / (1 - marginPct / 100);
+  const base = Math.floor(exact) + 0.99;
+  const psych = base >= exact ? base : base + 1;
+  return { exact, psych };
+}
+
+// The margin calculator card. Costs are money, so the whole card is gated to money roles.
+// Each department remembers its target margin; saving needs an owner or manager.
+function MarginCalculator() {
+  const { storeId, ready } = useActiveStore();
+  const { role } = useCurrentRole();
+  const { member } = useMember();
+  const [depts, setDepts] = useState<DeptMargin[]>([]);
+  const [canSave, setCanSave] = useState(true);
+  const [deptId, setDeptId] = useState("");
+  const [cost, setCost] = useState("");
+  const [margin, setMargin] = useState("");
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!ready) return;
+    (async () => {
+      let q = supabase.from("department").select("id, name, target_margin").order("name");
+      if (storeId) q = q.eq("store_id", storeId);
+      const { data, error } = await q;
+      if (error && /target_margin/.test(error.message)) {
+        // A live database from before the target_margin column: the calculator still works
+        // with a typed margin; only per-department saving is off until the migration runs.
+        let fq = supabase.from("department").select("id, name").order("name");
+        if (storeId) fq = fq.eq("store_id", storeId);
+        const fb = await fq;
+        setDepts((((fb.data as any[]) || []).map((d) => ({ ...d, target_margin: null }))) as DeptMargin[]);
+        setCanSave(false);
+        return;
+      }
+      setDepts((data as DeptMargin[]) || []);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, storeId]);
+
+  function pickDept(id: string) {
+    setDeptId(id);
+    setSaveMsg(null);
+    const d = depts.find((x) => x.id === id);
+    if (d?.target_margin != null) setMargin(String(d.target_margin));
+  }
+
+  // One definition of a valid margin, shared by the Save gate and the save itself.
+  const m = Number(margin);
+  const marginValid = margin !== "" && m >= 0 && m < 100;
+  const dept = depts.find((x) => x.id === deptId);
+
+  async function saveMargin() {
+    if (!dept || !marginValid) return;
+    setBusy(true);
+    setSaveMsg(null);
+    try {
+      const r = await supabase.from("department").update({ target_margin: m }).eq("id", dept.id);
+      if (r.error) throw new Error(r.error.message);
+      const actor = currentActorId(member);
+      if (actor) {
+        await supabase.from("activity_log").insert({ actor_id: actor, action: "margin_rule_set", entity: "department", entity_id: dept.id });
+      }
+      setDepts(depts.map((x) => (x.id === dept.id ? { ...x, target_margin: m } : x)));
+      setSaveMsg(`Saved. ${dept.name} now suggests a ${m}% margin.`);
+    } catch (e: any) {
+      setSaveMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!canSeeMoney(role)) return null;
+
+  const result = priceFromMargin(Number(cost), m);
+  const showSave = canEdit(role) && dept && marginValid && m !== dept.target_margin;
+
+  return (
+    <div className="card no-print" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 12 }}>
+      <div>
+        <strong>Price from cost</strong>
+        <p className="help" style={{ margin: "4px 0 0" }}>
+          Type what it costs you, pick the department, and get the retail price that hits the department&apos;s margin.
+        </p>
+      </div>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div>
+          <label className="label" htmlFor="calc-cost">Cost price ($)</label>
+          <input id="calc-cost" className="input tabular" type="number" step="0.01" min="0" style={{ width: 130 }} value={cost} onChange={(e) => setCost(e.target.value)} />
+        </div>
+        <div>
+          <label className="label" htmlFor="calc-dept">Department</label>
+          <select id="calc-dept" className="input" style={{ width: "auto" }} value={deptId} onChange={(e) => pickDept(e.target.value)}>
+            <option value="">Pick one</option>
+            {depts.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}{d.target_margin != null ? ` (${d.target_margin}%)` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="calc-margin">Margin %</label>
+          <input id="calc-margin" className="input tabular" type="number" step="1" min="0" max="99" style={{ width: 100 }} value={margin} onChange={(e) => { setMargin(e.target.value); setSaveMsg(null); }} />
+        </div>
+        {showSave && (
+          canSave ? (
+            <button className="btn-ghost" onClick={saveMargin} disabled={busy}>
+              {busy ? "Saving." : `Save ${margin}% as ${dept.name}'s rule`}
+            </button>
+          ) : (
+            <span className="help">Run edit_delete.sql once to save department margins.</span>
+          )
+        )}
+      </div>
+      {result && (
+        <div style={{ display: "flex", gap: 18, alignItems: "baseline", flexWrap: "wrap" }}>
+          <div>
+            <span className="help">Suggested price</span>
+            <div className="tabular" style={{ fontSize: 24, fontWeight: 700 }}>{formatCAD(result.psych)}</div>
+          </div>
+          <span className="help tabular">
+            exact {formatCAD(result.exact)} . profit {formatCAD(result.psych - Number(cost))} on each
+          </span>
+        </div>
+      )}
+      {saveMsg && <p className="help" style={{ margin: 0 }}>{saveMsg}</p>}
+    </div>
+  );
+}
 
 export default function PriceSigns() {
   const { storeId, ready } = useActiveStore();
@@ -87,6 +227,8 @@ export default function PriceSigns() {
           <span className="help">{chosen.length} selected</span>
         </div>
       </header>
+
+      <MarginCalculator />
 
       <input className="input" placeholder="Search items" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 12 }} aria-label="Search items" />
 

@@ -63,3 +63,7 @@ create trigger receiving_line_confidence_gate
 -- 5. Inventory count line notes. The inventory-sheet importer keeps each row's movement flag
 -- (FAST, SLOW, DEAD, REQUIRED) and overstock location here so that knowledge is not lost.
 alter table public.inventory_count_line add column if not exists notes text;
+
+-- 6. Per-department target margin for the price calculator (a percent of the retail price,
+-- for example Hardware 40, Clothing 50). Editable on the Price signs screen.
+alter table public.department add column if not exists target_margin numeric;
