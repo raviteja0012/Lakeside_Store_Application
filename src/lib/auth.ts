@@ -110,6 +110,14 @@ export function useEffectiveActor(
 //     is actively selected on a dropdown screen, which is how the feature is demoed.
 // Returns null until resolved. canSeeMoney treats a null role as no access.
 const ACTOR_KEY = "rgs_actor";
+
+// The actor id a write should be attributed to on screens with no Acting-as dropdown:
+// the signed-in member under enforced auth, else the demo's Acting-as pick. One shared
+// definition so the audit trail never depends on which screen the write came from.
+export function currentActorId(member: Member | null): string | null {
+  if (REQUIRE_AUTH) return member?.id ?? null;
+  return typeof window !== "undefined" ? localStorage.getItem(ACTOR_KEY) : null;
+}
 export function useCurrentRole(): { role: Role | null; ready: boolean } {
   const { member, ready: memberReady } = useMember();
   const [role, setRole] = useState<Role | null>(null);

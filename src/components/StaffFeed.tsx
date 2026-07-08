@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
 import { formatCAD, todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
-import { REQUIRE_AUTH, canSeeMoney, useCurrentRole, useMember } from "@/lib/auth";
+import { canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
 import { docUrls } from "@/lib/docs";
 import type { FeedRow } from "@/lib/types";
@@ -78,10 +78,7 @@ export default function StaffFeed() {
     setBusy(true);
     setError(null);
     try {
-      const actor = REQUIRE_AUTH
-        ? member?.id ?? null
-        : (typeof window !== "undefined" ? localStorage.getItem("rgs_actor") : null);
-      await voidRow("receiving_event", r.id, actor);
+      await voidRow("receiving_event", r.id, currentActorId(member));
       await load();
     } catch (e: any) {
       setError(e.message);
