@@ -102,24 +102,26 @@ schedule (shifts already carry a department; a zone field would be the extension
 ### 6. Other vendors: DT across departments
 Raw: "DT :- hardware, grocery 2nd aisle, dry goods."
 
-Refined: the vendor DT supplies more than one department (Hardware, the second grocery aisle,
-and Dry Goods).
+Decoded from the Drive (2026-07-07): DT is Dollar Tree. The Hardware/Vendors folder
+HH_HD_CT_DT holds a cross-retailer reorder sheet keyed by source: Home Hardware, Home Depot,
+Canadian Tire, Dollar Tree. So this note means: products the store buys from Dollar Tree are
+stocked in three places, Hardware, the second grocery aisle, and Dry Goods.
 
 Coverage: gap. A vendor currently belongs to exactly one department in the schema. Until
 multi-department vendors are built (queued below), the working convention is: create the vendor
 once under its main department and record the other placements in the vendor's notes, so orders
-still reconcile.
+still reconcile. The HH_HD_CT_DT InventorySheet.xlsx is the ready-made source when this builds.
 
 ### 7. Link and LP departments
 Raw: "Link:- need to list done what all the department involved in LP."
 
-Best reading: list which departments are involved in LP for the vendor Link. LP most likely
-means liquid propane in a Dorset general store context, but this is unconfirmed. Needs the
-owner's one-line answer on what LP stands for and who Link is.
+Decoded from the Drive (2026-07-07): LP almost certainly means Link Products, the existing
+Hardware vendor (folder "Link Products-Hardware", with Batteries and Sign Boards inventory
+sheets). The note asks to list which departments carry Link Products items. One-word
+confirmation from the owner closes this; the earlier liquid-propane reading is set aside.
 
-Interim: a knowledge note titled "Link / LP departments" holding the list as the owner dictates
-it. If LP is propane, it may also touch compliance (TSSA rules for propane handling in Ontario),
-which would join the licence tracking already on the Compliance screen.
+Interim: a knowledge note titled "Link Products departments" holding the list as the owner
+dictates it, and the same multi-department vendor build (item 4 below) covers it properly.
 
 ## Queued enhancements from these notes (proposed order)
 
@@ -140,8 +142,31 @@ Recorded here and mirrored in docs/STATUS.md. Nothing below is built yet; the ow
 
 1. Note 5: does "hardware taken care locations" mean staff zone responsibilities or stock
    locations?
-2. Note 7: what does LP stand for, and is Link a vendor? List the departments involved.
+2. Note 7: confirm LP = Link Products (decoded from the Drive folder), then list the departments
+   that carry Link items.
 3. Tenant tracker: how many tenants, and what are the rents? (Needed before building item 3.)
+
+## Drive re-verification, 2026-07-07
+
+The owner shared the StoreApplication folder link (same folder id as the 2026-05-30 crawl in
+docs/DATA_INVENTORY.md). Verified live: the tree matches the inventory exactly, and no
+store-related file was added or modified since the crawl. Futures.docx is still empty. The
+Lawson PO Details.docx with the plain-text credit card is STILL PRESENT and still needs
+deleting. Root documents re-read in full:
+
+- Vendorlist&InvoiceFilling.docx, how each vendor's invoice arrives. This is the seed for the
+  email-intake allowlist (Wave 1). Email-channel vendors: Star Marketing, Kawartha Milk (also
+  physical), Wildly Delicious, Gourmet Trading Co, ShaSha, Orgill (also physical), Northland,
+  The Butcher Shop (also physical), RBH Tobacco, Muskoka Roastery (also physical), Emes Family
+  Maple Syrup, DGS Distribution (also physical), Forklift, Now Prepay, Bell, Orkin Canada,
+  Moor Propane, Howell Data Systems, Generator Solution, The Highlander (ad), Baxter Bakery
+  (statement by email). Physical-only: Arla Cheese, Maple Dale Cheese. Channel not yet noted:
+  Muskoka Spring, Nestle Ice Cream, Imperial Tobacco, Fraktals, Muskoka Brewery, water sample
+  test, L&D produce.
+- Utilities.docx: Hydro One, Bell, Vnet.
+- The two Gmail subject-line documents are one-entry starters (Imperial Tobacco remittance,
+  DGS receipt); the full subject-line library the owner uses lives in his Gmail habits, not
+  in Drive.
 
 ## Raw notes as received, 2026-07-07 (verbatim, unedited)
 
