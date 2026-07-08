@@ -59,3 +59,7 @@ drop trigger if exists receiving_line_confidence_gate on public.receiving_line;
 create trigger receiving_line_confidence_gate
   before insert or update on public.receiving_line
   for each row execute function public.enforce_line_confidence();
+
+-- 5. Inventory count line notes. The inventory-sheet importer keeps each row's movement flag
+-- (FAST, SLOW, DEAD, REQUIRED) and overstock location here so that knowledge is not lost.
+alter table public.inventory_count_line add column if not exists notes text;

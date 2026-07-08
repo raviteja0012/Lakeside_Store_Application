@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 import { parseWorkbook } from "@/lib/importBookings";
 import { parseSchedule, looksLikeSchedule } from "@/lib/importSchedule";
+import { parseInventory } from "@/lib/importInventory";
 import { REQUIRE_AUTH_SERVER } from "@/lib/serverMember";
 
 export const runtime = "nodejs";
@@ -95,6 +96,118 @@ async function importScheduleFlow(
   });
 }
 
+// Load a category inventory workbook: upsert items by SKU (falling back to name), then post
+// one dated inventory count holding every line. Idempotent by file name: the same workbook
+// loads once; re-uploading it reports the existing count instead of duplicating it.
+async function importInventoryFlow(
+  sb: any,
+  sheets: { name: string; rows: any[][] }[],
+  fileName: string,
+  storeId: string,
+  actorId: string | null,
+  departmentId: string | null
+): Promise<Response> {
+  const parsed = parseInventory(sheets);
+  const sourceLabel = `import:${fileName}`;
+
+  const { data: existingCount } = await sb
+    .from("inventory_count")
+    .select("id, counted_date")
+    .eq("store_id", storeId)
+    .eq("source_file_path", sourceLabel)
+    .is("voided_at", null)
+    .maybeSingle();
+  if (existingCount) {
+    return Response.json({
+      ok: true,
+      kind: "inventory",
+      message: `This workbook was already loaded as a count on ${existingCount.counted_date}. Nothing was changed. To load it again as a new count, rename the file (for example add the date) and re-upload.`,
+      inserted: { items: 0, lines: 0 },
+      summary: { perSheet: parsed.perSheet }
+    });
+  }
+
+  // Default the department to Hardware when none was picked; every inventory sheet in the
+  // Drive today is a Hardware category sheet.
+  let deptId = departmentId;
+  if (!deptId) {
+    const { data: hw } = await sb.from("department").select("id").eq("store_id", storeId).ilike("name", "hardware").maybeSingle();
+    deptId = hw?.id || null;
+  }
+
+  // Upsert items: match existing ones by SKU first, then by name, within the store.
+  const { data: existingItems } = await sb.from("item").select("id, sku, name").eq("store_id", storeId);
+  const bySku = new Map<string, string>();
+  const byName = new Map<string, string>();
+  for (const it of (existingItems as any[]) || []) {
+    if (it.sku) bySku.set(String(it.sku).toLowerCase(), it.id);
+    if (it.name) byName.set(String(it.name).toLowerCase(), it.id);
+  }
+  const resolveItem = (l: { sku: string | null; name: string }) =>
+    (l.sku && bySku.get(l.sku.toLowerCase())) || byName.get(l.name.toLowerCase()) || null;
+
+  const newItems: any[] = [];
+  const seenNew = new Set<string>();
+  for (const l of parsed.lines) {
+    if (resolveItem(l)) continue;
+    const key = (l.sku || l.name).toLowerCase();
+    if (seenNew.has(key)) continue;
+    seenNew.add(key);
+    newItems.push({ store_id: storeId, department_id: deptId, sku: l.sku, name: l.name });
+  }
+  const insertedItems = await insertChunks(sb, "item", newItems);
+
+  // Re-read so every line can resolve to an item id, including the ones just created.
+  const { data: allItems } = await sb.from("item").select("id, sku, name").eq("store_id", storeId);
+  bySku.clear();
+  byName.clear();
+  for (const it of (allItems as any[]) || []) {
+    if (it.sku) bySku.set(String(it.sku).toLowerCase(), it.id);
+    if (it.name) byName.set(String(it.name).toLowerCase(), it.id);
+  }
+
+  const counted_date = new Date().toISOString().slice(0, 10);
+  const ev = await sb
+    .from("inventory_count")
+    .insert({ store_id: storeId, department_id: deptId, counted_date, source_file_path: sourceLabel, created_by: actorId })
+    .select("id")
+    .single();
+  if (ev.error) return Response.json({ ok: false, message: `count: ${ev.error.message}` }, { status: 200 });
+  const countId = ev.data.id as string;
+
+  const lineRows = parsed.lines
+    .map((l) => ({ inventory_count_id: countId, item_id: resolveItem(l), counted_qty: l.qty, notes: l.note }))
+    .filter((r) => r.item_id);
+  let insertedLines = 0;
+  let notesDropped = false;
+  try {
+    insertedLines = await insertChunks(sb, "inventory_count_line", lineRows);
+  } catch (e: any) {
+    // A live database from before the notes column exists: load without notes rather than
+    // failing the whole import, and say exactly which migration adds them.
+    if (String(e?.message || "").includes("notes")) {
+      notesDropped = true;
+      insertedLines = await insertChunks(sb, "inventory_count_line", lineRows.map(({ notes: _n, ...r }) => r));
+    } else {
+      throw e;
+    }
+  }
+
+  await sb.from("activity_log").insert({ actor_id: actorId, action: "imported", entity: "inventory_count", entity_id: countId });
+
+  const skipped = parsed.perSheet.reduce((s, p) => s + p.skipped, 0);
+  return Response.json({
+    ok: true,
+    kind: "inventory",
+    message:
+      `Loaded ${insertedLines} count lines (${insertedItems} new items) as the ${counted_date} count.` +
+      (skipped ? ` Skipped ${skipped} rows that had no product on them (section labels and blanks).` : "") +
+      (notesDropped ? " Line notes (FAST/SLOW flags, overstock locations) were skipped: run supabase/edit_delete.sql once to add the notes column, then re-upload under a new file name to keep them." : ""),
+    inserted: { items: insertedItems, lines: insertedLines },
+    summary: { perSheet: parsed.perSheet }
+  });
+}
+
 // Upload the 2026 bookings workbook and load the full vendor ledger into a store.
 // Idempotent by vendor name: a vendor already present (case-insensitive) is skipped along
 // with all of its children, so the import is safe to re-run. Returns ok:false with status
@@ -164,12 +277,25 @@ export async function POST(req: Request) {
       rows: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows: false, defval: null }) as any[][]
     }));
     // Route by file type. The weekly schedule has day-name rows and time+name cells; the
-    // bookings ledger has the Vendor and Amount columns. Detect and send to the right loader.
+    // bookings ledger has the known department sheet names; an inventory workbook has
+    // SKU/description/stock headers. Detect in that order and send to the right loader.
     if (looksLikeSchedule(sheets)) {
       return await importScheduleFlow(sb, sheets, storeId, actorId);
     }
 
     const parsed = parseWorkbook(sheets, storeId);
+    if (!parsed.vendors.length) {
+      const inv = parseInventory(sheets);
+      if (inv.lines.length) {
+        const fileName = (file as any).name ? String((file as any).name) : "workbook.xlsx";
+        const departmentId = form.get("department_id") ? String(form.get("department_id")) : null;
+        return await importInventoryFlow(sb, sheets, fileName, storeId, actorId, departmentId);
+      }
+      return Response.json({
+        ok: false,
+        message: "This workbook was not recognized. It handles three shapes: the 2026 bookings ledger, the weekly schedule, and category inventory sheets (SKU, description, stock)."
+      }, { status: 200 });
+    }
 
     // Idempotent upsert: keep only vendors whose name is not already in the store.
     const { data: existing, error: exErr } = await sb.from("vendor").select("name").eq("store_id", storeId);

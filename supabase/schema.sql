@@ -162,7 +162,8 @@ create table inventory_count_line (
   id uuid primary key default gen_random_uuid(),
   inventory_count_id uuid references inventory_count(id) on delete cascade,
   item_id uuid references item(id),
-  counted_qty numeric
+  counted_qty numeric,
+  notes text                        -- movement flags (FAST/SLOW/DEAD) and overstock locations from imported sheets
 );
 
 create table purchase_order (
