@@ -8,9 +8,9 @@ import { paletteColor } from "@/lib/charts";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, useCurrentRole } from "@/lib/auth";
 
-type Inv = { id: string; amount: number | null; hst_amount: number | null; due_date: string | null; status: string; vendor_id: string | null; vendor: { name: string; department_id: string | null } | null };
+type Inv = { id: string; amount: number | null; hst_amount: number | null; invoice_date: string | null; created_at: string | null; due_date: string | null; status: string; vendor_id: string | null; vendor: { name: string; department_id: string | null } | null };
 type PO = { vendor_id: string | null; order_amount: number | null; department_id: string | null };
-type Dept = { id: string; name: string; accent_color: string | null };
+type Dept = { id: string; name: string; accent_color: string | null; parent_department_id: string | null };
 type Vend = { id: string; name: string; department_id: string | null };
 
 // One horizontal bar with an always-visible label and value, so meaning never rests on color alone.
@@ -42,7 +42,7 @@ export default function Reports() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let invq = supabase.from("invoice").select("id, amount, hst_amount, due_date, status, vendor_id, vendor:vendor_id(name, department_id)").is("voided_at", null);
+      let invq = supabase.from("invoice").select("id, amount, hst_amount, invoice_date, created_at, due_date, status, vendor_id, vendor:vendor_id(name, department_id)").is("voided_at", null);
       if (storeId) invq = invq.eq("store_id", storeId);
       const inv = await invq;
       if (inv.error) { setError(inv.error.message); setLoading(false); return; }
@@ -51,7 +51,7 @@ export default function Reports() {
       if (storeId) poq = poq.eq("store_id", storeId);
       const po = await poq;
       setPos((po.data as unknown as PO[]) || []);
-      let dq = supabase.from("department").select("id, name, accent_color").order("name");
+      let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
       if (storeId) dq = dq.eq("store_id", storeId);
       const d = await dq;
       setDepts((d.data as unknown as Dept[]) || []);
@@ -110,6 +110,46 @@ export default function Reports() {
     return order.filter((s) => m.has(s)).map((s, idx) => ({ label: labelize(s), value: m.get(s) || 0, color: paletteColor(idx) }));
   }, [invoices]);
   const totalInv = statusMix.reduce((s, r) => s + r.value, 0);
+
+  // HST by department for the financial year (Ravi's workflow sheet: "report all Departments
+  // on HST Amount for the financial year"). The year of an invoice is its invoice date,
+  // falling back to the due date, then the entry date. Sections (Clothing, Gifts, Garden
+  // Center) roll up into their parent category.
+  const [hstYear, setHstYear] = useState<number>(new Date().getFullYear());
+  const invoiceYear = (i: Inv): number | null => {
+    const d = i.invoice_date || i.due_date || (i.created_at ? i.created_at.slice(0, 10) : null);
+    return d ? Number(d.slice(0, 4)) : null;
+  };
+  const hstYears = useMemo(() => {
+    const ys = new Set<number>();
+    ys.add(new Date().getFullYear());
+    for (const i of invoices) {
+      const y = invoiceYear(i);
+      if (y) ys.add(y);
+    }
+    return Array.from(ys).sort((a, b) => b - a);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoices]);
+  const hstByDept = useMemo(() => {
+    const parentOf = new Map(depts.map((d) => [d.id, d.parent_department_id || null]));
+    const rollup = (id: string | null): string | null => (id ? (parentOf.get(id) as string | null) || id : null);
+    const sums = new Map<string, number>();
+    for (const i of invoices) {
+      if (invoiceYear(i) !== hstYear) continue;
+      const hst = Number(i.hst_amount) || 0;
+      if (hst === 0) continue;
+      const key = rollup(i.vendor?.department_id || null) || "none";
+      sums.set(key, (sums.get(key) || 0) + hst);
+    }
+    return depts
+      .map((d, idx) => ({ id: d.id, name: d.name, color: paletteColor(idx), hst: sums.get(d.id) || 0 }))
+      .filter((r) => r.hst > 0)
+      .sort((a, b) => b.hst - a.hst)
+      .concat(sums.has("none") ? [{ id: "none", name: "No department", color: "var(--error-base)", hst: sums.get("none") || 0 }] : []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoices, depts, hstYear]);
+  const hstTotal = hstByDept.reduce((s, r) => s + r.hst, 0);
+  const maxHst = Math.max(1, ...hstByDept.map((r) => r.hst));
 
   // Vendor scorecard: orders count, invoiced total, and discrepancy count (order vs invoiced differ).
   const scorecard = useMemo(() => {
@@ -210,6 +250,35 @@ export default function Reports() {
                   </div>
                 </>
               )}
+            </div>
+          </section>
+
+          <section>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 10, flexWrap: "wrap" }}>
+              <h2 style={{ fontSize: 16, margin: 0 }}>HST by department</h2>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <label className="help" htmlFor="hst-year">Financial year</label>
+                <select id="hst-year" className="input" style={{ width: "auto", padding: "6px 8px" }} value={hstYear} onChange={(e) => setHstYear(Number(e.target.value))}>
+                  {hstYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="card" style={{ padding: 16 }}>
+              {hstByDept.length === 0 ? (
+                <p className="help" style={{ margin: 0 }}>No HST recorded on {hstYear} invoices.</p>
+              ) : (
+                <>
+                  {hstByDept.map((r) => <Bar key={r.id} label={r.name} value={r.hst} max={maxHst} color={r.color} display={formatCAD(r.hst)} />)}
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, fontSize: 13 }}>
+                    <span style={{ fontWeight: 600 }}>Total HST {hstYear}</span>
+                    <span className="tabular" style={{ fontWeight: 600 }}>{formatCAD(hstTotal)}</span>
+                  </div>
+                </>
+              )}
+              <p className="help" style={{ marginTop: 10, marginBottom: 0 }}>
+                From the HST line on every invoice, grouped by the vendor&apos;s department (sections roll up into their category).
+                Uses the invoice date, falling back to due date, then entry date. For the six-year records, the full export keeps every line.
+              </p>
             </div>
           </section>
 

@@ -124,7 +124,8 @@ create or replace function public.record_payment(
   p_notes text default null,
   p_actor uuid default null,
   p_allocations jsonb default '[]'::jsonb,
-  p_amount numeric default null
+  p_amount numeric default null,
+  p_confirmation_filing text default null  -- digital or physical, per the workflow sheet
 ) returns uuid
 language plpgsql
 as $$
@@ -143,8 +144,8 @@ begin
     v_total := p_amount;
   end if;
 
-  insert into public.payment (vendor_id, amount, method, paid_date, reference, notes, created_by)
-  values (p_vendor_id, v_total, p_method, p_paid_date, nullif(p_reference, ''), nullif(p_notes, ''), p_actor)
+  insert into public.payment (vendor_id, amount, method, paid_date, reference, notes, confirmation_filing, created_by)
+  values (p_vendor_id, v_total, p_method, p_paid_date, nullif(p_reference, ''), nullif(p_notes, ''), nullif(p_confirmation_filing, ''), p_actor)
   returning id into v_payment_id;
 
   for a in
@@ -258,3 +259,76 @@ begin
     create policy dev_all on public.payment_allocation for all using (true) with check (true);
   end if;
 end $$;
+
+-- 7. Workflow-sheet fields (owner's Departments & WorkFlow spec) -------------------------
+
+-- Invoice: entry date (drives the HST-by-department financial-year report), freight as its
+-- own line, and delivery state. Total owed = amount + freight + HST.
+alter table public.invoice add column if not exists invoice_date date;
+alter table public.invoice add column if not exists freight_charges numeric;
+alter table public.invoice add column if not exists delivery_status text;
+alter table public.invoice drop constraint if exists invoice_delivery_status_check;
+alter table public.invoice add constraint invoice_delivery_status_check check (
+  delivery_status is null or delivery_status in ('delivered','not_delivered')
+);
+
+-- Property Maintenance payouts: estimate number when the work was preplanned (else null),
+-- repair vs upgrade, and a short description of the work. Null for merchandise invoices;
+-- the UI shows them only when the vendor's category is Property Maintenance.
+alter table public.invoice add column if not exists estimate_number text;
+alter table public.invoice add column if not exists work_type text;
+alter table public.invoice drop constraint if exists invoice_work_type_check;
+alter table public.invoice add constraint invoice_work_type_check check (
+  work_type is null or work_type in ('repair','upgrade')
+);
+alter table public.invoice add column if not exists work_description text;
+
+-- Payment confirmation filing: digital (file attached or emailed) or physical (paper binder).
+alter table public.payment add column if not exists confirmation_filing text;
+alter table public.payment drop constraint if exists payment_confirmation_filing_check;
+alter table public.payment add constraint payment_confirmation_filing_check check (
+  confirmation_filing is null or confirmation_filing in ('digital','physical')
+);
+
+-- 8. Department-level categories ---------------------------------------------------------
+-- The owner's payout category list. New categories are added per store where missing;
+-- Clothing and Gifts become children of DryGoods & Lakeside so their vendors and history
+-- stay attached while the top level matches the sheet:
+--   DryGoods & Lakeside, Hardware, Grocery, Produce, Bakery, Meat, Chip Stand,
+--   Checkouts, Property Maintenance, Others.
+do $$
+declare
+  s record;
+  v_dry uuid;
+begin
+  for s in select id from public.store
+  loop
+    insert into public.department (store_id, name, parent_department_id, accent_color)
+    select s.id, x.name, null, x.color
+    from (values
+      ('DryGoods & Lakeside', '#B7791F'),
+      ('Checkouts', '#2F5FA8'),
+      ('Property Maintenance', '#6B7480'),
+      ('Others', '#6B7480')
+    ) as x(name, color)
+    where not exists (
+      select 1 from public.department d
+      where d.store_id = s.id and lower(d.name) = lower(x.name)
+    );
+
+    select id into v_dry
+    from public.department
+    where store_id = s.id and lower(name) = 'drygoods & lakeside'
+    limit 1;
+
+    if v_dry is not null then
+      update public.department
+      set parent_department_id = v_dry
+      where store_id = s.id
+        and name in ('Clothing', 'Gifts')
+        and id <> v_dry
+        and (parent_department_id is null or parent_department_id <> v_dry);
+    end if;
+  end loop;
+end $$;
+

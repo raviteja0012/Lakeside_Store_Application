@@ -119,8 +119,16 @@ create table invoice (
   receiving_event_id uuid references receiving_event(id),
   vendor_id uuid references vendor(id),
   invoice_number text,
+  invoice_date date,                    -- drives the HST-by-department financial-year report
   amount numeric,
   hst_amount numeric,
+  freight_charges numeric,              -- freight as its own line; total owed = amount + freight + HST
+  delivery_status text check (delivery_status is null or delivery_status in ('delivered','not_delivered')),
+  -- Property Maintenance payouts only (null for merchandise invoices): estimate number when
+  -- the work was preplanned, repair vs upgrade, and a short description of the work.
+  estimate_number text,
+  work_type text check (work_type is null or work_type in ('repair','upgrade')),
+  work_description text,
   terms text,
   due_date date,
   -- Derived by recompute_invoice_status from the payment allocations:
@@ -145,6 +153,7 @@ create table payment (
   paid_date date,                           -- a future date means post-dated: not settled until it arrives
   reference text,                           -- cheque number, e-transfer ref, card confirmation
   notes text,                               -- required by the UI when method = other
+  confirmation_filing text check (confirmation_filing is null or confirmation_filing in ('digital','physical')),
   confirmation_file_path text,
   created_by uuid references app_user(id),
   created_at timestamptz default now()
@@ -219,7 +228,8 @@ create or replace function public.record_payment(
   p_notes text default null,
   p_actor uuid default null,
   p_allocations jsonb default '[]'::jsonb,
-  p_amount numeric default null
+  p_amount numeric default null,
+  p_confirmation_filing text default null  -- digital or physical, per the workflow sheet
 ) returns uuid
 language plpgsql
 as $$
@@ -238,8 +248,8 @@ begin
     v_total := p_amount;
   end if;
 
-  insert into public.payment (vendor_id, amount, method, paid_date, reference, notes, created_by)
-  values (p_vendor_id, v_total, p_method, p_paid_date, nullif(p_reference, ''), nullif(p_notes, ''), p_actor)
+  insert into public.payment (vendor_id, amount, method, paid_date, reference, notes, confirmation_filing, created_by)
+  values (p_vendor_id, v_total, p_method, p_paid_date, nullif(p_reference, ''), nullif(p_notes, ''), nullif(p_confirmation_filing, ''), p_actor)
   returning id into v_payment_id;
 
   for a in

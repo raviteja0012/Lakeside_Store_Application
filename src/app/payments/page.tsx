@@ -1,10 +1,11 @@
 "use client";
 
-// Payments: the one place to record any vendor payment, outside the department pages.
-// Flow: vendor (search, with department as an optional filter, never a gate) -> tick the
-// open invoices the payment covers (one cheque can settle invoices across departments;
-// each keeps its own department through its own allocation) -> method, date, reference.
-// Department is never asked: every invoice already carries it from receiving.
+// Vendor payouts: the one place to record any money going OUT to a vendor, outside the
+// department pages. This tracks vendor dues and what we paid; customer sales at the till
+// are not part of this system. Flow: category chip (optional filter, never a gate) ->
+// vendor (search, or add a new vendor right here) -> tick the open invoices the payout
+// covers (one cheque can settle invoices across categories; each keeps its own category
+// through its own allocation) -> method, date, reference, filing.
 // A future paid date records a post-dated payment; the invoice shows post-dated until the
 // date arrives. Recording goes through the record_payment RPC: payment + allocations +
 // invoice statuses + audit, one transaction.
@@ -17,13 +18,13 @@ import { canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/au
 import { canEdit } from "@/lib/edit";
 import { chipClass, labelize } from "@/lib/status";
 import {
-  PAYMENT_METHODS, methodLabel, referenceLabel, invoiceTotal, isFutureDate,
+  PAYMENT_METHODS, CONFIRMATION_FILING, methodLabel, referenceLabel, invoiceTotal, isFutureDate,
   recordPaymentRpc, voidPaymentRpc, reconcilePostdated, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
 import type { Invoice, Payment } from "@/lib/types";
 
-type DeptLite = { id: string; name: string; accent_color: string | null };
+type DeptLite = { id: string; name: string; accent_color: string | null; parent_department_id: string | null };
 type VendorLite = {
   id: string;
   name: string;
@@ -62,16 +63,21 @@ export default function Payments() {
   const [paidDate, setPaidDate] = useState(todayISO());
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
+  const [filing, setFiling] = useState(""); // digital | physical | "" (not said)
+
+  // Quick-add vendor, so entering a category never dead-ends when the vendor is new.
+  const [showNewVendor, setShowNewVendor] = useState(false);
+  const [nvForm, setNvForm] = useState({ name: "", department_id: "", phone: "", default_terms: "" });
 
   const PAY_SELECT =
-    "id, vendor_id, invoice_id, amount, method, paid_date, reference, notes, created_at, " +
+    "id, vendor_id, invoice_id, amount, method, paid_date, reference, notes, confirmation_filing, created_at, " +
     "vendor:vendor_id(name), payment_allocation(invoice_id, amount, invoice:invoice_id(invoice_number))";
 
   async function load() {
     // Post-dated cheques whose date has arrived flip to paid on their own here.
     await reconcilePostdated();
 
-    let dq = supabase.from("department").select("id, name, accent_color").order("name");
+    let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
     if (storeId) dq = dq.eq("store_id", storeId);
     const { data: deps } = await dq;
     setDepartments((deps as DeptLite[]) || []);
@@ -91,7 +97,7 @@ export default function Payments() {
 
     let iq = supabase
       .from("invoice")
-      .select("id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status")
+      .select("id, vendor_id, invoice_number, amount, hst_amount, freight_charges, terms, due_date, status")
       .is("voided_at", null)
       .in("status", ["unpaid", "partially_paid", "postdated"])
       .order("due_date", { ascending: true });
@@ -137,13 +143,29 @@ export default function Payments() {
     () => openInvoices.filter((i) => i.vendor_id === vendorId),
     [openInvoices, vendorId]
   );
+  // The category chips are the top-level list from the owner's sheet; sections like
+  // Clothing, Gifts, and Garden Center live under their parent, so filtering by a
+  // category also matches vendors filed under its sections.
+  const topCategories = useMemo(
+    () => departments.filter((d) => !d.parent_department_id),
+    [departments]
+  );
+  const inCategory = useMemo(() => {
+    return (departmentId: string | null, category: string) => {
+      if (!departmentId) return false;
+      if (departmentId === category) return true;
+      const d = departments.find((x) => x.id === departmentId);
+      return d?.parent_department_id === category;
+    };
+  }, [departments]);
+
   const filteredVendors = useMemo(() => {
     const q = search.trim().toLowerCase();
     return vendors
-      .filter((v) => deptFilter === "all" || v.department_id === deptFilter)
+      .filter((v) => deptFilter === "all" || inCategory(v.department_id, deptFilter))
       .filter((v) => !q || v.name.toLowerCase().includes(q))
       .slice(0, 30);
-  }, [vendors, deptFilter, search]);
+  }, [vendors, deptFilter, search, inCategory]);
 
   const allocTotal = useMemo(
     () => Object.values(alloc).reduce((s, v) => s + (Number(v) || 0), 0),
@@ -162,6 +184,53 @@ export default function Payments() {
     setPaidDate(todayISO());
     setReference("");
     setNotes("");
+    setFiling("");
+    setShowNewVendor(false);
+    setNvForm({ name: "", department_id: "", phone: "", default_terms: "" });
+  }
+
+  // Quick-add a vendor without leaving the payout flow. Category comes from the active
+  // chip when one is picked, otherwise from the select in the small form.
+  async function addVendor() {
+    const name = nvForm.name.trim();
+    const dept = nvForm.department_id || (deptFilter !== "all" ? deptFilter : "");
+    if (!name) {
+      setError("The new vendor needs a name.");
+      return;
+    }
+    if (!dept) {
+      setError("Pick the category for the new vendor.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await supabase
+        .from("vendor")
+        .insert({
+          store_id: storeId,
+          department_id: dept,
+          name,
+          phone: nvForm.phone.trim() || null,
+          default_terms: nvForm.default_terms.trim() || null,
+          status: "active"
+        })
+        .select("id")
+        .single();
+      if (r.error) throw new Error(r.error.message);
+      const actor = currentActorId(member);
+      if (actor) {
+        await supabase.from("activity_log").insert({ actor_id: actor, action: "vendor_added", entity: "vendor", entity_id: r.data.id });
+      }
+      setShowNewVendor(false);
+      setNvForm({ name: "", department_id: "", phone: "", default_terms: "" });
+      await load();
+      pickVendor(r.data.id as string);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   function pickVendor(id: string) {
@@ -224,6 +293,7 @@ export default function Payments() {
         paidDate,
         reference,
         notes,
+        confirmationFiling: filing,
         actorId: currentActorId(member),
         allocations,
         amount: noInvoice ? Number(amount) : undefined
@@ -270,9 +340,9 @@ export default function Payments() {
   if (!loading && role != null && !showMoney) {
     return (
       <div className="card" style={{ padding: 24 }}>
-        <p style={{ margin: 0, fontWeight: 600 }}>Payments are limited.</p>
+        <p style={{ margin: 0, fontWeight: 600 }}>Vendor payouts are limited.</p>
         <p className="help" style={{ margin: "6px 0 0" }}>
-          Payments hold dollar figures, so they are limited to leads, managers, and the owner.
+          Payouts hold dollar figures, so they are limited to leads, managers, and the owner.
         </p>
       </div>
     );
@@ -282,12 +352,12 @@ export default function Payments() {
     <div style={{ display: "grid", gap: 20 }}>
       <header className="page-head">
         <div>
-          <h1 className="page-title">Payments</h1>
-          <p className="page-sub">One place to record any vendor payment. Department comes from the invoice, never a question.</p>
+          <h1 className="page-title">Vendor payouts</h1>
+          <p className="page-sub">Money going out to vendors: what we owe and what we paid. Customer sales at the till are not tracked here.</p>
         </div>
         <div className="page-actions">
           <button className="btn-primary" onClick={() => { setShowForm((s) => !s); setOkMsg(null); }}>
-            {showForm ? "Close" : "+ Record payment"}
+            {showForm ? "Close" : "+ Record payout"}
           </button>
         </div>
       </header>
@@ -311,6 +381,25 @@ export default function Payments() {
           {/* Step 1: vendor. Search first; department is a filter chip, never a required step. */}
           {!selVendor && (
             <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button
+                  className="chip"
+                  style={{ cursor: "pointer", border: deptFilter === "all" ? "1px solid var(--primary-base, #2F6FEB)" : "1px solid var(--border)", background: "#EEF1F4" }}
+                  onClick={() => setDeptFilter("all")}
+                >
+                  All categories
+                </button>
+                {topCategories.map((d) => (
+                  <button
+                    key={d.id}
+                    className="chip"
+                    style={{ cursor: "pointer", border: deptFilter === d.id ? "1px solid var(--primary-base, #2F6FEB)" : "1px solid var(--border)", background: "#EEF1F4", color: d.accent_color || undefined }}
+                    onClick={() => setDeptFilter(deptFilter === d.id ? "all" : d.id)}
+                  >
+                    {d.name}
+                  </button>
+                ))}
+              </div>
               <div>
                 <label className="label" htmlFor="pay-vendor-search">Vendor</label>
                 <input
@@ -321,25 +410,6 @@ export default function Payments() {
                   onChange={(e) => setSearch(e.target.value)}
                   autoFocus
                 />
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <button
-                  className="chip"
-                  style={{ cursor: "pointer", border: deptFilter === "all" ? "1px solid var(--primary-base, #2F6FEB)" : "1px solid var(--border)", background: "#EEF1F4" }}
-                  onClick={() => setDeptFilter("all")}
-                >
-                  All departments
-                </button>
-                {departments.map((d) => (
-                  <button
-                    key={d.id}
-                    className="chip"
-                    style={{ cursor: "pointer", border: deptFilter === d.id ? "1px solid var(--primary-base, #2F6FEB)" : "1px solid var(--border)", background: "#EEF1F4", color: d.accent_color || undefined }}
-                    onClick={() => setDeptFilter(deptFilter === d.id ? "all" : d.id)}
-                  >
-                    {d.name}
-                  </button>
-                ))}
               </div>
               <div style={{ display: "grid", gap: 6 }}>
                 {filteredVendors.map((v) => (
@@ -362,8 +432,34 @@ export default function Payments() {
                     </span>
                   </button>
                 ))}
-                {filteredVendors.length === 0 && <p className="help">No vendors match. Clear the search or the department filter.</p>}
+                {filteredVendors.length === 0 && <p className="help">No vendors match. Clear the search or the category filter, or add the vendor below.</p>}
               </div>
+              {!showNewVendor && (
+                <div>
+                  <button className="btn-ghost" onClick={() => { setShowNewVendor(true); setNvForm({ ...nvForm, department_id: deptFilter !== "all" ? deptFilter : "" }); }}>
+                    + New vendor
+                  </button>
+                </div>
+              )}
+              {showNewVendor && (
+                <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "grid", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+                    <div><label className="label" htmlFor="nv-name">Vendor name</label><input id="nv-name" className="input" value={nvForm.name} onChange={(e) => setNvForm({ ...nvForm, name: e.target.value })} /></div>
+                    <div><label className="label" htmlFor="nv-dept">Category</label>
+                      <select id="nv-dept" className="input" value={nvForm.department_id || (deptFilter !== "all" ? deptFilter : "")} onChange={(e) => setNvForm({ ...nvForm, department_id: e.target.value })}>
+                        <option value="">Pick a category</option>
+                        {topCategories.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    </div>
+                    <div><label className="label" htmlFor="nv-phone">Phone</label><input id="nv-phone" className="input" value={nvForm.phone} onChange={(e) => setNvForm({ ...nvForm, phone: e.target.value })} /></div>
+                    <div><label className="label" htmlFor="nv-terms">Terms</label><input id="nv-terms" className="input" placeholder="Net 30" value={nvForm.default_terms} onChange={(e) => setNvForm({ ...nvForm, default_terms: e.target.value })} /></div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn-primary" onClick={addVendor} disabled={busy}>{busy ? "Saving." : "Add vendor"}</button>
+                    <button className="btn-ghost" onClick={() => setShowNewVendor(false)} disabled={busy}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -478,6 +574,13 @@ export default function Payments() {
                   <label className="label" htmlFor="pay-ref">{referenceLabel(method)}</label>
                   <input id="pay-ref" className="input" value={reference} onChange={(e) => setReference(e.target.value)} />
                 </div>
+                <div>
+                  <label className="label" htmlFor="pay-filing">Confirmation filed</label>
+                  <select id="pay-filing" className="input" value={filing} onChange={(e) => setFiling(e.target.value)}>
+                    <option value="">Not said</option>
+                    {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="label" htmlFor="pay-notes">Notes{method === "other" ? " (say what the method was)" : ""}</label>
@@ -538,6 +641,7 @@ export default function Payments() {
                   </div>
                   <div className="help" style={{ marginTop: 4 }}>
                     {methodLabel(p.method)}{p.reference ? ` . ${p.reference}` : ""}{p.paid_date ? ` . paid ${p.paid_date}` : ""} . {coverage(p)}
+                    {p.confirmation_filing ? ` . filed ${p.confirmation_filing}` : ""}
                     {p.notes ? ` . ${p.notes}` : ""}
                   </div>
                 </div>

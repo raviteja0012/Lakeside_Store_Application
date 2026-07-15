@@ -18,6 +18,8 @@ const MAP: Record<string, string> = {
   unpaid: "chip-warning",
   partially_paid: "chip-progress",
   postdated: "chip-progress",
+  delivered: "chip-success",
+  not_delivered: "chip-warning",
   // purchase_order
   draft: "chip-neutral",
   ordered: "chip-progress",

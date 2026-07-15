@@ -69,8 +69,14 @@ export type Invoice = {
   id: string;
   vendor_id: string | null;
   invoice_number: string | null;
+  invoice_date?: string | null; // drives the HST-by-department financial-year report
   amount: number | null;
   hst_amount: number | null;
+  freight_charges?: number | null; // total owed = amount + freight + HST
+  delivery_status?: string | null; // delivered | not_delivered
+  estimate_number?: string | null; // Property Maintenance: preplanned work has an estimate #
+  work_type?: string | null; // Property Maintenance: repair | upgrade
+  work_description?: string | null; // Property Maintenance: short description of the work
   terms: string | null;
   due_date: string | null;
   status: string;
@@ -86,6 +92,7 @@ export type Payment = {
   paid_date: string | null; // a future date means post-dated, not settled yet
   reference?: string | null;
   notes?: string | null;
+  confirmation_filing?: string | null; // digital | physical
   created_at?: string;
   vendor?: { name: string } | null;
   payment_allocation?: {

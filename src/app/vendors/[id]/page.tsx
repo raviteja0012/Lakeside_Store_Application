@@ -9,7 +9,8 @@ import { formatCAD, daysOverdue, round2, todayISO, hstOn } from "@/lib/format";
 import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
 import {
-  PAYMENT_METHODS, methodLabel, referenceLabel, invoiceTotal as invTotal, isFutureDate,
+  PAYMENT_METHODS, CONFIRMATION_FILING, DELIVERY_STATUS, WORK_TYPES, isPropertyDept,
+  methodLabel, referenceLabel, invoiceTotal as invTotal, isFutureDate,
   recordPaymentRpc, voidPaymentRpc, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
@@ -42,20 +43,34 @@ export default function VendorDetail() {
   const [showPO, setShowPO] = useState(false);
   const [poForm, setPoForm] = useState({ order_amount: "", ship_date: "", delivery_commit: "", status: "ordered", season_year: "2026", notes: "" });
   const [showInv, setShowInv] = useState(false);
-  // status "paid" at entry also records the payment (Ravi: an invoice arrives paid or unpaid).
-  const [invForm, setInvForm] = useState({ invoice_number: "", amount: "", hst_amount: "", terms: "", due_date: "", status: "unpaid", pay_method: "cheque", pay_date: todayISO(), pay_reference: "" });
+  // The workflow-sheet fields. status "paid" at entry also records the payment
+  // (Ravi: an invoice arrives paid or unpaid). Property Maintenance vendors get the
+  // estimate / work fields; merchandise vendors get delivery and freight.
+  const emptyInvForm = {
+    invoice_number: "", invoice_date: todayISO(), amount: "", hst_amount: "", freight_charges: "",
+    delivery_status: "", terms: "", due_date: "", status: "unpaid",
+    estimate_number: "", work_type: "", work_description: "",
+    pay_method: "cheque", pay_date: todayISO(), pay_reference: "", pay_filing: ""
+  };
+  const [invForm, setInvForm] = useState({ ...emptyInvForm });
   const [payFor, setPayFor] = useState<string | null>(null);
-  const [payForm, setPayForm] = useState({ amount: "", method: "cheque", paid_date: todayISO(), reference: "", notes: "" });
+  const [payForm, setPayForm] = useState({ amount: "", method: "cheque", paid_date: todayISO(), reference: "", notes: "", filing: "" });
   const [settlements, setSettlements] = useState<Map<string, InvoiceSettlement>>(new Map());
 
   const [editInvId, setEditInvId] = useState<string | null>(null);
-  const [editInvForm, setEditInvForm] = useState({ invoice_number: "", amount: "", hst_amount: "", terms: "", due_date: "", status: "unpaid" });
+  const [editInvForm, setEditInvForm] = useState({
+    invoice_number: "", invoice_date: "", amount: "", hst_amount: "", freight_charges: "",
+    delivery_status: "", terms: "", due_date: "", status: "unpaid",
+    estimate_number: "", work_type: "", work_description: ""
+  });
   const [editPoId, setEditPoId] = useState<string | null>(null);
   const [editPoForm, setEditPoForm] = useState({ order_amount: "", ship_date: "", status: "ordered", notes: "" });
 
   // Effective role and actor: in enforced auth the signed-in member, else the dropdown.
   const { effectiveActorId, role } = useEffectiveActor(users, actorId);
   const showMoney = canSeeMoney(role);
+  // Property Maintenance vendors get the estimate / work fields on their invoices.
+  const isProperty = isPropertyDept(vendor?.department?.name);
 
   async function load() {
     const { data: v, error: ve } = await supabase
@@ -71,7 +86,7 @@ export default function VendorDetail() {
     setVendor((v as unknown as Vendor) || null);
     const { data: po } = await supabase.from("purchase_order").select("id, vendor_id, order_amount, ship_date, delivery_commit, status, season_year, notes, department_id").eq("vendor_id", id).is("voided_at", null).order("ship_date", { ascending: false });
     setOrders((po as unknown as PurchaseOrder[]) || []);
-    const { data: inv } = await supabase.from("invoice").select("id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status").eq("vendor_id", id).is("voided_at", null).order("due_date", { ascending: true });
+    const { data: inv } = await supabase.from("invoice").select("id, vendor_id, invoice_number, invoice_date, amount, hst_amount, freight_charges, delivery_status, estimate_number, work_type, work_description, terms, due_date, status").eq("vendor_id", id).is("voided_at", null).order("due_date", { ascending: true });
     const invList = (inv as unknown as Invoice[]) || [];
     setInvoices(invList);
     try {
@@ -82,7 +97,7 @@ export default function VendorDetail() {
     // Payments belong to the vendor now (the migration backfills vendor_id on legacy rows).
     const { data: pay } = await supabase
       .from("payment")
-      .select("id, invoice_id, vendor_id, amount, method, paid_date, reference, notes, payment_allocation(invoice_id, amount, invoice:invoice_id(invoice_number))")
+      .select("id, invoice_id, vendor_id, amount, method, paid_date, reference, notes, confirmation_filing, payment_allocation(invoice_id, amount, invoice:invoice_id(invoice_number))")
       .eq("vendor_id", id)
       .is("voided_at", null)
       .order("paid_date", { ascending: false });
@@ -204,8 +219,14 @@ export default function VendorDetail() {
         store_id: vendor.store_id ?? null,
         vendor_id: vendor.id,
         invoice_number: invForm.invoice_number || null,
+        invoice_date: invForm.invoice_date || null,
         amount: num(invForm.amount),
         hst_amount: num(invForm.hst_amount) ?? 0,
+        freight_charges: num(invForm.freight_charges),
+        delivery_status: invForm.delivery_status || null,
+        estimate_number: isProperty ? invForm.estimate_number || null : null,
+        work_type: isProperty ? invForm.work_type || null : null,
+        work_description: isProperty ? invForm.work_description || null : null,
         terms: invForm.terms || null,
         due_date: invForm.due_date || null,
         status: "unpaid"
@@ -213,18 +234,19 @@ export default function VendorDetail() {
       if (r.error) throw new Error(r.error.message);
       await log("invoice_added", "invoice", r.data.id as string);
       if (invForm.status === "paid") {
-        const total = (num(invForm.amount) || 0) + (num(invForm.hst_amount) || 0);
+        const total = (num(invForm.amount) || 0) + (num(invForm.freight_charges) || 0) + (num(invForm.hst_amount) || 0);
         await recordPaymentRpc({
           vendorId: vendor.id,
           method: invForm.pay_method,
           paidDate: invForm.pay_date || todayISO(),
           reference: invForm.pay_reference,
+          confirmationFiling: invForm.pay_filing,
           actorId: effectiveActorId,
           allocations: [{ invoice_id: r.data.id as string, amount: round2(total) }]
         });
       }
       setShowInv(false);
-      setInvForm({ invoice_number: "", amount: "", hst_amount: "", terms: "", due_date: "", status: "unpaid", pay_method: "cheque", pay_date: todayISO(), pay_reference: "" });
+      setInvForm({ ...emptyInvForm });
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -237,8 +259,14 @@ export default function VendorDetail() {
     setEditInvId(i.id);
     setEditInvForm({
       invoice_number: i.invoice_number || "",
+      invoice_date: i.invoice_date || "",
       amount: i.amount != null ? String(i.amount) : "",
       hst_amount: i.hst_amount != null ? String(i.hst_amount) : "",
+      freight_charges: i.freight_charges != null ? String(i.freight_charges) : "",
+      delivery_status: i.delivery_status || "",
+      estimate_number: i.estimate_number || "",
+      work_type: i.work_type || "",
+      work_description: i.work_description || "",
       terms: i.terms || "",
       due_date: i.due_date || "",
       status: i.status || "unpaid"
@@ -252,8 +280,14 @@ export default function VendorDetail() {
     try {
       const r = await supabase.from("invoice").update({
         invoice_number: editInvForm.invoice_number || null,
+        invoice_date: editInvForm.invoice_date || null,
         amount: num(editInvForm.amount),
         hst_amount: num(editInvForm.hst_amount) ?? 0,
+        freight_charges: num(editInvForm.freight_charges),
+        delivery_status: editInvForm.delivery_status || null,
+        estimate_number: editInvForm.estimate_number || null,
+        work_type: editInvForm.work_type || null,
+        work_description: editInvForm.work_description || null,
         terms: editInvForm.terms || null,
         due_date: editInvForm.due_date || null,
         status: editInvForm.status
@@ -365,7 +399,7 @@ export default function VendorDetail() {
     // Prefill what is left to allocate: partial payments and post-dated cheques already
     // covering their share reduce it.
     const left = round2(remainingToAllocate(invTotal(i), settlements.get(i.id)));
-    setPayForm({ amount: left > 0 ? String(left) : "", method: "cheque", paid_date: todayISO(), reference: "", notes: "" });
+    setPayForm({ amount: left > 0 ? String(left) : "", method: "cheque", paid_date: todayISO(), reference: "", notes: "", filing: "" });
   }
 
   async function recordPayment() {
@@ -390,6 +424,7 @@ export default function VendorDetail() {
         paidDate: payForm.paid_date || todayISO(),
         reference: payForm.reference,
         notes: payForm.notes,
+        confirmationFiling: payForm.filing,
         actorId: effectiveActorId,
         allocations: [{ invoice_id: payFor, amount }]
       });
@@ -511,8 +546,18 @@ export default function VendorDetail() {
           <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
               <div><label className="label">Invoice number</label><input className="input" value={invForm.invoice_number} onChange={(e) => setInvForm({ ...invForm, invoice_number: e.target.value })} /></div>
+              <div><label className="label">Invoice date</label><input className="input" type="date" value={invForm.invoice_date} onChange={(e) => setInvForm({ ...invForm, invoice_date: e.target.value })} /></div>
               <div><label className="label">Amount (pre-tax)</label><input className="input tabular" type="number" step="0.01" value={invForm.amount} onChange={(e) => setInvForm({ ...invForm, amount: e.target.value, hst_amount: hstFieldFor(e.target.value) })} /></div>
               <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={invForm.hst_amount} onChange={(e) => setInvForm({ ...invForm, hst_amount: e.target.value })} /></div>
+              <div><label className="label">Freight</label><input className="input tabular" type="number" step="0.01" value={invForm.freight_charges} onChange={(e) => setInvForm({ ...invForm, freight_charges: e.target.value })} /></div>
+              {!isProperty && (
+                <div><label className="label">Delivery</label>
+                  <select className="input" value={invForm.delivery_status} onChange={(e) => setInvForm({ ...invForm, delivery_status: e.target.value })}>
+                    <option value="">Not said</option>
+                    {DELIVERY_STATUS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                </div>
+              )}
               <div><label className="label">Terms</label><input className="input" value={invForm.terms} onChange={(e) => setInvForm({ ...invForm, terms: e.target.value })} /></div>
               <div><label className="label">Due date</label><input className="input" type="date" value={invForm.due_date} onChange={(e) => setInvForm({ ...invForm, due_date: e.target.value })} /></div>
               <div><label className="label">Arrived as</label>
@@ -522,6 +567,23 @@ export default function VendorDetail() {
                 </select>
               </div>
             </div>
+            {isProperty && (
+              <div style={{ display: "grid", gap: 10, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                <div className="help">Property Maintenance work</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+                  <div><label className="label">Estimate #</label><input className="input" placeholder="Blank if not preplanned" value={invForm.estimate_number} onChange={(e) => setInvForm({ ...invForm, estimate_number: e.target.value })} /></div>
+                  <div><label className="label">Type of work</label>
+                    <select className="input" value={invForm.work_type} onChange={(e) => setInvForm({ ...invForm, work_type: e.target.value })}>
+                      <option value="">Pick one</option>
+                      {WORK_TYPES.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div><label className="label">Description of the work</label>
+                  <textarea className="input" rows={2} maxLength={500} value={invForm.work_description} onChange={(e) => setInvForm({ ...invForm, work_description: e.target.value })} />
+                </div>
+              </div>
+            )}
             {invForm.status === "paid" && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
                 <div><label className="label">Method</label>
@@ -531,6 +593,12 @@ export default function VendorDetail() {
                 </div>
                 <div><label className="label">Paid date</label><input className="input" type="date" value={invForm.pay_date} onChange={(e) => setInvForm({ ...invForm, pay_date: e.target.value })} /></div>
                 <div><label className="label">{referenceLabel(invForm.pay_method)}</label><input className="input" value={invForm.pay_reference} onChange={(e) => setInvForm({ ...invForm, pay_reference: e.target.value })} /></div>
+                <div><label className="label">Confirmation filed</label>
+                  <select className="input" value={invForm.pay_filing} onChange={(e) => setInvForm({ ...invForm, pay_filing: e.target.value })}>
+                    <option value="">Not said</option>
+                    {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  </select>
+                </div>
               </div>
             )}
             <div><button className="btn-primary" onClick={addInvoice} disabled={busy}>{busy ? "Saving." : invForm.status === "paid" ? "Save invoice and payment" : "Save invoice"}</button></div>
@@ -551,11 +619,16 @@ export default function VendorDetail() {
                       <strong>{i.invoice_number || "Invoice"}</strong>
                       <span className={`chip ${overdue ? "chip-error" : chipClass(i.status)}`}>{overdue ? `${d} days overdue` : labelize(i.status)}</span>
                       {overdue && i.status === "partially_paid" && <span className={`chip ${chipClass(i.status)}`}>{labelize(i.status)}</span>}
+                      {i.delivery_status && <span className={`chip ${chipClass(i.delivery_status)}`}>{labelize(i.delivery_status)}</span>}
+                      {i.work_type && <span className="chip chip-neutral">{labelize(i.work_type)}</span>}
                     </div>
                     <div className="help" style={{ marginTop: 4 }}>
-                      {i.terms || ""}{i.due_date ? ` . due ${i.due_date}` : ""}
+                      {i.invoice_date ? `dated ${i.invoice_date} . ` : ""}{i.terms || ""}{i.due_date ? ` . due ${i.due_date}` : ""}
+                      {i.estimate_number ? ` . estimate ${i.estimate_number}` : ""}
+                      {showMoney && Number(i.freight_charges) > 0 ? ` . freight ${formatCAD(Number(i.freight_charges))}` : ""}
                       {showMoney && partly && i.status !== "paid" ? ` . ${formatCAD(owedNow)} still owed` : ""}
                     </div>
+                    {i.work_description && <div className="help" style={{ marginTop: 2 }}>{i.work_description}</div>}
                   </div>
                   {showMoney && (
                     <div style={{ textAlign: "right" }}>
@@ -572,8 +645,16 @@ export default function VendorDetail() {
                   <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
                       <div><label className="label">Invoice number</label><input className="input" value={editInvForm.invoice_number} onChange={(e) => setEditInvForm({ ...editInvForm, invoice_number: e.target.value })} /></div>
+                      <div><label className="label">Invoice date</label><input className="input" type="date" value={editInvForm.invoice_date} onChange={(e) => setEditInvForm({ ...editInvForm, invoice_date: e.target.value })} /></div>
                       <div><label className="label">Amount (pre-tax)</label><input className="input tabular" type="number" step="0.01" value={editInvForm.amount} onChange={(e) => setEditInvForm({ ...editInvForm, amount: e.target.value, hst_amount: hstFieldFor(e.target.value) })} /></div>
                       <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={editInvForm.hst_amount} onChange={(e) => setEditInvForm({ ...editInvForm, hst_amount: e.target.value })} /></div>
+                      <div><label className="label">Freight</label><input className="input tabular" type="number" step="0.01" value={editInvForm.freight_charges} onChange={(e) => setEditInvForm({ ...editInvForm, freight_charges: e.target.value })} /></div>
+                      <div><label className="label">Delivery</label>
+                        <select className="input" value={editInvForm.delivery_status} onChange={(e) => setEditInvForm({ ...editInvForm, delivery_status: e.target.value })}>
+                          <option value="">Not said</option>
+                          {DELIVERY_STATUS.map((ds) => <option key={ds.value} value={ds.value}>{ds.label}</option>)}
+                        </select>
+                      </div>
                       <div><label className="label">Terms</label><input className="input" value={editInvForm.terms} onChange={(e) => setEditInvForm({ ...editInvForm, terms: e.target.value })} /></div>
                       <div><label className="label">Due date</label><input className="input" type="date" value={editInvForm.due_date} onChange={(e) => setEditInvForm({ ...editInvForm, due_date: e.target.value })} /></div>
                       <div><label className="label">Status</label>
@@ -583,6 +664,20 @@ export default function VendorDetail() {
                         </select>
                       </div>
                     </div>
+                    {isProperty && (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+                        <div><label className="label">Estimate #</label><input className="input" value={editInvForm.estimate_number} onChange={(e) => setEditInvForm({ ...editInvForm, estimate_number: e.target.value })} /></div>
+                        <div><label className="label">Type of work</label>
+                          <select className="input" value={editInvForm.work_type} onChange={(e) => setEditInvForm({ ...editInvForm, work_type: e.target.value })}>
+                            <option value="">Pick one</option>
+                            {WORK_TYPES.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+                          </select>
+                        </div>
+                        <div style={{ gridColumn: "1 / -1" }}><label className="label">Description of the work</label>
+                          <textarea className="input" rows={2} maxLength={500} value={editInvForm.work_description} onChange={(e) => setEditInvForm({ ...editInvForm, work_description: e.target.value })} />
+                        </div>
+                      </div>
+                    )}
                     <div style={{ display: "flex", gap: 8 }}>
                       <button className="btn-primary" onClick={saveInvoice} disabled={busy}>{busy ? "Saving." : "Save invoice"}</button>
                       <button className="btn-ghost" onClick={() => setEditInvId(null)}>Cancel</button>
@@ -604,6 +699,12 @@ export default function VendorDetail() {
                         {isFutureDate(payForm.paid_date) && <p className="help" style={{ margin: "4px 0 0" }}>Future date: records as post-dated.</p>}
                       </div>
                       <div><label className="label">{referenceLabel(payForm.method)}</label><input className="input" value={payForm.reference} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} /></div>
+                      <div><label className="label">Confirmation filed</label>
+                        <select className="input" value={payForm.filing} onChange={(e) => setPayForm({ ...payForm, filing: e.target.value })}>
+                          <option value="">Not said</option>
+                          {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                        </select>
+                      </div>
                       <div><label className="label">Notes{payForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} /></div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
@@ -705,6 +806,7 @@ export default function VendorDetail() {
                       {p.paid_date && !isFutureDate(p.paid_date) ? `paid ${p.paid_date}` : ""}
                       {p.reference ? ` . ${p.reference}` : ""}
                       {covered ? ` . ${covered}` : " . deposit / prepayment"}
+                      {p.confirmation_filing ? ` . filed ${p.confirmation_filing}` : ""}
                       {p.notes ? ` . ${p.notes}` : ""}
                     </div>
                   </div>

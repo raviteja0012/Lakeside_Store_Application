@@ -24,6 +24,30 @@ export const PAYMENT_METHODS: { value: string; label: string }[] = [
 // Rows recorded before the card split. Valid in the database, not offered in the UI.
 const LEGACY_LABELS: Record<string, string> = { cc: "Credit card" };
 
+// Where the payment confirmation is filed, per the workflow sheet.
+export const CONFIRMATION_FILING: { value: string; label: string }[] = [
+  { value: "digital", label: "Digital" },
+  { value: "physical", label: "Physical" }
+];
+
+// Delivery state on an invoice entry.
+export const DELIVERY_STATUS: { value: string; label: string }[] = [
+  { value: "delivered", label: "Delivered" },
+  { value: "not_delivered", label: "Not delivered" }
+];
+
+// Property Maintenance work types.
+export const WORK_TYPES: { value: string; label: string }[] = [
+  { value: "repair", label: "Repair" },
+  { value: "upgrade", label: "Upgrade" }
+];
+
+// True when a department (by name) is the Property Maintenance payout category. The
+// vendor's category decides which invoice fields the forms show.
+export function isPropertyDept(name: string | null | undefined): boolean {
+  return !!name && /property/i.test(name);
+}
+
 export function methodLabel(value: string | null | undefined): string {
   if (!value) return "Payment";
   return PAYMENT_METHODS.find((m) => m.value === value)?.label || LEGACY_LABELS[value] || value;
@@ -39,8 +63,9 @@ export function referenceLabel(method: string): string {
   return "Reference";
 }
 
-export function invoiceTotal(i: Pick<Invoice, "amount" | "hst_amount">): number {
-  return (Number(i.amount) || 0) + (Number(i.hst_amount) || 0);
+// Total owed on an invoice: goods + freight + HST.
+export function invoiceTotal(i: Pick<Invoice, "amount" | "hst_amount"> & { freight_charges?: number | null }): number {
+  return (Number(i.amount) || 0) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
 }
 
 // True when the date is after today: the payment is post-dated and has not settled yet.
@@ -59,6 +84,7 @@ export async function recordPaymentRpc(args: {
   paidDate: string; // YYYY-MM-DD; a future date records a post-dated payment
   reference?: string;
   notes?: string;
+  confirmationFiling?: string; // digital | physical
   actorId: string | null;
   allocations: AllocationInput[];
   amount?: number;
@@ -69,6 +95,7 @@ export async function recordPaymentRpc(args: {
     p_paid_date: args.paidDate,
     p_reference: args.reference || null,
     p_notes: args.notes || null,
+    p_confirmation_filing: args.confirmationFiling || null,
     p_actor: args.actorId,
     p_allocations: args.allocations,
     p_amount: args.amount ?? null

@@ -26,7 +26,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Money",
     items: [
       { href: "/overdue", label: "Due and overdue", icon: "overdue" },
-      { href: "/payments", label: "Payments", icon: "payments" },
+      { href: "/payments", label: "Vendor payouts", icon: "payments" },
       { href: "/vendors", label: "Vendors", icon: "vendors" },
       { href: "/reports", label: "Reports", icon: "reports" },
       { href: "/reorder", label: "Reorder", icon: "reorder" }
