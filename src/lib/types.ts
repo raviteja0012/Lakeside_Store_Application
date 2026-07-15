@@ -215,3 +215,19 @@ export type Shift = {
   notes: string | null;
   employee?: { full_name: string } | null;
 };
+
+export type CreditNote = {
+  id: string;
+  store_id: string | null;
+  vendor_id: string;
+  invoice_id: string | null;
+  invoice_number: string | null;
+  credit_amount: number;
+  reason: string;
+  comments: string | null;
+  status: "pending" | "applied" | "disputed";
+  created_by: string | null;
+  created_at: string;
+  voided_at?: string | null;
+  invoice?: { invoice_number: string | null; amount: number | null; hst_amount: number | null } | null;
+};

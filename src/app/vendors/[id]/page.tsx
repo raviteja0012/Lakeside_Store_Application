@@ -14,7 +14,7 @@ import {
   recordPaymentRpc, voidPaymentRpc, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
-import type { Vendor, PurchaseOrder, Invoice, Payment, AppUser } from "@/lib/types";
+import type { Vendor, PurchaseOrder, Invoice, Payment, AppUser, CreditNote } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
 const num = (s: string) => (s.trim() === "" ? null : Number(s));
@@ -66,6 +66,11 @@ export default function VendorDetail() {
   const [editPoId, setEditPoId] = useState<string | null>(null);
   const [editPoForm, setEditPoForm] = useState({ order_amount: "", ship_date: "", status: "ordered", notes: "" });
 
+  // Credits
+  const [credits, setCredits] = useState<CreditNote[]>([]);
+  const [showCredit, setShowCredit] = useState(false);
+  const [creditForm, setCreditForm] = useState({ invoice_number: "", credit_amount: "", reason: "", comments: "", invoice_id: "", status: "pending" });
+
   // Effective role and actor: in enforced auth the signed-in member, else the dropdown.
   const { effectiveActorId, role } = useEffectiveActor(users, actorId);
   const showMoney = canSeeMoney(role);
@@ -102,6 +107,15 @@ export default function VendorDetail() {
       .is("voided_at", null)
       .order("paid_date", { ascending: false });
     setPayments((pay as unknown as Payment[]) || []);
+
+    // Load credit notes for this vendor.
+    const { data: creds } = await supabase
+      .from("credit_note")
+      .select("id, store_id, vendor_id, invoice_id, invoice_number, credit_amount, reason, comments, status, created_by, created_at, voided_at, invoice:invoice_id(invoice_number, amount, hst_amount)")
+      .eq("vendor_id", id)
+      .is("voided_at", null)
+      .order("created_at", { ascending: false });
+    setCredits((creds as unknown as CreditNote[]) || []);
   }
 
   useEffect(() => {
@@ -372,6 +386,57 @@ export default function VendorDetail() {
     try {
       // void_payment also puts every invoice this payment touched back to its true status.
       await voidPaymentRpc(p.id, effectiveActorId);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addCredit() {
+    if (!vendor) return;
+    const amount = Number(creditForm.credit_amount);
+    if (!amount || amount <= 0) {
+      setError("Enter the credit amount.");
+      return;
+    }
+    if (!creditForm.reason.trim()) {
+      setError("Enter the reason for the credit.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await supabase.from("credit_note").insert({
+        store_id: vendor.store_id ?? null,
+        vendor_id: vendor.id,
+        invoice_id: creditForm.invoice_id || null,
+        invoice_number: creditForm.invoice_number.trim() || null,
+        credit_amount: amount,
+        reason: creditForm.reason.trim(),
+        comments: creditForm.comments.trim() || null,
+        status: creditForm.status,
+        created_by: effectiveActorId
+      }).select("id").single();
+      if (r.error) throw new Error(r.error.message);
+      await log("credit_added", "credit_note", r.data.id as string);
+      setShowCredit(false);
+      setCreditForm({ invoice_number: "", credit_amount: "", reason: "", comments: "", invoice_id: "", status: "pending" });
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeCredit(c: CreditNote) {
+    if (!window.confirm("Delete this credit note? It will be hidden but kept for the history.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("credit_note", c.id, effectiveActorId);
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -817,6 +882,83 @@ export default function VendorDetail() {
                 </div>
               );
             })}
+          </div>
+        </section>
+      )}
+
+      {showMoney && (
+        <section>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <h2 style={{ fontSize: 16, margin: 0 }}>Credits</h2>
+            {canEdit(role) && <button className="btn-ghost" onClick={() => setShowCredit((s) => !s)}>{showCredit ? "Close" : "+ Record credit"}</button>}
+          </div>
+          {showCredit && (
+            <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+                <div>
+                  <label className="label">Invoice number</label>
+                  <input className="input" placeholder="The invoice this credit applies to" value={creditForm.invoice_number} onChange={(e) => setCreditForm({ ...creditForm, invoice_number: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Link to invoice</label>
+                  <select className="input" value={creditForm.invoice_id} onChange={(e) => setCreditForm({ ...creditForm, invoice_id: e.target.value })}>
+                    <option value="">None (standalone credit)</option>
+                    {invoices.map((i) => <option key={i.id} value={i.id}>{i.invoice_number || "Invoice"} ({formatCAD(invTotal(i))})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Credit amount</label>
+                  <input className="input tabular" type="number" step="0.01" value={creditForm.credit_amount} onChange={(e) => setCreditForm({ ...creditForm, credit_amount: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Status</label>
+                  <select className="input" value={creditForm.status} onChange={(e) => setCreditForm({ ...creditForm, status: e.target.value })}>
+                    <option value="pending">Pending</option>
+                    <option value="applied">Applied</option>
+                    <option value="disputed">Disputed</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="label">Reason for credit</label>
+                <input className="input" placeholder="Damaged goods, short shipment, overcharge, return" value={creditForm.reason} onChange={(e) => setCreditForm({ ...creditForm, reason: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Comments</label>
+                <textarea className="input" rows={2} value={creditForm.comments} onChange={(e) => setCreditForm({ ...creditForm, comments: e.target.value })} />
+              </div>
+              {creditForm.invoice_id && (
+                <div className="help">
+                  Adjusted invoice amount after credit: {formatCAD(
+                    invTotal(invoices.find((i) => i.id === creditForm.invoice_id)!) - (Number(creditForm.credit_amount) || 0)
+                  )}
+                </div>
+              )}
+              <div>
+                <button className="btn-primary" onClick={addCredit} disabled={busy}>{busy ? "Saving." : "Save credit"}</button>
+              </div>
+            </div>
+          )}
+          {credits.length === 0 && !showCredit && <p className="help">No credits recorded.</p>}
+          <div style={{ display: "grid", gap: 8 }}>
+            {credits.map((c) => (
+              <div key={c.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <strong>{c.invoice_number || c.invoice?.invoice_number || "Credit"}</strong>
+                    <span className={`chip ${c.status === "applied" ? "chip-success" : c.status === "disputed" ? "chip-warning" : "chip-neutral"}`}>{c.status}</span>
+                  </div>
+                  <div className="help" style={{ marginTop: 4 }}>
+                    {c.reason}{c.comments ? ` . ${c.comments}` : ""}
+                    {c.invoice ? ` . invoice total ${formatCAD((Number(c.invoice.amount) || 0) + (Number(c.invoice.hst_amount) || 0))}, adjusted ${formatCAD((Number(c.invoice.amount) || 0) + (Number(c.invoice.hst_amount) || 0) - c.credit_amount)}` : ""}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div className="tabular" style={{ fontWeight: 600, color: "var(--success-base, #1E8E5A)" }}>{formatCAD(c.credit_amount)}</div>
+                  {canEdit(role) && <button className="btn-ghost" style={{ padding: "4px 10px", marginTop: 4 }} onClick={() => removeCredit(c)} disabled={busy}>Delete</button>}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       )}
