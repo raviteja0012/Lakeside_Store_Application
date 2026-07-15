@@ -15,7 +15,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, dueBand, round2, todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
-import { canEdit } from "@/lib/edit";
+import { canEdit, voidRow } from "@/lib/edit";
 import { chipClass, labelize } from "@/lib/status";
 import * as XLSX from "xlsx";
 import {
@@ -147,10 +147,28 @@ export default function Payments() {
   // The category chips are the top-level list from the owner's sheet; sections like
   // Clothing, Gifts, and Garden Center live under their parent, so filtering by a
   // category also matches vendors filed under its sections.
+  // If the database is missing any of the Excel categories, show all top-level
+  // departments as-is (they become top-level when their parent does not exist).
   const topCategories = useMemo(
     () => departments.filter((d) => !d.parent_department_id),
     [departments]
   );
+  // For the new-vendor dropdown, show ALL departments (including children) so the user
+  // can pick any level. Top-level first, then children indented.
+  const allDepartments = useMemo(() => {
+    const tops = departments.filter((d) => !d.parent_department_id);
+    const result: DeptLite[] = [];
+    for (const t of tops) {
+      result.push(t);
+      const children = departments.filter((d) => d.parent_department_id === t.id);
+      for (const c of children) result.push(c);
+    }
+    // Add any orphans (department whose parent is not in the list)
+    for (const d of departments) {
+      if (!result.find((r) => r.id === d.id)) result.push(d);
+    }
+    return result;
+  }, [departments]);
   const inCategory = useMemo(() => {
     return (departmentId: string | null, category: string) => {
       if (!departmentId) return false;
@@ -239,6 +257,40 @@ export default function Payments() {
     setOkMsg(null);
   }
 
+  async function deactivateVendor(vid: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: e } = await supabase.from("vendor").update({ status: "skip" }).eq("id", vid);
+      if (e) throw new Error(e.message);
+      const actor = currentActorId(member);
+      if (actor) await supabase.from("activity_log").insert({ actor_id: actor, action: "vendor_deactivated", entity: "vendor", entity_id: vid });
+      await load();
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  async function reactivateVendor(vid: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: e } = await supabase.from("vendor").update({ status: "active" }).eq("id", vid);
+      if (e) throw new Error(e.message);
+      const actor = currentActorId(member);
+      if (actor) await supabase.from("activity_log").insert({ actor_id: actor, action: "vendor_reactivated", entity: "vendor", entity_id: vid });
+      await load();
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  async function deleteVendor(vid: string, name: string) {
+    if (!window.confirm(`Delete "${name}"? It will be hidden from all lists but kept for the tax history. Its invoices and payments remain.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await voidRow("vendor", vid, currentActorId(member));
+      await load();
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  }
+
   function toggleInvoice(i: Invoice) {
     setAlloc((prev) => {
       const next = { ...prev };
@@ -314,11 +366,34 @@ export default function Payments() {
   }
 
   async function removePayment(p: Payment) {
-    if (!window.confirm("Delete this payment? It will be hidden but kept for the tax history, and its invoices go back to owing.")) return;
+    if (!window.confirm("Void this payment? It stays in the history for tax records, but its invoices go back to owing.")) return;
     setBusy(true);
     setError(null);
     try {
       await voidPaymentRpc(p.id, currentActorId(member));
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function hardDeletePayment(p: Payment) {
+    if (!window.confirm("Permanently delete this payment? Use this only for entries that never happened (test data, fat-finger). This cannot be undone.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Delete allocations first (cascade should handle it, but be explicit).
+      await supabase.from("payment_allocation").delete().eq("payment_id", p.id);
+      const { error: e } = await supabase.from("payment").delete().eq("id", p.id);
+      if (e) throw new Error(e.message);
+      const actor = currentActorId(member);
+      if (actor) {
+        await supabase.from("activity_log").insert({ actor_id: actor, action: "hard_deleted", entity: "payment", entity_id: p.id });
+      }
+      // Recompute invoice statuses for any invoices that were affected.
+      // Simplest: reload everything.
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -440,7 +515,7 @@ export default function Payments() {
               </div>
               <div style={{ display: "grid", gap: 6 }}>
                 {filteredVendors.map((v) => (
-                  <button
+                  <div
                     key={v.id}
                     className="card"
                     style={{ padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", textAlign: "left" }}
@@ -455,11 +530,30 @@ export default function Payments() {
                       ) : (
                         <span className="chip" style={{ background: "#EEF1F4", color: "#6B7480" }}>Multi-dept</span>
                       )}
+                      {v.status !== "active" && (
+                        <span className="chip chip-neutral">{v.status}</span>
+                      )}
                       {openInvoices.some((i) => i.vendor_id === v.id) && (
                         <span className="chip chip-warning">open invoices</span>
                       )}
+                      {mayEdit && (
+                        <span style={{ display: "flex", gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                          {v.status === "active" ? (
+                            <button className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => deactivateVendor(v.id)} disabled={busy} title="Deactivate vendor">
+                              Deactivate
+                            </button>
+                          ) : (
+                            <button className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => reactivateVendor(v.id)} disabled={busy} title="Reactivate vendor">
+                              Activate
+                            </button>
+                          )}
+                          <button className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11, color: "var(--error-base, #C0362C)" }} onClick={() => deleteVendor(v.id, v.name)} disabled={busy} title="Delete vendor">
+                            Delete
+                          </button>
+                        </span>
+                      )}
                     </span>
-                  </button>
+                  </div>
                 ))}
                 {filteredVendors.length === 0 && <p className="help">No vendors match. Clear the search or the category filter, or add the vendor below.</p>}
               </div>
@@ -477,7 +571,7 @@ export default function Payments() {
                     <div><label className="label" htmlFor="nv-dept">Category (optional)</label>
                       <select id="nv-dept" className="input" value={nvForm.department_id || (deptFilter !== "all" ? deptFilter : "")} onChange={(e) => setNvForm({ ...nvForm, department_id: e.target.value })}>
                         <option value="">Multi-department / Unknown</option>
-                        {topCategories.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        {allDepartments.map((d) => <option key={d.id} value={d.id}>{d.parent_department_id ? `  ${d.name}` : d.name}</option>)}
                       </select>
                       <p className="help" style={{ margin: "4px 0 0" }}>Leave blank if the vendor spans multiple departments or you are unsure. Assign later from the vendor page.</p>
                     </div>
@@ -646,9 +740,14 @@ export default function Payments() {
                 <div style={{ textAlign: "right" }}>
                   <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
                   {mayEdit && (
-                    <button className="btn-ghost" style={{ padding: "4px 10px", marginTop: 4 }} onClick={() => removePayment(p)} disabled={busy}>
-                      Delete
-                    </button>
+                    <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePayment(p)} disabled={busy}>
+                        Void
+                      </button>
+                      <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base, #C0362C)" }} onClick={() => hardDeletePayment(p)} disabled={busy}>
+                        Delete
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -678,9 +777,14 @@ export default function Payments() {
                 <div style={{ textAlign: "right" }}>
                   <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
                   {mayEdit && (
-                    <button className="btn-ghost" style={{ padding: "4px 10px", marginTop: 4 }} onClick={() => removePayment(p)} disabled={busy}>
-                      Delete
-                    </button>
+                    <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePayment(p)} disabled={busy}>
+                        Void
+                      </button>
+                      <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base, #C0362C)" }} onClick={() => hardDeletePayment(p)} disabled={busy}>
+                        Delete
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
