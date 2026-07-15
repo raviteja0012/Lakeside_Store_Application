@@ -79,10 +79,27 @@ export type Invoice = {
 
 export type Payment = {
   id: string;
-  invoice_id: string | null;
+  invoice_id: string | null; // legacy single-invoice link; allocations are the real links
+  vendor_id?: string | null;
   amount: number | null;
   method: string | null;
-  paid_date: string | null;
+  paid_date: string | null; // a future date means post-dated, not settled yet
+  reference?: string | null;
+  notes?: string | null;
+  created_at?: string;
+  vendor?: { name: string } | null;
+  payment_allocation?: {
+    invoice_id: string;
+    amount: number | null;
+    invoice?: { invoice_number: string | null } | null;
+  }[];
+};
+
+export type PaymentAllocation = {
+  id: string;
+  payment_id: string;
+  invoice_id: string;
+  amount: number | null;
 };
 
 export type Item = {

@@ -4,7 +4,7 @@
 // The shell (src/components/AppShell.tsx) is the only consumer.
 
 export type NavIcon =
-  | "home" | "feed" | "charts" | "capture" | "overdue" | "vendors" | "reports" | "reorder"
+  | "home" | "feed" | "charts" | "capture" | "overdue" | "payments" | "vendors" | "reports" | "reorder"
   | "inventory" | "signs" | "knowledge" | "ask" | "people" | "schedule" | "wrench" | "shield"
   | "import" | "team" | "more";
 
@@ -26,6 +26,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Money",
     items: [
       { href: "/overdue", label: "Due and overdue", icon: "overdue" },
+      { href: "/payments", label: "Payments", icon: "payments" },
       { href: "/vendors", label: "Vendors", icon: "vendors" },
       { href: "/reports", label: "Reports", icon: "reports" },
       { href: "/reorder", label: "Reorder", icon: "reorder" }

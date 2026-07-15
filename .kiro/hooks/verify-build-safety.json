@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Verify Build Safety",
+      "trigger": "PreToolUse",
+      "description": "Reminds to check build safety, table sync, money gating, and actor integrity before writing source code",
+      "matcher": "fs_write|str_replace",
+      "action": {
+        "type": "agent",
+        "prompt": "Before writing this file, verify: (1) The code must build with blank NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY. Auth and data helpers must degrade to null, never throw. (2) If adding a new table reference, confirm it exists in both supabase/schema.sql AND supabase/auth_setup.sql. (3) If touching money fields, confirm they are gated by canSeeMoney(role). (4) If writing created_by or activity_log, confirm it uses useEffectiveActor() not a raw id."
+      }
+    }
+  ]
+}

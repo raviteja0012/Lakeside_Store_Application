@@ -16,6 +16,7 @@ The app code is done and hosted-ready. A few setup steps remain, and they need y
 ## Step 2, Supabase (about 5 minutes)
 1. supabase.com, New project. Region: Canada (Central), Toronto.
 2. SQL Editor: paste the contents of `supabase/schema.sql`, Run. Then paste `supabase/seed.sql`, Run.
+   - Already have a database from before the payments upgrade? Run `supabase/payments_v2.sql` once instead of re-running schema.sql. It adds the owner's method list (Cash, Cheque, CC_Visa, CC_Mastercard, CC_AMEX, CC_Debit, E-Transfer, EFT, Other), vendor-level payments with reference and notes, multi-invoice allocations, partial payments, post-dated handling, and the record_payment/void_payment RPCs. If login is enforced, rerun `supabase/auth_setup.sql` after it (the payment policy now scopes through the vendor).
    - To load the full real vendor ledger (all ~125 vendors with their orders, invoices, terms, and due dates), also paste `supabase/seed_bookings.sql`, Run. It is safe to run on top of `seed.sql` (insert-if-not-exists by vendor name) and safe to re-run. Or skip it and load the sheet later from the in-app Import data page.
 3. Storage: `schema.sql` already creates the `documents` bucket and its upload policy, so capture works right after step 2. (If you prefer the UI: Storage, New bucket named exactly `documents`, set Public. Either way is fine.)
 4. Project Settings, API: copy the Project URL and the `anon` public key. Keep for Step 3.

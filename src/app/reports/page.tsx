@@ -106,7 +106,7 @@ export default function Reports() {
   const statusMix = useMemo(() => {
     const m = new Map<string, number>();
     for (const i of invoices) m.set(i.status, (m.get(i.status) || 0) + 1);
-    const order = ["paid", "unpaid", "postdated"];
+    const order = ["paid", "partially_paid", "unpaid", "postdated"];
     return order.filter((s) => m.has(s)).map((s, idx) => ({ label: labelize(s), value: m.get(s) || 0, color: paletteColor(idx) }));
   }, [invoices]);
   const totalInv = statusMix.reduce((s, r) => s + r.value, 0);

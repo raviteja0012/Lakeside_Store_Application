@@ -123,21 +123,221 @@ create table invoice (
   hst_amount numeric,
   terms text,
   due_date date,
-  status text default 'unpaid' check (status in ('unpaid','paid','postdated')),
+  -- Derived by recompute_invoice_status from the payment allocations:
+  -- unpaid -> partially_paid -> paid; postdated = covered only by future-dated payments.
+  -- Overdue is computed from due_date in the UI, never stored.
+  status text default 'unpaid' check (status in ('unpaid','partially_paid','paid','postdated')),
   source_file_path text,
   created_at timestamptz default now()
 );
 
+-- A payment belongs to a vendor. Which invoices it settles lives in payment_allocation,
+-- so one cheque can cover several invoices (even across departments) and still reconcile
+-- as one payment against the bank statement. invoice_id remains for legacy single-invoice
+-- rows; the autoallocate trigger turns it into an allocation.
 create table payment (
   id uuid primary key default gen_random_uuid(),
-  invoice_id uuid references invoice(id),
+  vendor_id uuid references vendor(id),
+  invoice_id uuid references invoice(id),   -- legacy link, kept for old write paths
   amount numeric,
-  method text check (method in ('cheque','cc','etransfer','cash')),
-  paid_date date,
+  -- The owner's locked method list; 'cc' stays valid for rows recorded before the card split.
+  method text check (method in ('cash','cheque','cc_visa','cc_mastercard','cc_amex','cc_debit','etransfer','eft','other','cc')),
+  paid_date date,                           -- a future date means post-dated: not settled until it arrives
+  reference text,                           -- cheque number, e-transfer ref, card confirmation
+  notes text,                               -- required by the UI when method = other
   confirmation_file_path text,
   created_by uuid references app_user(id),
   created_at timestamptz default now()
 );
+
+-- How a payment splits across invoices. A partial payment is an allocation smaller than
+-- the invoice balance.
+create table payment_allocation (
+  id uuid primary key default gen_random_uuid(),
+  payment_id uuid not null references payment(id) on delete cascade,
+  invoice_id uuid not null references invoice(id),
+  amount numeric not null,
+  created_at timestamptz default now()
+);
+create index payment_allocation_payment_idx on payment_allocation(payment_id);
+create index payment_allocation_invoice_idx on payment_allocation(invoice_id);
+
+-- Payments engine: one atomic path every screen records through. Bodies reference tables
+-- created later in this file (activity_log); plpgsql resolves them at call time.
+
+-- Derive one invoice's status from its allocations. paid_date in the future means the money
+-- has not left yet (post-dated cheque). A null paid_date counts as settled (legacy imports).
+create or replace function public.recompute_invoice_status(p_invoice_id uuid)
+returns void
+language plpgsql
+as $$
+declare
+  v_total numeric;
+  v_settled numeric;
+  v_scheduled numeric;
+  v_status text;
+begin
+  select coalesce(amount, 0) + coalesce(hst_amount, 0) into v_total
+  from public.invoice where id = p_invoice_id;
+  if not found then
+    return;
+  end if;
+
+  select
+    coalesce(sum(a.amount) filter (where p.paid_date is null or p.paid_date <= current_date), 0),
+    coalesce(sum(a.amount) filter (where p.paid_date > current_date), 0)
+  into v_settled, v_scheduled
+  from public.payment_allocation a
+  join public.payment p on p.id = a.payment_id
+  where a.invoice_id = p_invoice_id and p.voided_at is null;
+
+  if v_total <= 0 then
+    v_status := case when v_settled + v_scheduled > 0 then 'paid' else 'unpaid' end;
+  elsif v_settled >= v_total then
+    v_status := 'paid';
+  elsif v_settled + v_scheduled >= v_total then
+    v_status := 'postdated';
+  elsif v_settled + v_scheduled > 0 then
+    v_status := 'partially_paid';
+  else
+    v_status := 'unpaid';
+  end if;
+
+  update public.invoice set status = v_status
+  where id = p_invoice_id and status is distinct from v_status;
+end;
+$$;
+
+-- Record a payment atomically: payment row, allocations, invoice statuses, audit entries.
+-- p_allocations: jsonb array of {"invoice_id": uuid, "amount": number}. A payment with no
+-- allocations is a deposit/prepayment and needs p_amount instead. Returns the payment id.
+create or replace function public.record_payment(
+  p_vendor_id uuid,
+  p_method text,
+  p_paid_date date,
+  p_reference text default null,
+  p_notes text default null,
+  p_actor uuid default null,
+  p_allocations jsonb default '[]'::jsonb,
+  p_amount numeric default null
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_total numeric := 0;
+  v_payment_id uuid;
+  a record;
+begin
+  select coalesce(sum((x->>'amount')::numeric), 0) into v_total
+  from jsonb_array_elements(coalesce(p_allocations, '[]'::jsonb)) x;
+
+  if v_total <= 0 then
+    if p_amount is null or p_amount <= 0 then
+      raise exception 'a payment needs invoice allocations or an amount';
+    end if;
+    v_total := p_amount;
+  end if;
+
+  insert into public.payment (vendor_id, amount, method, paid_date, reference, notes, created_by)
+  values (p_vendor_id, v_total, p_method, p_paid_date, nullif(p_reference, ''), nullif(p_notes, ''), p_actor)
+  returning id into v_payment_id;
+
+  for a in
+    select (x->>'invoice_id')::uuid as invoice_id, (x->>'amount')::numeric as amount
+    from jsonb_array_elements(coalesce(p_allocations, '[]'::jsonb)) x
+  loop
+    if a.invoice_id is null or a.amount is null or a.amount <= 0 then
+      raise exception 'each allocation needs an invoice and an amount above zero';
+    end if;
+    insert into public.payment_allocation (payment_id, invoice_id, amount)
+    values (v_payment_id, a.invoice_id, a.amount);
+    perform public.recompute_invoice_status(a.invoice_id);
+    if p_actor is not null then
+      insert into public.activity_log (actor_id, action, entity, entity_id)
+      values (p_actor, 'payment_recorded', 'invoice', a.invoice_id);
+    end if;
+  end loop;
+
+  if p_actor is not null then
+    insert into public.activity_log (actor_id, action, entity, entity_id)
+    values (p_actor, 'payment_recorded', 'payment', v_payment_id);
+  end if;
+
+  return v_payment_id;
+end;
+$$;
+
+-- Void a payment (soft delete) and put every invoice it touched back to its true status.
+create or replace function public.void_payment(p_payment_id uuid, p_actor uuid default null)
+returns void
+language plpgsql
+as $$
+declare
+  r record;
+begin
+  update public.payment set voided_at = now(), voided_by = p_actor
+  where id = p_payment_id and voided_at is null;
+  if not found then
+    return;
+  end if;
+
+  for r in select distinct invoice_id from public.payment_allocation where payment_id = p_payment_id
+  loop
+    perform public.recompute_invoice_status(r.invoice_id);
+  end loop;
+
+  if p_actor is not null then
+    insert into public.activity_log (actor_id, action, entity, entity_id)
+    values (p_actor, 'voided', 'payment', p_payment_id);
+  end if;
+end;
+$$;
+
+-- Flip post-dated invoices whose payment dates have arrived. The payments screens call it
+-- on load, so nothing needs a cron.
+create or replace function public.reconcile_postdated()
+returns integer
+language plpgsql
+as $$
+declare
+  r record;
+  n integer := 0;
+begin
+  for r in select id from public.invoice where status = 'postdated' and voided_at is null
+  loop
+    perform public.recompute_invoice_status(r.id);
+    n := n + 1;
+  end loop;
+  return n;
+end;
+$$;
+
+-- Backstop for legacy write paths (seed data, the Excel import) that insert payment rows
+-- with invoice_id: give them an allocation and a vendor automatically, and recompute.
+create or replace function public.payment_autoallocate()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.invoice_id is not null then
+    insert into public.payment_allocation (payment_id, invoice_id, amount)
+    select new.id, new.invoice_id, coalesce(new.amount, 0)
+    where not exists (select 1 from public.payment_allocation a where a.payment_id = new.id);
+    if new.vendor_id is null then
+      update public.payment
+      set vendor_id = (select vendor_id from public.invoice where id = new.invoice_id)
+      where id = new.id;
+    end if;
+    perform public.recompute_invoice_status(new.invoice_id);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists payment_autoallocate on public.payment;
+create trigger payment_autoallocate
+  after insert on public.payment
+  for each row execute function public.payment_autoallocate();
 
 create table retail_price (
   id uuid primary key default gen_random_uuid(),

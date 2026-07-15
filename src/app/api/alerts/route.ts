@@ -38,11 +38,13 @@ async function run(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized. Set CRON_SECRET and send it as x-cron-secret." }, { status: 401 });
   }
 
-  // Pull unpaid invoices with a due date and split into overdue and due within 7 days.
-  const { data, error } = await alertsClient()
+  // Pull open invoices (unpaid or partially paid) with a due date and split into overdue
+  // and due within 7 days. Post-dated invoices are excluded: a cheque already covers them.
+  const db = alertsClient();
+  const { data, error } = await db
     .from("invoice")
-    .select("invoice_number, amount, hst_amount, due_date, vendor:vendor_id(name), store:store_id(name)")
-    .eq("status", "unpaid")
+    .select("id, invoice_number, amount, hst_amount, due_date, vendor:vendor_id(name), store:store_id(name)")
+    .in("status", ["unpaid", "partially_paid"])
     .is("voided_at", null)
     .not("due_date", "is", null)
     .order("due_date", { ascending: true });
@@ -53,12 +55,32 @@ async function run(req: NextRequest) {
   const today = new Date();
   const todayISO = today.toISOString().slice(0, 10);
   const todayMs = ms(todayISO);
+
+  // Settled allocations per invoice, so a partially paid invoice alerts on what is left.
+  const rows = (data as any[]) || [];
+  const settled = new Map<string, number>();
+  const ids = rows.map((i) => i.id);
+  for (let n = 0; n < ids.length; n += 200) {
+    const chunk = ids.slice(n, n + 200);
+    const { data: allocs } = await db
+      .from("payment_allocation")
+      .select("invoice_id, amount, payment:payment_id(paid_date, voided_at)")
+      .in("invoice_id", chunk);
+    for (const a of ((allocs as any[]) || [])) {
+      if (!a.payment || a.payment.voided_at) continue;
+      if (a.payment.paid_date && ms(a.payment.paid_date) > todayMs) continue; // post-dated, not settled yet
+      settled.set(a.invoice_id, (settled.get(a.invoice_id) || 0) + (Number(a.amount) || 0));
+    }
+  }
+
   const overdue: any[] = [];
   const dueSoon: any[] = [];
-  for (const i of (data as any[]) || []) {
+  for (const i of rows) {
     const days = Math.round((todayMs - ms(i.due_date)) / 86400000);
     const total = (Number(i.amount) || 0) + (Number(i.hst_amount) || 0);
-    const row = { name: i.vendor?.name || "Vendor", number: i.invoice_number || "", due: i.due_date, total, days, store: i.store?.name || "" };
+    const remaining = Math.max(0, total - (settled.get(i.id) || 0));
+    if (remaining <= 0.005) continue;
+    const row = { name: i.vendor?.name || "Vendor", number: i.invoice_number || "", due: i.due_date, total: remaining, days, store: i.store?.name || "" };
     if (days > 0) overdue.push(row);
     else if (days >= -7) dueSoon.push(row);
   }

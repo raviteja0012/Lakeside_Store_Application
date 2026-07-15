@@ -2,20 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { formatCAD, daysOverdue, todayISO } from "@/lib/format";
+import { formatCAD, daysOverdue, round2, todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
 import { canEdit } from "@/lib/edit";
+import {
+  PAYMENT_METHODS, referenceLabel, invoiceTotal, isFutureDate,
+  recordPaymentRpc, reconcilePostdated, fetchSettlements,
+  remainingOwed, remainingToAllocate, type InvoiceSettlement
+} from "@/lib/payments";
 import type { Invoice } from "@/lib/types";
-
-// Values are the ones the payment.method check constraint allows (and the vendor detail
-// screen uses); labels are what a person reads.
-const PAY_METHODS: { value: string; label: string }[] = [
-  { value: "cheque", label: "cheque" },
-  { value: "etransfer", label: "e-transfer" },
-  { value: "cc", label: "credit card" },
-  { value: "cash", label: "cash" }
-];
 
 export default function Overdue() {
   const { storeId, ready } = useActiveStore();
@@ -24,24 +20,36 @@ export default function Overdue() {
   const showMoney = canSeeMoney(role);
   const mayEdit = canEdit(role);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [settlements, setSettlements] = useState<Map<string, InvoiceSettlement>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
-  const [payForm, setPayForm] = useState({ paid_date: todayISO(), method: "cheque" });
+  const [payForm, setPayForm] = useState({ paid_date: todayISO(), method: "cheque", reference: "", notes: "" });
   const [busy, setBusy] = useState(false);
 
   async function load() {
+    // Post-dated cheques whose date has arrived flip to paid on their own here.
+    await reconcilePostdated();
     let query = supabase
       .from("invoice")
       .select("id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status, vendor:vendor_id(name)")
       .is("voided_at", null)
-      .in("status", ["unpaid", "postdated"])
+      .in("status", ["unpaid", "partially_paid", "postdated"])
       .not("due_date", "is", null)
       .order("due_date", { ascending: true });
     if (storeId) query = query.eq("store_id", storeId);
     const { data, error } = await query;
-    if (error) setError(error.message);
-    else setInvoices((data as unknown as Invoice[]) || []);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    const list = (data as unknown as Invoice[]) || [];
+    setInvoices(list);
+    try {
+      setSettlements(await fetchSettlements(list.map((i) => i.id)));
+    } catch {
+      setSettlements(new Map());
+    }
   }
 
   useEffect(() => {
@@ -54,42 +62,45 @@ export default function Overdue() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, storeId]);
 
-  const total = (i: Invoice) => (Number(i.amount) || 0) + (Number(i.hst_amount) || 0);
-  const outstanding = useMemo(() => invoices.reduce((s, i) => s + total(i), 0), [invoices]);
+  const total = (i: Invoice) => invoiceTotal(i);
+  // Owed = invoice total minus settled payments. Post-dated money has not left the account,
+  // so it still counts as owed; the chip shows the invoice is covered.
+  const owed = (i: Invoice) => remainingOwed(total(i), settlements.get(i.id));
+  const toPay = (i: Invoice) => round2(remainingToAllocate(total(i), settlements.get(i.id)));
+  const outstanding = useMemo(
+    () => invoices.reduce((s, i) => s + owed(i), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [invoices, settlements]
+  );
 
-  // Record a full payment against the invoice: one payment row, the invoice marked paid,
-  // and the audit trail records who did it. Owners and managers only. Not atomic (two
-  // writes), so a retry after a half-failure first checks whether the payment row already
-  // exists rather than inserting a duplicate.
+  // Record what is left on the invoice through the record_payment RPC: payment row,
+  // allocation, recomputed invoice status, and the audit entries in one transaction.
+  // A future paid date records it as post-dated and the invoice stays here until it clears.
   async function recordPayment(i: Invoice) {
+    if (payForm.method === "other" && !payForm.notes.trim()) {
+      setError("Method is Other: say what it was in the notes.");
+      return;
+    }
+    const amount = toPay(i);
+    if (amount <= 0) {
+      setError("Nothing left to pay on this invoice; a post-dated payment already covers it.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const actor = currentActorId(member);
-      const { data: existing } = await supabase
-        .from("payment")
-        .select("id")
-        .eq("invoice_id", i.id)
-        .is("voided_at", null)
-        .limit(1)
-        .maybeSingle();
-      if (!existing) {
-        const p = await supabase
-          .from("payment")
-          .insert({ invoice_id: i.id, amount: total(i), method: payForm.method, paid_date: payForm.paid_date || todayISO(), created_by: actor })
-          .select("id")
-          .single();
-        if (p.error) throw new Error(p.error.message);
-      }
-      const u = await supabase.from("invoice").update({ status: "paid" }).eq("id", i.id);
-      if (u.error) throw new Error(u.error.message);
-      if (actor) {
-        // Same shape as the vendor detail screen: the log entry points at the invoice.
-        await supabase.from("activity_log").insert({ actor_id: actor, action: "payment_recorded", entity: "invoice", entity_id: i.id });
-      }
+      await recordPaymentRpc({
+        vendorId: i.vendor_id as string,
+        method: payForm.method,
+        paidDate: payForm.paid_date || todayISO(),
+        reference: payForm.reference,
+        notes: payForm.notes,
+        actorId: currentActorId(member),
+        allocations: [{ invoice_id: i.id, amount }]
+      });
       setPayingId(null);
-      // One invoice changed; drop it locally instead of re-downloading the whole list.
-      setInvoices((prev) => prev.filter((x) => x.id !== i.id));
+      // Statuses may have shifted (paid, or post-dated with a future date); reload the list.
+      await load();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -141,16 +152,20 @@ export default function Overdue() {
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <strong>{i.vendor?.name || "Vendor"}</strong>
                     <span className={`chip ${b.cls}`}>{b.text}</span>
+                    {i.status === "partially_paid" && <span className="chip chip-progress">partially paid</span>}
                   </div>
-                  <div className="help" style={{ marginTop: 4 }}>{i.invoice_number || ""}{i.due_date ? ` . due ${i.due_date}` : ""}{i.terms ? ` . ${i.terms}` : ""}</div>
+                  <div className="help" style={{ marginTop: 4 }}>
+                    {i.invoice_number || ""}{i.due_date ? ` . due ${i.due_date}` : ""}{i.terms ? ` . ${i.terms}` : ""}
+                    {showMoney && i.status === "partially_paid" ? ` . ${formatCAD(owed(i))} of ${formatCAD(total(i))} still owed` : ""}
+                  </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                  {showMoney && <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(total(i))}</div>}
-                  {showMoney && mayEdit && payingId !== i.id && (
+                  {showMoney && <div className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{formatCAD(owed(i))}</div>}
+                  {showMoney && mayEdit && payingId !== i.id && i.status !== "postdated" && (
                     <button
                       className="btn-ghost"
                       style={{ padding: "4px 10px" }}
-                      onClick={() => { setPayingId(i.id); setPayForm({ paid_date: todayISO(), method: "cheque" }); }}
+                      onClick={() => { setPayingId(i.id); setPayForm({ paid_date: todayISO(), method: "cheque", reference: "", notes: "" }); }}
                       disabled={busy}
                     >
                       Record payment
@@ -163,15 +178,26 @@ export default function Overdue() {
                   <div>
                     <label className="label" htmlFor={`pay-date-${i.id}`}>Paid date</label>
                     <input id={`pay-date-${i.id}`} className="input" type="date" value={payForm.paid_date} onChange={(e) => setPayForm({ ...payForm, paid_date: e.target.value })} />
+                    {isFutureDate(payForm.paid_date) && <p className="help" style={{ margin: "4px 0 0" }}>Future date: records as post-dated.</p>}
                   </div>
                   <div>
                     <label className="label" htmlFor={`pay-method-${i.id}`}>Method</label>
                     <select id={`pay-method-${i.id}`} className="input" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
-                      {PAY_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                     </select>
                   </div>
+                  <div>
+                    <label className="label" htmlFor={`pay-ref-${i.id}`}>{referenceLabel(payForm.method)}</label>
+                    <input id={`pay-ref-${i.id}`} className="input" value={payForm.reference} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} />
+                  </div>
+                  {payForm.method === "other" && (
+                    <div>
+                      <label className="label" htmlFor={`pay-notes-${i.id}`}>Notes (say what the method was)</label>
+                      <input id={`pay-notes-${i.id}`} className="input" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
+                    </div>
+                  )}
                   <button className="btn-primary" onClick={() => recordPayment(i)} disabled={busy}>
-                    {busy ? "Saving." : `Mark paid ${formatCAD(total(i))}`}
+                    {busy ? "Saving." : `Mark paid ${formatCAD(toPay(i))}`}
                   </button>
                   <button className="btn-ghost" onClick={() => setPayingId(null)} disabled={busy}>Cancel</button>
                 </div>

@@ -136,17 +136,44 @@ create policy member_store_rw on public.receiving_line
     select 1 from public.receiving_event e
     where e.id = receiving_line.receiving_event_id and e.store_id = app_auth.my_store_id()));
 
--- payment via its invoice.
+-- payment via its vendor (payments can exist without an invoice, e.g. a deposit or
+-- prepayment), falling back to the invoice link for legacy rows without vendor_id.
 drop policy if exists member_store_rw on public.payment;
 create policy member_store_rw on public.payment
   for all
   to authenticated
+  using (
+    exists (
+      select 1 from public.vendor v
+      where v.id = payment.vendor_id and v.store_id = app_auth.my_store_id())
+    or exists (
+      select 1 from public.invoice i
+      where i.id = payment.invoice_id and i.store_id = app_auth.my_store_id()))
+  with check (
+    exists (
+      select 1 from public.vendor v
+      where v.id = payment.vendor_id and v.store_id = app_auth.my_store_id())
+    or exists (
+      select 1 from public.invoice i
+      where i.id = payment.invoice_id and i.store_id = app_auth.my_store_id()));
+
+-- payment_allocation via its payment's vendor or invoice.
+drop policy if exists member_store_rw on public.payment_allocation;
+create policy member_store_rw on public.payment_allocation
+  for all
+  to authenticated
   using (exists (
-    select 1 from public.invoice i
-    where i.id = payment.invoice_id and i.store_id = app_auth.my_store_id()))
+    select 1 from public.payment p
+    left join public.vendor v on v.id = p.vendor_id
+    left join public.invoice i on i.id = p.invoice_id
+    where p.id = payment_allocation.payment_id
+      and coalesce(v.store_id, i.store_id) = app_auth.my_store_id()))
   with check (exists (
-    select 1 from public.invoice i
-    where i.id = payment.invoice_id and i.store_id = app_auth.my_store_id()));
+    select 1 from public.payment p
+    left join public.vendor v on v.id = p.vendor_id
+    left join public.invoice i on i.id = p.invoice_id
+    where p.id = payment_allocation.payment_id
+      and coalesce(v.store_id, i.store_id) = app_auth.my_store_id()));
 
 -- inventory_count_line via its inventory_count.
 drop policy if exists member_store_rw on public.inventory_count_line;

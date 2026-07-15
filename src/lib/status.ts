@@ -16,6 +16,7 @@ const MAP: Record<string, string> = {
   // invoice
   paid: "chip-success",
   unpaid: "chip-warning",
+  partially_paid: "chip-progress",
   postdated: "chip-progress",
   // purchase_order
   draft: "chip-neutral",

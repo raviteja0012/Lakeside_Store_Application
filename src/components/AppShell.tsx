@@ -29,6 +29,7 @@ export function Icon({ name, size = 18 }: { name: NavIcon; size?: number }) {
     case "charts": return <svg {...p}><path d="M5 20v-7M12 20V5M19 20v-10" /><path d="M3 20h18" /></svg>;
     case "capture": return <svg {...p}><rect x="3" y="7" width="18" height="13" rx="2.5" /><circle cx="12" cy="13.5" r="3.6" /><path d="M9 7l1.4-2.5h3.2L15 7" /></svg>;
     case "overdue": return <svg {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2.5" /></svg>;
+    case "payments": return <svg {...p}><rect x="2.8" y="6.5" width="18.4" height="11" rx="2" /><circle cx="12" cy="12" r="2.7" /><path d="M6.2 9.7h.01M17.8 14.3h.01" strokeWidth={2.6} /></svg>;
     case "vendors": return <svg {...p}><path d="M3 7h11v10H3z" /><path d="M14 10.5h3.6L21 14v3h-7" /><circle cx="7" cy="19" r="1.7" /><circle cx="17" cy="19" r="1.7" /></svg>;
     case "reports": return <svg {...p}><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>;
     case "reorder": return <svg {...p}><path d="M4.5 10a8 8 0 0 1 13.6-3.4L20 8.5" /><path d="M20 3.5v5h-5" /><path d="M19.5 14a8 8 0 0 1-13.6 3.4L4 15.5" /><path d="M4 20.5v-5h5" /></svg>;

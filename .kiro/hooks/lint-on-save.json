@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Lint TypeScript on Save",
+      "trigger": "PostFileSave",
+      "description": "Runs Next.js lint on saved TypeScript and TSX files to catch issues early",
+      "matcher": "\\.(ts|tsx)$",
+      "action": {
+        "type": "command",
+        "command": "npx next lint",
+        "timeout": 60
+      }
+    }
+  ]
+}

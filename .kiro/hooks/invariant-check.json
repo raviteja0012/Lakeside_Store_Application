@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Check Invariants After Task",
+      "trigger": "PostTaskExec",
+      "description": "Runs lint and build after completing a spec task to catch regressions",
+      "action": {
+        "type": "command",
+        "command": "npm run lint && npm run build",
+        "timeout": 120
+      }
+    }
+  ]
+}

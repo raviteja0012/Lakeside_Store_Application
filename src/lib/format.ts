@@ -9,6 +9,18 @@ export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+// Ontario HST. 13% is the working default for both candidate store locations (Dorset and
+// Atikokan are both in Ontario). See robinsons_store_build_spec.md: "13 percent HST is the
+// working default... Show HST as a separate line." Kept here so capture and the vendor
+// invoice form share one rate; move to a per-province tax_rules lookup when portability lands.
+export const HST_RATE = 0.13;
+
+// HST dollars owed on a pre-tax amount, rounded to cents. Null/blank/non-finite input yields 0.
+export function hstOn(preTax: number | null | undefined): number {
+  const n = typeof preTax === "number" && isFinite(preTax) ? preTax : 0;
+  return round2(n * HST_RATE);
+}
+
 // Store-local date as YYYY-MM-DD. For the demo we treat the runtime local date as store time.
 export function todayISO(): string {
   const d = new Date();

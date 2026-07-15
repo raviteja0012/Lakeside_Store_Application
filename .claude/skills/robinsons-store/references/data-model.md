@@ -8,8 +8,9 @@
 - item: department_id, vendor_id, sku, name, uom, retail_price, cost_price, is_regulated.
 - receiving_event: department_id, vendor_id nullable, vendor_name raw extracted text, received_date, source_file_path, status, created_by. The capture record.
 - receiving_line: receiving_event_id, item_id nullable, description, qty, unit_cost, retail_price_note, confidence.
-- invoice: receiving_event_id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status in unpaid, paid, postdated, source_file_path.
-- payment: invoice_id, amount, method in cheque, cc, etransfer, cash, paid_date, confirmation_file_path, created_by.
+- invoice: receiving_event_id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status in unpaid, partially_paid, paid, postdated (derived from allocations by recompute_invoice_status; overdue is computed from due_date, never stored), source_file_path.
+- payment: vendor_id, amount, method in cash, cheque, cc_visa, cc_mastercard, cc_amex, cc_debit, etransfer, eft, other (plus legacy cc), paid_date (future = post-dated, settles on its own when the date arrives), reference (cheque number, e-transfer ref), notes (required when method is other), confirmation_file_path, created_by. invoice_id remains only as the legacy single-invoice link.
+- payment_allocation: payment_id, invoice_id, amount. How one payment splits across invoices; one cheque can settle invoices in different departments and each allocation keeps its department through its invoice. Partial payment = allocation below the invoice balance. Always write payments through the record_payment RPC and delete through void_payment (atomic: payment + allocations + statuses + audit).
 - retail_price: item_id, price, effective_date, source_file_path, created_by. The retail-price history that replaces scribbles on invoices.
 - inventory_count and inventory_count_line: department_id, counted_date, source_file_path, then item_id and counted_qty.
 - purchase_order: vendor_id, department_id, season_year, order_amount, ship_date, delivery_commit, status, notes.

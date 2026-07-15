@@ -5,13 +5,24 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
-import { formatCAD, daysOverdue } from "@/lib/format";
+import { formatCAD, daysOverdue, round2, todayISO, hstOn } from "@/lib/format";
 import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
+import {
+  PAYMENT_METHODS, methodLabel, referenceLabel, invoiceTotal as invTotal, isFutureDate,
+  recordPaymentRpc, voidPaymentRpc, fetchSettlements,
+  remainingOwed, remainingToAllocate, type InvoiceSettlement
+} from "@/lib/payments";
 import type { Vendor, PurchaseOrder, Invoice, Payment, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
 const num = (s: string) => (s.trim() === "" ? null : Number(s));
+// HST auto-fills from the pre-tax amount (Ontario 13%), matching the capture screen. Blank
+// amount leaves HST blank; the field stays editable so a tax-exempt line can be overridden.
+const hstFieldFor = (amount: string) => {
+  const n = num(amount);
+  return n == null || !isFinite(n) ? "" : String(hstOn(n));
+};
 
 export default function VendorDetail() {
   const params = useParams();
@@ -31,9 +42,11 @@ export default function VendorDetail() {
   const [showPO, setShowPO] = useState(false);
   const [poForm, setPoForm] = useState({ order_amount: "", ship_date: "", delivery_commit: "", status: "ordered", season_year: "2026", notes: "" });
   const [showInv, setShowInv] = useState(false);
-  const [invForm, setInvForm] = useState({ invoice_number: "", amount: "", hst_amount: "", terms: "", due_date: "", status: "unpaid" });
+  // status "paid" at entry also records the payment (Ravi: an invoice arrives paid or unpaid).
+  const [invForm, setInvForm] = useState({ invoice_number: "", amount: "", hst_amount: "", terms: "", due_date: "", status: "unpaid", pay_method: "cheque", pay_date: todayISO(), pay_reference: "" });
   const [payFor, setPayFor] = useState<string | null>(null);
-  const [payForm, setPayForm] = useState({ amount: "", method: "cheque", paid_date: "" });
+  const [payForm, setPayForm] = useState({ amount: "", method: "cheque", paid_date: todayISO(), reference: "", notes: "" });
+  const [settlements, setSettlements] = useState<Map<string, InvoiceSettlement>>(new Map());
 
   const [editInvId, setEditInvId] = useState<string | null>(null);
   const [editInvForm, setEditInvForm] = useState({ invoice_number: "", amount: "", hst_amount: "", terms: "", due_date: "", status: "unpaid" });
@@ -61,13 +74,19 @@ export default function VendorDetail() {
     const { data: inv } = await supabase.from("invoice").select("id, vendor_id, invoice_number, amount, hst_amount, terms, due_date, status").eq("vendor_id", id).is("voided_at", null).order("due_date", { ascending: true });
     const invList = (inv as unknown as Invoice[]) || [];
     setInvoices(invList);
-    const ids = invList.map((i) => i.id);
-    if (ids.length) {
-      const { data: pay } = await supabase.from("payment").select("id, invoice_id, amount, method, paid_date").in("invoice_id", ids).is("voided_at", null).order("paid_date", { ascending: false });
-      setPayments((pay as unknown as Payment[]) || []);
-    } else {
-      setPayments([]);
+    try {
+      setSettlements(await fetchSettlements(invList.map((i) => i.id)));
+    } catch {
+      setSettlements(new Map());
     }
+    // Payments belong to the vendor now (the migration backfills vendor_id on legacy rows).
+    const { data: pay } = await supabase
+      .from("payment")
+      .select("id, invoice_id, vendor_id, amount, method, paid_date, reference, notes, payment_allocation(invoice_id, amount, invoice:invoice_id(invoice_number))")
+      .eq("vendor_id", id)
+      .is("voided_at", null)
+      .order("paid_date", { ascending: false });
+    setPayments((pay as unknown as Payment[]) || []);
   }
 
   useEffect(() => {
@@ -179,6 +198,8 @@ export default function VendorDetail() {
     setBusy(true);
     setError(null);
     try {
+      // Insert as unpaid; if the invoice arrived already paid, the payment recorded next
+      // flips it. That way a paid invoice always has its payment row behind it.
       const r = await supabase.from("invoice").insert({
         store_id: vendor.store_id ?? null,
         vendor_id: vendor.id,
@@ -187,12 +208,23 @@ export default function VendorDetail() {
         hst_amount: num(invForm.hst_amount) ?? 0,
         terms: invForm.terms || null,
         due_date: invForm.due_date || null,
-        status: invForm.status
+        status: "unpaid"
       }).select("id").single();
       if (r.error) throw new Error(r.error.message);
       await log("invoice_added", "invoice", r.data.id as string);
+      if (invForm.status === "paid") {
+        const total = (num(invForm.amount) || 0) + (num(invForm.hst_amount) || 0);
+        await recordPaymentRpc({
+          vendorId: vendor.id,
+          method: invForm.pay_method,
+          paidDate: invForm.pay_date || todayISO(),
+          reference: invForm.pay_reference,
+          actorId: effectiveActorId,
+          allocations: [{ invoice_id: r.data.id as string, amount: round2(total) }]
+        });
+      }
       setShowInv(false);
-      setInvForm({ invoice_number: "", amount: "", hst_amount: "", terms: "", due_date: "", status: "unpaid" });
+      setInvForm({ invoice_number: "", amount: "", hst_amount: "", terms: "", due_date: "", status: "unpaid", pay_method: "cheque", pay_date: todayISO(), pay_reference: "" });
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -300,11 +332,12 @@ export default function VendorDetail() {
   }
 
   async function removePayment(p: Payment) {
-    if (!window.confirm("Delete this payment? It will be hidden but kept for the tax history.")) return;
+    if (!window.confirm("Delete this payment? It will be hidden but kept for the tax history, and its invoices go back to owing.")) return;
     setBusy(true);
     setError(null);
     try {
-      await voidRow("payment", p.id, effectiveActorId);
+      // void_payment also puts every invoice this payment touched back to its true status.
+      await voidPaymentRpc(p.id, effectiveActorId);
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -329,25 +362,37 @@ export default function VendorDetail() {
 
   function startPay(i: Invoice) {
     setPayFor(i.id);
-    setPayForm({ amount: String((Number(i.amount) || 0) + (Number(i.hst_amount) || 0)), method: "cheque", paid_date: "" });
+    // Prefill what is left to allocate: partial payments and post-dated cheques already
+    // covering their share reduce it.
+    const left = round2(remainingToAllocate(invTotal(i), settlements.get(i.id)));
+    setPayForm({ amount: left > 0 ? String(left) : "", method: "cheque", paid_date: todayISO(), reference: "", notes: "" });
   }
 
   async function recordPayment() {
-    if (!payFor) return;
+    if (!payFor || !vendor) return;
+    const amount = num(payForm.amount);
+    if (!amount || amount <= 0) {
+      setError("Enter the payment amount.");
+      return;
+    }
+    if (payForm.method === "other" && !payForm.notes.trim()) {
+      setError("Method is Other: say what it was in the notes.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const p = await supabase.from("payment").insert({
-        invoice_id: payFor,
-        amount: num(payForm.amount),
+      // One atomic call: payment + allocation + invoice status + audit. A partial amount
+      // leaves the invoice partially paid; a future date records it as post-dated.
+      await recordPaymentRpc({
+        vendorId: vendor.id,
         method: payForm.method,
-        paid_date: payForm.paid_date || null,
-        created_by: effectiveActorId
-      }).select("id").single();
-      if (p.error) throw new Error(p.error.message);
-      const u = await supabase.from("invoice").update({ status: "paid" }).eq("id", payFor);
-      if (u.error) throw new Error(u.error.message);
-      await log("payment_recorded", "invoice", payFor);
+        paidDate: payForm.paid_date || todayISO(),
+        reference: payForm.reference,
+        notes: payForm.notes,
+        actorId: effectiveActorId,
+        allocations: [{ invoice_id: payFor, amount }]
+      });
       setPayFor(null);
       await load();
     } catch (e: any) {
@@ -357,8 +402,12 @@ export default function VendorDetail() {
     }
   }
 
-  const invoiceTotal = (i: Invoice) => (Number(i.amount) || 0) + (Number(i.hst_amount) || 0);
-  const outstanding = invoices.filter((i) => i.status !== "paid").reduce((s, i) => s + invoiceTotal(i), 0);
+  const invoiceTotal = (i: Invoice) => invTotal(i);
+  // Owed right now: post-dated money has not left the account, so it still counts as owed
+  // here; the invoice chip shows it is covered.
+  const outstanding = invoices
+    .filter((i) => i.status !== "paid")
+    .reduce((s, i) => s + remainingOwed(invTotal(i), settlements.get(i.id)), 0);
 
   if (loading) return <p className="help">Loading vendor.</p>;
   if (error && !vendor)
@@ -462,24 +511,38 @@ export default function VendorDetail() {
           <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
               <div><label className="label">Invoice number</label><input className="input" value={invForm.invoice_number} onChange={(e) => setInvForm({ ...invForm, invoice_number: e.target.value })} /></div>
-              <div><label className="label">Amount (pre-tax)</label><input className="input tabular" type="number" step="0.01" value={invForm.amount} onChange={(e) => setInvForm({ ...invForm, amount: e.target.value })} /></div>
+              <div><label className="label">Amount (pre-tax)</label><input className="input tabular" type="number" step="0.01" value={invForm.amount} onChange={(e) => setInvForm({ ...invForm, amount: e.target.value, hst_amount: hstFieldFor(e.target.value) })} /></div>
               <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={invForm.hst_amount} onChange={(e) => setInvForm({ ...invForm, hst_amount: e.target.value })} /></div>
               <div><label className="label">Terms</label><input className="input" value={invForm.terms} onChange={(e) => setInvForm({ ...invForm, terms: e.target.value })} /></div>
               <div><label className="label">Due date</label><input className="input" type="date" value={invForm.due_date} onChange={(e) => setInvForm({ ...invForm, due_date: e.target.value })} /></div>
-              <div><label className="label">Status</label>
+              <div><label className="label">Arrived as</label>
                 <select className="input" value={invForm.status} onChange={(e) => setInvForm({ ...invForm, status: e.target.value })}>
-                  {["unpaid", "paid", "postdated"].map((s) => <option key={s} value={s}>{s}</option>)}
+                  <option value="unpaid">unpaid (has a due date)</option>
+                  <option value="paid">already paid</option>
                 </select>
               </div>
             </div>
-            <div><button className="btn-primary" onClick={addInvoice} disabled={busy}>{busy ? "Saving." : "Save invoice"}</button></div>
+            {invForm.status === "paid" && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                <div><label className="label">Method</label>
+                  <select className="input" value={invForm.pay_method} onChange={(e) => setInvForm({ ...invForm, pay_method: e.target.value })}>
+                    {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+                <div><label className="label">Paid date</label><input className="input" type="date" value={invForm.pay_date} onChange={(e) => setInvForm({ ...invForm, pay_date: e.target.value })} /></div>
+                <div><label className="label">{referenceLabel(invForm.pay_method)}</label><input className="input" value={invForm.pay_reference} onChange={(e) => setInvForm({ ...invForm, pay_reference: e.target.value })} /></div>
+              </div>
+            )}
+            <div><button className="btn-primary" onClick={addInvoice} disabled={busy}>{busy ? "Saving." : invForm.status === "paid" ? "Save invoice and payment" : "Save invoice"}</button></div>
           </div>
         )}
         {invoices.length === 0 && <p className="help">No invoices on file.</p>}
         <div style={{ display: "grid", gap: 8 }}>
           {invoices.map((i) => {
             const d = daysOverdue(i.due_date);
-            const overdue = i.status === "unpaid" && d != null && d > 0;
+            const overdue = (i.status === "unpaid" || i.status === "partially_paid") && d != null && d > 0;
+            const owedNow = remainingOwed(invTotal(i), settlements.get(i.id));
+            const partly = i.status === "partially_paid" || (i.status !== "paid" && owedNow > 0 && owedNow < invTotal(i));
             return (
               <div key={i.id} className="card" style={{ padding: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
@@ -487,8 +550,12 @@ export default function VendorDetail() {
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                       <strong>{i.invoice_number || "Invoice"}</strong>
                       <span className={`chip ${overdue ? "chip-error" : chipClass(i.status)}`}>{overdue ? `${d} days overdue` : labelize(i.status)}</span>
+                      {overdue && i.status === "partially_paid" && <span className={`chip ${chipClass(i.status)}`}>{labelize(i.status)}</span>}
                     </div>
-                    <div className="help" style={{ marginTop: 4 }}>{i.terms || ""}{i.due_date ? ` . due ${i.due_date}` : ""}</div>
+                    <div className="help" style={{ marginTop: 4 }}>
+                      {i.terms || ""}{i.due_date ? ` . due ${i.due_date}` : ""}
+                      {showMoney && partly && i.status !== "paid" ? ` . ${formatCAD(owedNow)} still owed` : ""}
+                    </div>
                   </div>
                   {showMoney && (
                     <div style={{ textAlign: "right" }}>
@@ -505,13 +572,14 @@ export default function VendorDetail() {
                   <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
                       <div><label className="label">Invoice number</label><input className="input" value={editInvForm.invoice_number} onChange={(e) => setEditInvForm({ ...editInvForm, invoice_number: e.target.value })} /></div>
-                      <div><label className="label">Amount (pre-tax)</label><input className="input tabular" type="number" step="0.01" value={editInvForm.amount} onChange={(e) => setEditInvForm({ ...editInvForm, amount: e.target.value })} /></div>
+                      <div><label className="label">Amount (pre-tax)</label><input className="input tabular" type="number" step="0.01" value={editInvForm.amount} onChange={(e) => setEditInvForm({ ...editInvForm, amount: e.target.value, hst_amount: hstFieldFor(e.target.value) })} /></div>
                       <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={editInvForm.hst_amount} onChange={(e) => setEditInvForm({ ...editInvForm, hst_amount: e.target.value })} /></div>
                       <div><label className="label">Terms</label><input className="input" value={editInvForm.terms} onChange={(e) => setEditInvForm({ ...editInvForm, terms: e.target.value })} /></div>
                       <div><label className="label">Due date</label><input className="input" type="date" value={editInvForm.due_date} onChange={(e) => setEditInvForm({ ...editInvForm, due_date: e.target.value })} /></div>
                       <div><label className="label">Status</label>
+                        {/* Normally derived from payments; this is the owner's manual override. */}
                         <select className="input" value={editInvForm.status} onChange={(e) => setEditInvForm({ ...editInvForm, status: e.target.value })}>
-                          {["unpaid", "paid", "postdated"].map((s) => <option key={s} value={s}>{s}</option>)}
+                          {["unpaid", "partially_paid", "paid", "postdated"].map((s) => <option key={s} value={s}>{labelize(s)}</option>)}
                         </select>
                       </div>
                     </div>
@@ -522,14 +590,22 @@ export default function VendorDetail() {
                   </div>
                 )}
                 {showMoney && payFor === i.id && (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, alignItems: "end" }}>
-                    <div><label className="label">Amount</label><input className="input tabular" type="number" step="0.01" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} /></div>
-                    <div><label className="label">Method</label>
-                      <select className="input" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
-                        {["cheque", "cc", "etransfer", "cash"].map((m) => <option key={m} value={m}>{m}</option>)}
-                      </select>
+                  <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+                      <div><label className="label">Amount</label><input className="input tabular" type="number" step="0.01" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+                        <p className="help" style={{ margin: "4px 0 0" }}>A smaller amount records a partial payment.</p>
+                      </div>
+                      <div><label className="label">Method</label>
+                        <select className="input" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
+                          {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                        </select>
+                      </div>
+                      <div><label className="label">Paid date</label><input className="input" type="date" value={payForm.paid_date} onChange={(e) => setPayForm({ ...payForm, paid_date: e.target.value })} />
+                        {isFutureDate(payForm.paid_date) && <p className="help" style={{ margin: "4px 0 0" }}>Future date: records as post-dated.</p>}
+                      </div>
+                      <div><label className="label">{referenceLabel(payForm.method)}</label><input className="input" value={payForm.reference} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} /></div>
+                      <div><label className="label">Notes{payForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} /></div>
                     </div>
-                    <div><label className="label">Paid date</label><input className="input" type="date" value={payForm.paid_date} onChange={(e) => setPayForm({ ...payForm, paid_date: e.target.value })} /></div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button className="btn-primary" onClick={recordPayment} disabled={busy}>{busy ? "Saving." : "Save"}</button>
                       <button className="btn-ghost" onClick={() => setPayFor(null)}>Cancel</button>
@@ -616,18 +692,29 @@ export default function VendorDetail() {
           <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Payments</h2>
           {payments.length === 0 && <p className="help">No payments recorded.</p>}
           <div style={{ display: "grid", gap: 8 }}>
-            {payments.map((p) => (
-              <div key={p.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                <div>
-                  <strong>{labelize(p.method) || "Payment"}</strong>
-                  <div className="help" style={{ marginTop: 4 }}>{p.paid_date ? `paid ${p.paid_date}` : ""}</div>
+            {payments.map((p) => {
+              const covered = (p.payment_allocation || []).map((a) => a.invoice?.invoice_number).filter(Boolean).join(", ");
+              return (
+                <div key={p.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <strong>{methodLabel(p.method)}</strong>
+                      {isFutureDate(p.paid_date) && <span className="chip chip-progress">post-dated, clears {p.paid_date}</span>}
+                    </div>
+                    <div className="help" style={{ marginTop: 4 }}>
+                      {p.paid_date && !isFutureDate(p.paid_date) ? `paid ${p.paid_date}` : ""}
+                      {p.reference ? ` . ${p.reference}` : ""}
+                      {covered ? ` . ${covered}` : " . deposit / prepayment"}
+                      {p.notes ? ` . ${p.notes}` : ""}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
+                    {canEdit(role) && <button className="btn-ghost" style={{ padding: "4px 10px", marginTop: 4 }} onClick={() => removePayment(p)} disabled={busy}>Delete</button>}
+                  </div>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
-                  {canEdit(role) && <button className="btn-ghost" style={{ padding: "4px 10px", marginTop: 4 }} onClick={() => removePayment(p)} disabled={busy}>Delete</button>}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
