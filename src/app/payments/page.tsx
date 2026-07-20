@@ -75,8 +75,9 @@ export default function Payments() {
     "vendor:vendor_id(name), payment_allocation(invoice_id, amount, invoice:invoice_id(invoice_number))";
 
   async function load() {
-    // Post-dated cheques whose date has arrived flip to paid on their own here.
-    await reconcilePostdated();
+    // Post-dated cheques whose date has arrived flip to paid on their own here. Only an
+    // editor's visit triggers it: a status write should never come from a viewer's page load.
+    if (mayEdit) await reconcilePostdated();
 
     let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
     if (storeId) dq = dq.eq("store_id", storeId);
@@ -112,20 +113,26 @@ export default function Payments() {
       setSettlements(new Map());
     }
 
-    const { data: sched } = await supabase
+    // payment has no store_id; scope through the vendor so a second store's payments never
+    // show, export, or void from this screen.
+    let sq = supabase
       .from("payment")
-      .select(PAY_SELECT)
+      .select(PAY_SELECT.replace("vendor:vendor_id(name)", "vendor:vendor_id!inner(name, store_id)"))
       .is("voided_at", null)
       .gt("paid_date", todayISO())
       .order("paid_date", { ascending: true });
+    if (storeId) sq = sq.eq("vendor.store_id", storeId);
+    const { data: sched } = await sq;
     setScheduled(((sched as unknown) as Payment[]) || []);
 
-    const { data: rec } = await supabase
+    let rq = supabase
       .from("payment")
-      .select(PAY_SELECT)
+      .select(PAY_SELECT.replace("vendor:vendor_id(name)", "vendor:vendor_id!inner(name, store_id)"))
       .is("voided_at", null)
       .order("created_at", { ascending: false })
       .limit(15);
+    if (storeId) rq = rq.eq("vendor.store_id", storeId);
+    const { data: rec } = await rq;
     setRecent(((rec as unknown) as Payment[]) || []);
   }
 
@@ -219,6 +226,10 @@ export default function Payments() {
       setError("The new vendor needs a name.");
       return;
     }
+    if (!currentActorId(member)) {
+      setError("Pick who you are first: choose your name under Acting as on any main screen.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -282,6 +293,10 @@ export default function Payments() {
   }
 
   async function deleteVendor(vid: string, name: string) {
+    if (!currentActorId(member)) {
+      setError("Pick who you are first: choose your name under Acting as on any main screen.");
+      return;
+    }
     if (!window.confirm(`Delete "${name}"? It will be hidden from all lists but kept for the tax history. Its invoices and payments remain.`)) return;
     setBusy(true);
     setError(null);
@@ -336,8 +351,38 @@ export default function Payments() {
       return;
     }
 
+    // A payout without a known author never posts: the audit trail is the point.
+    const actor = currentActorId(member);
+    if (!actor) {
+      setError("Pick who you are first: open any main screen, choose your name under Acting as, then record the payout.");
+      return;
+    }
+
     setBusy(true);
     try {
+      // Re-check what each ticked invoice still needs against the database as of right now,
+      // not against what this screen loaded earlier. This blocks over-allocation (a typo of
+      // 1000 into a $100 box) and the double-pay where two people, or one impatient retry,
+      // settle the same invoice twice.
+      if (allocations.length) {
+        const fresh = await fetchSettlements(allocations.map((a) => a.invoice_id));
+        for (const a of allocations) {
+          const inv = openInvoices.find((i) => i.id === a.invoice_id);
+          if (!inv) continue;
+          const left = round2(remainingToAllocate(invoiceTotal(inv), fresh.get(a.invoice_id)));
+          if (a.amount > left + 0.005) {
+            setError(
+              left <= 0
+                ? `Invoice ${inv.invoice_number || "(no number)"} is already fully covered. Refresh to see it.`
+                : `Invoice ${inv.invoice_number || "(no number)"} only has ${formatCAD(left)} left to pay; ${formatCAD(a.amount)} was entered.`
+            );
+            setBusy(false);
+            await load();
+            return;
+          }
+        }
+      }
+
       await recordPaymentRpc({
         vendorId,
         method,
@@ -345,7 +390,7 @@ export default function Payments() {
         reference,
         notes,
         confirmationFiling: filing,
-        actorId: currentActorId(member),
+        actorId: actor,
         allocations,
         amount: noInvoice ? Number(amount) : undefined
       });
@@ -360,6 +405,9 @@ export default function Payments() {
       await load();
     } catch (e: any) {
       setError(e.message);
+      // Refresh anyway: if the payment actually committed and only the response was lost,
+      // the reloaded lists show it, so nobody retries a payment that already went through.
+      await load();
     } finally {
       setBusy(false);
     }
@@ -371,29 +419,6 @@ export default function Payments() {
     setError(null);
     try {
       await voidPaymentRpc(p.id, currentActorId(member));
-      await load();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function hardDeletePayment(p: Payment) {
-    if (!window.confirm("Permanently delete this payment? Use this only for entries that never happened (test data, fat-finger). This cannot be undone.")) return;
-    setBusy(true);
-    setError(null);
-    try {
-      // Delete allocations first (cascade should handle it, but be explicit).
-      await supabase.from("payment_allocation").delete().eq("payment_id", p.id);
-      const { error: e } = await supabase.from("payment").delete().eq("id", p.id);
-      if (e) throw new Error(e.message);
-      const actor = currentActorId(member);
-      if (actor) {
-        await supabase.from("activity_log").insert({ actor_id: actor, action: "hard_deleted", entity: "payment", entity_id: p.id });
-      }
-      // Recompute invoice statuses for any invoices that were affected.
-      // Simplest: reload everything.
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -436,7 +461,9 @@ export default function Payments() {
     XLSX.writeFile(wb, `payments-export-${todayISO()}.xlsx`);
   }
 
-  if (!loading && role != null && !showMoney) {
+  // Fail closed: an unresolved or unknown role sees the limited card, never the dollar
+  // figures. Same contract as every other money screen (null role = staff visibility).
+  if (!showMoney) {
     return (
       <div className="card" style={{ padding: 24 }}>
         <p style={{ margin: 0, fontWeight: 600 }}>Vendor payouts are limited.</p>
@@ -741,11 +768,8 @@ export default function Payments() {
                   <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
                   {mayEdit && (
                     <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
-                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePayment(p)} disabled={busy}>
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePayment(p)} disabled={busy} title="The payment stays in the history for the tax record; its invoices go back to owing">
                         Void
-                      </button>
-                      <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base, #C0362C)" }} onClick={() => hardDeletePayment(p)} disabled={busy}>
-                        Delete
                       </button>
                     </div>
                   )}
@@ -778,11 +802,8 @@ export default function Payments() {
                   <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
                   {mayEdit && (
                     <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
-                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePayment(p)} disabled={busy}>
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePayment(p)} disabled={busy} title="The payment stays in the history for the tax record; its invoices go back to owing">
                         Void
-                      </button>
-                      <button className="btn-ghost" style={{ padding: "4px 10px", color: "var(--error-base, #C0362C)" }} onClick={() => hardDeletePayment(p)} disabled={busy}>
-                        Delete
                       </button>
                     </div>
                   )}

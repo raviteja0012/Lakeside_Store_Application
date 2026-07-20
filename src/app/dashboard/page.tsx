@@ -70,11 +70,11 @@ export default function Dashboard() {
   const total = (i: Inv) => (Number(i.amount) || 0) + (Number(i.hst_amount) || 0);
 
   const m = useMemo(() => {
-    const open = invoices.filter((i) => i.status === "unpaid" || i.status === "postdated");
+    const open = invoices.filter((i) => i.status === "unpaid" || i.status === "partially_paid" || i.status === "postdated");
     const outstanding = open.reduce((s, i) => s + total(i), 0);
     let overdueCount = 0, overdueSum = 0, dueSoonSum = 0;
     for (const i of invoices) {
-      if (i.status !== "unpaid") continue;
+      if (i.status !== "unpaid" && i.status !== "partially_paid") continue;
       const dd = daysOverdue(i.due_date);
       if (dd == null) continue;
       if (dd > 0) { overdueCount++; overdueSum += total(i); }
@@ -100,7 +100,7 @@ export default function Dashboard() {
 
   const topOverdue = useMemo(() => {
     return invoices
-      .filter((i) => i.status === "unpaid" && daysOverdue(i.due_date) != null && (daysOverdue(i.due_date) as number) > 0)
+      .filter((i) => (i.status === "unpaid" || i.status === "partially_paid") && daysOverdue(i.due_date) != null && (daysOverdue(i.due_date) as number) > 0)
       .sort((a, b) => (daysOverdue(b.due_date) as number) - (daysOverdue(a.due_date) as number))
       .slice(0, 6);
   }, [invoices]);

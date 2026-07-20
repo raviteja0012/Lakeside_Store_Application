@@ -107,9 +107,16 @@ begin
   foreach t in array array[
     'vendor','item','receiving_event','purchase_order','invoice',
     'inventory_count','knowledge_note','maintenance_asset','maintenance_task',
-    'insurance_policy','employee','licence'
+    'insurance_policy','employee','licence','credit_note'
   ]
   loop
+    -- Skip tables that do not exist yet (for example credit_note before credit_notes.sql has
+    -- run). Without this guard the script would abort here AFTER dropping every dev policy,
+    -- leaving the database deny-all; with it, rerunning after the table arrives covers it.
+    if to_regclass('public.' || t) is null then
+      raise notice 'auth_setup: table % not found, skipping (rerun after creating it)', t;
+      continue;
+    end if;
     execute format('drop policy if exists member_store_rw on public.%I;', t);
     execute format($f$
       create policy member_store_rw on public.%I

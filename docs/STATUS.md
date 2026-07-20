@@ -73,6 +73,15 @@ The owner's raw notes, their refined readings, and the coverage check live in do
 - From the owner's 2026-07-07 notes and blueprint (order proposed in docs/OWNER_NOTES.md): department task checklist with per-day completion and a done-vs-remaining widget on the owner dashboard; smart margin calculator with per-department margin rules; tenant tracker (rent, payments, paid-this-month); multi-department vendors (the DT case).
 - Also queued: the Excel-style editable grid for the ledger; QuickBooks export and POS sales import (confirmed feasible 2026-06-12, the store runs both).
 
+## Payments v2 review, 2026-07-20 (see docs/VERIFICATION.md)
+A payments system (vendor payouts with allocations, partial and post-dated payments, credit notes, workflow fields, payout categories) landed from a parallel workstream. A four-angle adversarial review plus seam cross-checks ran over all of it; thirteen confirmed defects were fixed the same day:
+- Status engine: invoice total now includes freight (a partial payment of goods+HST could flip an invoice to paid with the freight written off); settled-vs-scheduled uses the store's local date (post-dated cheques were clearing an evening early on UTC).
+- Ledger safety: hard delete removed from the payments screen (Void is the path and it restores invoice statuses); allocations are capped against fresh settlement data at save time (no over-allocation, no double payment on retry or from two people); after any error both payment screens refresh so a committed-but-lost payment is never blindly retried.
+- Fresh installs and cutover: credit_note added to schema.sql and to the auth_setup store-scoped policies; auth_setup now skips missing tables instead of aborting mid-run (which could have left the database deny-all); the export includes credit_note.
+- Post-dated invoices from the ledger import now carry the future-dated cheque payment that the engine derives their status from (importer emits it; payments_v2.sql section 7b backfills existing rows). Without it, the first reconcile flipped every imported PDC invoice back to unpaid.
+- The new partially_paid status now counts everywhere money is summarized: the bell, both dashboards, and the aging report (which also subtracts settled amounts and includes freight).
+- Role and audit seams: the payments screen fails closed for an unknown role (it showed full dollar figures while the role was still resolving); reconcile runs only on an editor's page load (a staff view was writing status changes); every money write on the payout screens requires a known actor; voidRow/deleteRow no longer write null-actor audit rows.
+
 ## Open items (polish, tractable)
 1. Compliance: insurance policies could use the same add-and-edit form as the licence.
 2. Alerts email: label each invoice with its store, or send per store.

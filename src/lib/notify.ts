@@ -69,7 +69,7 @@ export async function loadNotifications(storeId: string, role?: Role | null): Pr
     // The five checks are independent; run them together so the bell costs one round trip
     // of latency, not five.
     const [inv, lic, pol, task, low] = await Promise.all([
-      supabase.from("invoice").select("amount, due_date, status").eq("store_id", storeId).is("voided_at", null).eq("status", "unpaid"),
+      supabase.from("invoice").select("amount, due_date, status").eq("store_id", storeId).is("voided_at", null).in("status", ["unpaid", "partially_paid"]),
       supabase.from("licence").select("id, name, expiry_date").eq("store_id", storeId).is("voided_at", null),
       supabase.from("insurance_policy").select("id, name, renewal_date").eq("store_id", storeId).is("voided_at", null),
       supabase.from("maintenance_task").select("id, due_date, status").eq("store_id", storeId).is("voided_at", null).neq("status", "done"),

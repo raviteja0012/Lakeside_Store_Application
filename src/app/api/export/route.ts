@@ -35,6 +35,7 @@ const TABLES: TableSpec[] = [
   { name: "invoice", scope: "store", what: "Vendor invoices", links: "store_id -> store.id; vendor_id -> vendor.id; receiving_event_id -> receiving_event.id" },
   { name: "payment", scope: "parent", parent: { table: "vendor", column: "vendor_id" }, what: "Payments to vendors (a payment can settle several invoices, or none yet for a deposit)", links: "vendor_id -> vendor.id; invoice_id -> invoice.id (legacy single-invoice link)" },
   { name: "payment_allocation", scope: "parent", parent: { table: "payment", column: "payment_id" }, what: "How each payment splits across invoices", links: "payment_id -> payment.id; invoice_id -> invoice.id" },
+  { name: "credit_note", scope: "store", what: "Vendor credits against invoices (returns, damage, overcharges)", links: "store_id -> store.id; vendor_id -> vendor.id; invoice_id -> invoice.id; created_by -> app_user.id" },
   { name: "inventory_count", scope: "store", what: "Dated inventory counts", links: "store_id -> store.id; department_id -> department.id; created_by -> app_user.id" },
   { name: "inventory_count_line", scope: "parent", parent: { table: "inventory_count", column: "inventory_count_id" }, what: "Lines of each count", links: "inventory_count_id -> inventory_count.id; item_id -> item.id" },
   { name: "knowledge_note", scope: "store", what: "Tribal knowledge notes", links: "store_id -> store.id; department_id -> department.id; created_by -> app_user.id" },

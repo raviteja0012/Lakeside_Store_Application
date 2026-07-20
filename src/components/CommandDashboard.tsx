@@ -81,8 +81,10 @@ export default function CommandDashboard() {
     // Captures today.
     const capturesToday = recv.filter((r) => localISO(r.created_at) === today).length;
 
-    // Outstanding: unpaid and post-dated invoice amounts, plus distinct vendor count.
-    const open = invoices.filter((i) => i.status === "unpaid" || i.status === "postdated");
+    // Outstanding: open invoice amounts (unpaid, partially paid, post-dated), plus distinct
+    // vendor count. Partially paid counts in full here; the Payments screens show the exact
+    // remaining figure from the allocations.
+    const open = invoices.filter((i) => i.status === "unpaid" || i.status === "partially_paid" || i.status === "postdated");
     const outstanding = open.reduce((s, i) => s + (Number(i.amount) || 0), 0);
     const openVendors = new Set(open.map((i) => i.vendor_id).filter(Boolean)).size;
 
@@ -90,7 +92,7 @@ export default function CommandDashboard() {
     let overdueCount = 0;
     let overdueSum = 0;
     for (const i of invoices) {
-      if (i.status !== "unpaid") continue;
+      if (i.status !== "unpaid" && i.status !== "partially_paid") continue;
       const d = daysOverdue(i.due_date);
       if (d != null && d > 0) { overdueCount++; overdueSum += Number(i.amount) || 0; }
     }

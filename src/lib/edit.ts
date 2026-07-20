@@ -20,12 +20,18 @@ export async function voidRow(table: string, id: string, actorId: string | null)
     .update({ voided_at: new Date().toISOString(), voided_by: actorId })
     .eq("id", id);
   if (error) throw new Error(error.message);
-  await supabase.from("activity_log").insert({ actor_id: actorId, action: "voided", entity: table, entity_id: id });
+  // Only a known actor writes an audit row; a null-actor entry is noise the log convention
+  // forbids (and enforced-mode RLS would reject it anyway).
+  if (actorId) {
+    await supabase.from("activity_log").insert({ actor_id: actorId, action: "voided", entity: table, entity_id: id });
+  }
 }
 
 // Hard delete. Only for rows we do not retain (shifts). Removes the row outright.
 export async function deleteRow(table: string, id: string, actorId: string | null): Promise<void> {
   const { error } = await supabase.from(table).delete().eq("id", id);
   if (error) throw new Error(error.message);
-  await supabase.from("activity_log").insert({ actor_id: actorId, action: "deleted", entity: table, entity_id: id });
+  if (actorId) {
+    await supabase.from("activity_log").insert({ actor_id: actorId, action: "deleted", entity: table, entity_id: id });
+  }
 }

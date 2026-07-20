@@ -26,7 +26,9 @@ create table if not exists public.credit_note (
 create index if not exists credit_note_vendor_idx on public.credit_note(vendor_id);
 create index if not exists credit_note_invoice_idx on public.credit_note(invoice_id);
 
--- Row-level security: match the dev open policy pattern.
+-- Row-level security: match the dev open policy pattern. If enforced auth is on
+-- (NEXT_PUBLIC_REQUIRE_AUTH=true), rerun supabase/auth_setup.sql after this file: it now
+-- includes credit_note in the store-scoped member policies.
 alter table public.credit_note enable row level security;
 do $$
 begin
