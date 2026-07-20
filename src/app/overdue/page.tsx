@@ -28,8 +28,9 @@ export default function Overdue() {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    // Post-dated cheques whose date has arrived flip to paid on their own here.
-    await reconcilePostdated();
+    // Post-dated cheques whose date has arrived flip to paid on their own here. Editors
+    // only: a status write should never be triggered by a viewer's page load.
+    if (mayEdit) await reconcilePostdated();
     let query = supabase
       .from("invoice")
       .select("id, vendor_id, invoice_number, amount, hst_amount, freight_charges, terms, due_date, status, vendor:vendor_id(name)")
@@ -81,21 +82,31 @@ export default function Overdue() {
       setError("Method is Other: say what it was in the notes.");
       return;
     }
-    const amount = toPay(i);
-    if (amount <= 0) {
-      setError("Nothing left to pay on this invoice; a post-dated payment already covers it.");
+    const actor = currentActorId(member);
+    if (!actor) {
+      setError("Pick who you are first: choose your name under Acting as on any main screen.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
+      // What is left to pay, from the database as of right now, not from what this screen
+      // loaded earlier: this is the double-payment guard when a retry or a second person
+      // already settled the invoice.
+      const fresh = await fetchSettlements([i.id]);
+      const amount = round2(remainingToAllocate(total(i), fresh.get(i.id)));
+      if (amount <= 0) {
+        setError("Nothing left to pay on this invoice; a payment already covers it. Refreshing the list.");
+        await load();
+        return;
+      }
       await recordPaymentRpc({
         vendorId: i.vendor_id as string,
         method: payForm.method,
         paidDate: payForm.paid_date || todayISO(),
         reference: payForm.reference,
         notes: payForm.notes,
-        actorId: currentActorId(member),
+        actorId: actor,
         allocations: [{ invoice_id: i.id, amount }]
       });
       setPayingId(null);
@@ -103,6 +114,9 @@ export default function Overdue() {
       await load();
     } catch (e: any) {
       setError(e.message);
+      // Refresh anyway: if the payment committed and only the response was lost, the
+      // reloaded settlements show it, so a retry cannot double-pay.
+      await load();
     } finally {
       setBusy(false);
     }

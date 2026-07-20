@@ -224,6 +224,16 @@ export default function VendorDetail() {
 
   async function addInvoice() {
     if (!vendor) return;
+    // The "arrived already paid" flow records a payment for the full total right after the
+    // insert, and the RPC refuses a zero allocation. Validate BEFORE anything is written so
+    // a bad form never leaves an orphan invoice behind.
+    if (invForm.status === "paid") {
+      const payTotal = (num(invForm.amount) || 0) + (num(invForm.freight_charges) || 0) + (num(invForm.hst_amount) || 0);
+      if (payTotal <= 0) {
+        setError("Enter the invoice amount before saving it as already paid.");
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     try {
@@ -249,15 +259,22 @@ export default function VendorDetail() {
       await log("invoice_added", "invoice", r.data.id as string);
       if (invForm.status === "paid") {
         const total = (num(invForm.amount) || 0) + (num(invForm.freight_charges) || 0) + (num(invForm.hst_amount) || 0);
-        await recordPaymentRpc({
-          vendorId: vendor.id,
-          method: invForm.pay_method,
-          paidDate: invForm.pay_date || todayISO(),
-          reference: invForm.pay_reference,
-          confirmationFiling: invForm.pay_filing,
-          actorId: effectiveActorId,
-          allocations: [{ invoice_id: r.data.id as string, amount: round2(total) }]
-        });
+        try {
+          await recordPaymentRpc({
+            vendorId: vendor.id,
+            method: invForm.pay_method,
+            paidDate: invForm.pay_date || todayISO(),
+            reference: invForm.pay_reference,
+            confirmationFiling: invForm.pay_filing,
+            actorId: effectiveActorId,
+            allocations: [{ invoice_id: r.data.id as string, amount: round2(total) }]
+          });
+        } catch (payErr: any) {
+          // The payment did not record: take the just-inserted invoice back out so a retry
+          // starts clean instead of duplicating it, then surface the real error.
+          await supabase.from("invoice").delete().eq("id", r.data.id as string);
+          throw new Error(`The invoice was not saved because its payment failed: ${payErr.message}`);
+        }
       }
       setShowInv(false);
       setInvForm({ ...emptyInvForm });

@@ -7,8 +7,9 @@ import { labelize } from "@/lib/status";
 import { paletteColor } from "@/lib/charts";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, useCurrentRole } from "@/lib/auth";
+import { fetchSettlements, type InvoiceSettlement } from "@/lib/payments";
 
-type Inv = { id: string; amount: number | null; hst_amount: number | null; invoice_date: string | null; created_at: string | null; due_date: string | null; status: string; vendor_id: string | null; vendor: { name: string; department_id: string | null } | null };
+type Inv = { id: string; amount: number | null; hst_amount: number | null; freight_charges: number | null; invoice_date: string | null; created_at: string | null; due_date: string | null; status: string; vendor_id: string | null; vendor: { name: string; department_id: string | null } | null };
 type PO = { vendor_id: string | null; order_amount: number | null; department_id: string | null };
 type Dept = { id: string; name: string; accent_color: string | null; parent_department_id: string | null };
 type Vend = { id: string; name: string; department_id: string | null };
@@ -32,6 +33,7 @@ export default function Reports() {
   const { role } = useCurrentRole();
   const showMoney = canSeeMoney(role);
   const [invoices, setInvoices] = useState<Inv[]>([]);
+  const [settlements, setSettlements] = useState<Map<string, InvoiceSettlement>>(new Map());
   const [pos, setPos] = useState<PO[]>([]);
   const [depts, setDepts] = useState<Dept[]>([]);
   const [vendors, setVendors] = useState<Vend[]>([]);
@@ -42,11 +44,19 @@ export default function Reports() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let invq = supabase.from("invoice").select("id, amount, hst_amount, invoice_date, created_at, due_date, status, vendor_id, vendor:vendor_id(name, department_id)").is("voided_at", null);
+      let invq = supabase.from("invoice").select("id, amount, hst_amount, freight_charges, invoice_date, created_at, due_date, status, vendor_id, vendor:vendor_id(name, department_id)").is("voided_at", null);
       if (storeId) invq = invq.eq("store_id", storeId);
       const inv = await invq;
       if (inv.error) { setError(inv.error.message); setLoading(false); return; }
-      setInvoices((inv.data as unknown as Inv[]) || []);
+      const invList = (inv.data as unknown as Inv[]) || [];
+      setInvoices(invList);
+      // Settled amounts per open invoice, so aging shows what is actually still owed.
+      try {
+        const openIds = invList.filter((i) => i.status === "unpaid" || i.status === "partially_paid").map((i) => i.id);
+        setSettlements(await fetchSettlements(openIds));
+      } catch {
+        setSettlements(new Map());
+      }
       let poq = supabase.from("purchase_order").select("vendor_id, order_amount, department_id").is("voided_at", null);
       if (storeId) poq = poq.eq("store_id", storeId);
       const po = await poq;
@@ -85,13 +95,17 @@ export default function Reports() {
   const aging = useMemo(() => {
     const b = { current: 0, b1: 0, b2: 0, b3: 0 };
     for (const i of invoices) {
-      if (i.status !== "unpaid") continue;
-      const total = invAmount(i) + (Number(i.hst_amount) || 0);
+      if (i.status !== "unpaid" && i.status !== "partially_paid") continue;
+      // What is still owed: goods + freight + HST minus what has settled. A partially paid
+      // invoice ages only its remainder, matching the overdue screen's owed figure.
+      const total = invAmount(i) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
+      const owed = Math.max(0, total - (settlements.get(i.id)?.settled || 0));
+      if (owed <= 0) continue;
       const d = daysOverdue(i.due_date);
-      if (d == null || d <= 0) b.current += total;
-      else if (d <= 30) b.b1 += total;
-      else if (d <= 60) b.b2 += total;
-      else b.b3 += total;
+      if (d == null || d <= 0) b.current += owed;
+      else if (d <= 30) b.b1 += owed;
+      else if (d <= 60) b.b2 += owed;
+      else b.b3 += owed;
     }
     return [
       { label: "Current", value: b.current, color: paletteColor(2) },
@@ -99,7 +113,7 @@ export default function Reports() {
       { label: "31 to 60 days", value: b.b2, color: paletteColor(5) },
       { label: "60+ days", value: b.b3, color: "var(--error-base)" }
     ];
-  }, [invoices]);
+  }, [invoices, settlements]);
   const maxAging = Math.max(1, ...aging.map((a) => a.value));
 
   // Payment status mix by count.

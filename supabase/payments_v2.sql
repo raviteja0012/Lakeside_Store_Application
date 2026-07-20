@@ -81,15 +81,18 @@ declare
   v_scheduled numeric;
   v_status text;
 begin
-  select coalesce(amount, 0) + coalesce(hst_amount, 0) into v_total
+  -- Total owed = goods + freight + HST, matching invoiceTotal() in src/lib/payments.ts.
+  -- Freight was omitted here at first, which let a partial payment of goods+HST flip an
+  -- invoice to paid with the freight still owed.
+  select coalesce(amount, 0) + coalesce(freight_charges, 0) + coalesce(hst_amount, 0) into v_total
   from public.invoice where id = p_invoice_id;
   if not found then
     return;
   end if;
 
   select
-    coalesce(sum(a.amount) filter (where p.paid_date is null or p.paid_date <= current_date), 0),
-    coalesce(sum(a.amount) filter (where p.paid_date > current_date), 0)
+    coalesce(sum(a.amount) filter (where p.paid_date is null or p.paid_date <= (now() at time zone 'America/Toronto')::date), 0),
+    coalesce(sum(a.amount) filter (where p.paid_date > (now() at time zone 'America/Toronto')::date), 0)
   into v_settled, v_scheduled
   from public.payment_allocation a
   join public.payment p on p.id = a.payment_id
@@ -289,6 +292,24 @@ alter table public.payment drop constraint if exists payment_confirmation_filing
 alter table public.payment add constraint payment_confirmation_filing_check check (
   confirmation_filing is null or confirmation_filing in ('digital','physical')
 );
+
+-- 7b. Post-dated invoices from the ledger import get the payment that makes them real.
+-- The bookings sheet marks PDC invoices, but the old import wrote only the status; the new
+-- engine derives postdated from a future-dated payment, so without one reconcile_postdated()
+-- would flip these back to unpaid. Give each such invoice its post-dated cheque, dated on the
+-- invoice due date (or tomorrow when no due date is on file). Idempotent: only invoices with
+-- no allocations at all. The autoallocate trigger creates the allocation and recomputes.
+insert into public.payment (invoice_id, vendor_id, amount, method, paid_date, notes)
+select i.id, i.vendor_id,
+       coalesce(i.amount, 0) + coalesce(i.freight_charges, 0) + coalesce(i.hst_amount, 0),
+       'cheque',
+       greatest(coalesce(i.due_date, (now() at time zone 'America/Toronto')::date + 1),
+                (now() at time zone 'America/Toronto')::date + 1),
+       'Post-dated per the bookings ledger'
+from public.invoice i
+where i.status = 'postdated'
+  and i.voided_at is null
+  and not exists (select 1 from public.payment_allocation a where a.invoice_id = i.id);
 
 -- 8. Department-level categories ---------------------------------------------------------
 -- The owner's payout category list. New categories are added per store where missing;

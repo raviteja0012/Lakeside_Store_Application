@@ -261,8 +261,10 @@ export function parseWorkbook(
 
       const paid = isPaid(r, c);
       let invId: string | null = null;
+      let invoiceStatus: "paid" | "postdated" | "unpaid" = "unpaid";
       if (invAmount !== null) {
         invId = uuid(`inv|${sheetName}|${name.toLowerCase()}${dupSuffix}`);
+        invoiceStatus = invStatus(paid, terms + " " + noteText);
         invoices.push({
           id: invId,
           store_id: storeId,
@@ -271,8 +273,25 @@ export function parseWorkbook(
           hst_amount: 0,
           terms,
           due_date: iso(r[c.due]),
-          status: invStatus(paid, terms + " " + noteText)
+          status: invoiceStatus
         });
+      }
+
+      // A PDC row is a cheque already written for a future date. The payments engine derives
+      // "postdated" from that future-dated payment, so emit it; a bare status would be flipped
+      // back to unpaid the first time reconcile runs. Dated on the due date when the sheet has
+      // one; the DB backfill in payments_v2.sql section 7b covers rows imported before this.
+      if (invId && !paid && invoiceStatus === "postdated") {
+        const pdcDate = iso(r[c.due]);
+        if (pdcDate) {
+          payments.push({
+            id: uuid(`pdc|${sheetName}|${name.toLowerCase()}${dupSuffix}`),
+            invoice_id: invId,
+            amount: invAmount as number,
+            method: "cheque",
+            paid_date: pdcDate
+          });
+        }
       }
 
       if (invId && paid) {

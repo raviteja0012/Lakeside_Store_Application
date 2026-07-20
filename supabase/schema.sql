@@ -171,6 +171,27 @@ create table payment_allocation (
 create index payment_allocation_payment_idx on payment_allocation(payment_id);
 create index payment_allocation_invoice_idx on payment_allocation(invoice_id);
 
+-- Vendor credits that reduce what is owed on an invoice (damaged goods, returns,
+-- overcharges, short shipments). Fresh installs get this here; existing databases get the
+-- identical table from supabase/credit_notes.sql.
+create table credit_note (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
+  vendor_id uuid not null references vendor(id),
+  invoice_id uuid references invoice(id),
+  invoice_number text,              -- the invoice number this credit applies to
+  credit_amount numeric not null,
+  reason text not null,
+  comments text,
+  status text not null default 'pending' check (status in ('pending','applied','disputed')),
+  created_by uuid references app_user(id),
+  created_at timestamptz default now(),
+  voided_at timestamptz,
+  voided_by uuid references app_user(id)
+);
+create index credit_note_vendor_idx on credit_note(vendor_id);
+create index credit_note_invoice_idx on credit_note(invoice_id);
+
 -- Payments engine: one atomic path every screen records through. Bodies reference tables
 -- created later in this file (activity_log); plpgsql resolves them at call time.
 
@@ -186,15 +207,18 @@ declare
   v_scheduled numeric;
   v_status text;
 begin
-  select coalesce(amount, 0) + coalesce(hst_amount, 0) into v_total
+  -- Total owed = goods + freight + HST, matching invoiceTotal() in src/lib/payments.ts.
+  -- Freight was omitted here at first, which let a partial payment of goods+HST flip an
+  -- invoice to paid with the freight still owed.
+  select coalesce(amount, 0) + coalesce(freight_charges, 0) + coalesce(hst_amount, 0) into v_total
   from public.invoice where id = p_invoice_id;
   if not found then
     return;
   end if;
 
   select
-    coalesce(sum(a.amount) filter (where p.paid_date is null or p.paid_date <= current_date), 0),
-    coalesce(sum(a.amount) filter (where p.paid_date > current_date), 0)
+    coalesce(sum(a.amount) filter (where p.paid_date is null or p.paid_date <= (now() at time zone 'America/Toronto')::date), 0),
+    coalesce(sum(a.amount) filter (where p.paid_date > (now() at time zone 'America/Toronto')::date), 0)
   into v_settled, v_scheduled
   from public.payment_allocation a
   join public.payment p on p.id = a.payment_id
