@@ -24,10 +24,12 @@ export const PAYMENT_METHODS: { value: string; label: string }[] = [
 // Rows recorded before the card split. Valid in the database, not offered in the UI.
 const LEGACY_LABELS: Record<string, string> = { cc: "Credit card" };
 
-// Where the payment confirmation is filed, per the workflow sheet.
+// Where the payment confirmation is filed, per the workflow sheet. "Both" is the owner's
+// real third case: an emailed receipt that also goes in the paper binder.
 export const CONFIRMATION_FILING: { value: string; label: string }[] = [
   { value: "digital", label: "Digital" },
-  { value: "physical", label: "Physical" }
+  { value: "physical", label: "Physical" },
+  { value: "both", label: "Digital and Physical" }
 ];
 
 // Delivery state on an invoice entry.

@@ -7,7 +7,7 @@ import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
 import { canEdit } from "@/lib/edit";
 import {
-  PAYMENT_METHODS, referenceLabel, invoiceTotal, isFutureDate,
+  PAYMENT_METHODS, CONFIRMATION_FILING, referenceLabel, invoiceTotal, isFutureDate,
   recordPaymentRpc, reconcilePostdated, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
@@ -24,7 +24,7 @@ export default function Overdue() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
-  const [payForm, setPayForm] = useState({ paid_date: todayISO(), method: "cheque", reference: "", notes: "" });
+  const [payForm, setPayForm] = useState({ paid_date: todayISO(), method: "cheque", reference: "", notes: "", filing: "" });
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -106,6 +106,7 @@ export default function Overdue() {
         paidDate: payForm.paid_date || todayISO(),
         reference: payForm.reference,
         notes: payForm.notes,
+        confirmationFiling: payForm.filing,
         actorId: actor,
         allocations: [{ invoice_id: i.id, amount }]
       });
@@ -179,7 +180,7 @@ export default function Overdue() {
                     <button
                       className="btn-ghost"
                       style={{ padding: "4px 10px" }}
-                      onClick={() => { setPayingId(i.id); setPayForm({ paid_date: todayISO(), method: "cheque", reference: "", notes: "" }); }}
+                      onClick={() => { setPayingId(i.id); setPayForm({ paid_date: todayISO(), method: "cheque", reference: "", notes: "", filing: "" }); }}
                       disabled={busy}
                     >
                       Record payment
@@ -204,12 +205,17 @@ export default function Overdue() {
                     <label className="label" htmlFor={`pay-ref-${i.id}`}>{referenceLabel(payForm.method)}</label>
                     <input id={`pay-ref-${i.id}`} className="input" value={payForm.reference} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} />
                   </div>
-                  {payForm.method === "other" && (
-                    <div>
-                      <label className="label" htmlFor={`pay-notes-${i.id}`}>Notes (say what the method was)</label>
-                      <input id={`pay-notes-${i.id}`} className="input" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
-                    </div>
-                  )}
+                  <div>
+                    <label className="label" htmlFor={`pay-filing-${i.id}`}>Confirmation filed</label>
+                    <select id={`pay-filing-${i.id}`} className="input" value={payForm.filing} onChange={(e) => setPayForm({ ...payForm, filing: e.target.value })}>
+                      <option value="">Not said</option>
+                      {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label" htmlFor={`pay-notes-${i.id}`}>{payForm.method === "other" ? "Notes (say what the method was)" : "Notes"}</label>
+                    <input id={`pay-notes-${i.id}`} className="input" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
+                  </div>
                   <button className="btn-primary" onClick={() => recordPayment(i)} disabled={busy}>
                     {busy ? "Saving." : `Mark paid ${formatCAD(toPay(i))}`}
                   </button>

@@ -35,7 +35,12 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  background: var(--app-bg);
+  /* The canvas carries a whisper of Dorset: a staggered evergreen motif at 4 percent
+     stroke opacity. Quiet enough that color still only ever means status, present enough
+     that the app feels like the store's own. Print resets to plain white below. */
+  background-color: var(--app-bg);
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%235B6470' stroke-opacity='0.04' stroke-width='1.2' stroke-linejoin='round'%3E%3Cpath d='M35 22l9 13h-6l8 11h-7l9 12H22l9-12h-7l8-11h-6z'/%3E%3Cpath d='M35 58v7'/%3E%3Cpath d='M105 92l9 13h-6l8 11h-7l9 12H92l9-12h-7l8-11h-6z'/%3E%3Cpath d='M105 128v7'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 140px 140px;
   color: var(--text-primary);
   font-family: var(--font-sans), system-ui, sans-serif;
   font-size: 14.5px;

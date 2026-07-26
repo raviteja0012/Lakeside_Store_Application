@@ -153,7 +153,7 @@ create table payment (
   paid_date date,                           -- a future date means post-dated: not settled until it arrives
   reference text,                           -- cheque number, e-transfer ref, card confirmation
   notes text,                               -- required by the UI when method = other
-  confirmation_filing text check (confirmation_filing is null or confirmation_filing in ('digital','physical')),
+  confirmation_filing text check (confirmation_filing is null or confirmation_filing in ('digital','physical','both')),
   confirmation_file_path text,
   created_by uuid references app_user(id),
   created_at timestamptz default now()
