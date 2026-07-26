@@ -290,7 +290,7 @@ alter table public.invoice add column if not exists work_description text;
 alter table public.payment add column if not exists confirmation_filing text;
 alter table public.payment drop constraint if exists payment_confirmation_filing_check;
 alter table public.payment add constraint payment_confirmation_filing_check check (
-  confirmation_filing is null or confirmation_filing in ('digital','physical')
+  confirmation_filing is null or confirmation_filing in ('digital','physical','both')
 );
 
 -- 7b. Post-dated invoices from the ledger import get the payment that makes them real.

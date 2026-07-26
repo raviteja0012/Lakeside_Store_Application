@@ -4,7 +4,7 @@ A living document. Every feature idea, note, or document the owner shares gets r
 refined into something buildable, and checked against what the app already does, so nothing is
 lost and nothing is built twice. Edit freely; append new notes at the bottom with a date.
 
-Last updated: 2026-07-07.
+Last updated: 2026-07-20.
 
 ## Sources on file
 
@@ -167,6 +167,51 @@ deleting. Root documents re-read in full:
 - The two Gmail subject-line documents are one-entry starters (Imperial Tobacco remittance,
   DGS receipt); the full subject-line library the owner uses lives in his Gmail habits, not
   in Drive.
+
+## Owner feedback round 2, received 2026-07-20 (WhatsApp, partly Telugu)
+
+Translated and actioned:
+1. "Payment methods we actually use, like CC_Visa, Amex" and "a comments box when paying":
+   already shipped in payments v2 (the screenshots predate the deploy). Verified present on
+   the Payments screen, the vendor page, and the overdue quick form.
+2. Confirmation filing needs a third option, "Digital and Physical": ADDED (value "both") to
+   the method list and the database rule; offered on every record-payment form.
+3. The overdue quick form now always shows the Notes box and the Confirmation filed picker.
+4. "Ship date" is now labeled "Expected ship date" and a NEW order cannot take a date before
+   today (editing an old order keeps its historical date).
+5. Three voice recordings (12:15, 12:18, 12:27) that the owner calls the most important in
+   the product: NOT YET HEARD. The builder or the owner must relay their content; nothing can
+   be actioned from audio not shared as text. OPEN.
+6. "Refer to Dub wear for partial payment and post-dated cheque" confirms those flows match
+   the owner's expectation.
+7. A store photo for a background pattern was mentioned but no photo arrived. In the meantime
+   the app canvas carries a 4 percent-opacity evergreen motif (globals.css) that keeps the
+   calm-canvas rule; send the actual photo and the login can carry a proper branded treatment.
+
+## The owner's updated bookings workbook, received 2026-07-20
+
+The annotated 2026 bookings file has a RICHER layout than the one the importer reads. The
+current importer safely rejects it (clear message, no misparse). Adapting the importer to
+this layout is the next build. Header map recorded verbatim so the file itself is not needed:
+
+- Dry goods sheet: ReOrder Vendors, Vendor Company, Rep Name, contact no, E mail, Products we
+  carry, Order status for 2026, Comments, OrderConirmationFiling Method, Amount, Ship date,
+  DeliveryStatus, DeliveryComments, FinalInvoiceFiling Method, Invoiced Amount, Terms,
+  DueDate, PaymentStatus, PaymentAmount, PaymentDate, PaymentMethod,
+  PaymentConfirmationFiling, Credit back for damaged items, PriyaComments, StoreApplication.
+- Lake side sheet: same idea, but PaymentConfirmationFiling comes BEFORE PaymentMethod, and
+  the season column is "Order status for S25". Column order differs per sheet, so the new
+  importer must map by header name, not position.
+- Grocery Vendors sheet: (vendor), Rep Name, contact no, Products we carry, Order status for
+  S25, Delivery, Delivery status, Amount, Invoiced Amount, Due Date, Terms, Payment Month,
+  Comments, Status.
+- AskingInventory sheet: a wish list (Water Skipping balls, Colour by numbering) that maps to
+  knowledge or reorder notes.
+- New columns map to features that now exist: PaymentMethod and PaymentConfirmationFiling to
+  payment fields, PaymentAmount and PaymentDate to real payment rows, "Credit back for
+  damaged items" to credit_note, the two filing-method columns to confirmation filing, and
+  DeliveryComments like "we got extra items, unordered items and 1 missing product charged in
+  invoice" are credit-note material.
 
 ## Raw notes as received, 2026-07-07 (verbatim, unedited)
 

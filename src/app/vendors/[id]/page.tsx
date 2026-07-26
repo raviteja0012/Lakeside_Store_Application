@@ -180,6 +180,12 @@ export default function VendorDetail() {
 
   async function addPO() {
     if (!vendor) return;
+    // The owner's rule: a NEW order's expected ship date cannot be in the past. Editing an
+    // old order keeps its historical date, so the check lives only on the add path.
+    if (poForm.ship_date && poForm.ship_date < todayISO()) {
+      setError("The expected ship date cannot be before today.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -811,7 +817,7 @@ export default function VendorDetail() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
               <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={poForm.order_amount} onChange={(e) => setPoForm({ ...poForm, order_amount: e.target.value })} /></div>
               <div><label className="label">Season year</label><input className="input tabular" type="number" value={poForm.season_year} onChange={(e) => setPoForm({ ...poForm, season_year: e.target.value })} /></div>
-              <div><label className="label">Ship date</label><input className="input" type="date" value={poForm.ship_date} onChange={(e) => setPoForm({ ...poForm, ship_date: e.target.value })} /></div>
+              <div><label className="label">Expected ship date</label><input className="input" type="date" min={todayISO()} value={poForm.ship_date} onChange={(e) => setPoForm({ ...poForm, ship_date: e.target.value })} /></div>
               <div><label className="label">Delivery commit</label><input className="input" type="date" value={poForm.delivery_commit} onChange={(e) => setPoForm({ ...poForm, delivery_commit: e.target.value })} /></div>
               <div><label className="label">Status</label>
                 <select className="input" value={poForm.status} onChange={(e) => setPoForm({ ...poForm, status: e.target.value })}>
@@ -851,7 +857,7 @@ export default function VendorDetail() {
                 <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
                     <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={editPoForm.order_amount} onChange={(e) => setEditPoForm({ ...editPoForm, order_amount: e.target.value })} /></div>
-                    <div><label className="label">Ship date</label><input className="input" type="date" value={editPoForm.ship_date} onChange={(e) => setEditPoForm({ ...editPoForm, ship_date: e.target.value })} /></div>
+                    <div><label className="label">Expected ship date</label><input className="input" type="date" value={editPoForm.ship_date} onChange={(e) => setEditPoForm({ ...editPoForm, ship_date: e.target.value })} /></div>
                     <div><label className="label">Status</label>
                       <select className="input" value={editPoForm.status} onChange={(e) => setEditPoForm({ ...editPoForm, status: e.target.value })}>
                         {["draft", "ordered", "confirmed", "shipped", "received", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
