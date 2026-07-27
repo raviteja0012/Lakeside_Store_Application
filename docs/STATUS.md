@@ -15,6 +15,21 @@ Owner feedback round 3 (2026-07-26/27), all shipped this round:
 
 Owner actions for this round (in order, each safe to re-run): payments_v2.sql, credit_notes.sql, feedback.sql, then auth_setup.sql last if enforced login is on.
 
+Live-demo round (2026-07-27, late night, PRs #16-#22): installment auto-spread across a
+vendor's open invoices (oldest first) with a Pay-across-invoices shortcut; the vendor
+Statement view (running balance the way vendors mail it, printable); sheets-sync phase 1
+(importer refreshes existing vendors' info from the workbook; docs/SYNC_PLAN.md holds the
+two-way design) plus an uploads archive on the Import screen (Previous uploads,
+downloadable versions); evolved-header importer support incl. the Local Vendors tab; one
+vendor-creation standard (rep and email on the payout quick-add, notes on the directory
+form); cross-links (vendor names clickable on Due-and-overdue and payout lists, KPI tiles
+open their screens, vendor header shows last order and last payment plus deposits-on-
+account and ordered-not-invoiced explainers); payout picker lists whole categories with
+counts; the vendors directory grouped by department with count chips; reference boxes
+self-explain per method; Ask the store gained the APP GUIDE (how-the-app-works answers)
+and deterministic issue logging into Suggestions ("log this issue: ..."). Migration for
+the round: payout_fields.sql.
+
 Jira backlog round (2026-07-27, same day): the connected board (robinsonsgenerastore.atlassian.net, SCRUM project) was read ticket by ticket and its remaining gaps built: Property Maintenance service categories (SCRUM-9 AC 6) with Others free text, Hardware invoice PO numbers (AC 2), the tax modes exact / no-tax vendor / see-the-invoice (AC 5), credit type bank refund vs vendor account credit (AC 7), and the department drill-down report (SCRUM-8). Migration: payout_fields.sql. An hourly Routine now sweeps the board for new tickets and comments and works them.
 
 Owner decisions (2026-06-12, revised 2026-07-07):

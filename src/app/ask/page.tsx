@@ -56,7 +56,7 @@ export default function Ask() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
-          placeholder="Ask a question about the store"
+          placeholder="Ask about the store, or how the app works. Say log this issue: ... to report a problem"
           aria-label="Ask a question"
         />
         <button className="btn-primary" onClick={() => ask()} disabled={loading || !q.trim()}>

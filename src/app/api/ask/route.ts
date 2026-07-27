@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveMember, memberSeesMoney } from "@/lib/serverMember";
 import { plainText } from "@/lib/aiText";
+import { APP_GUIDE } from "@/lib/appGuide";
 
 export const runtime = "nodejs";
 
@@ -65,9 +66,37 @@ export async function POST(req: NextRequest) {
       lines.push("\nINVOICES: withheld. The person asking has a role that does not see money, so no invoice or dollar data is available. If asked about amounts, say the question needs a manager or the owner.");
     }
 
+    // A plain question about a problem, phrased as "log/report/file this issue", becomes a
+    // Suggestions row BEFORE the model answers: deterministic, verbatim, attributed. Only a
+    // signed-in member can log (audit integrity); demo mode is pointed at Suggestions.
+    let loggedIssue = false;
+    const wantsLog = /\b(log|file|raise|report)\b/i.test(question) && /\b(issue|bug|problem|error|not working|broken)\b/i.test(question);
+    if (wantsLog && member) {
+      const ins = await db.from("feedback").insert({
+        store_id: member.store_id,
+        author_id: member.id,
+        kind: "problem",
+        page: "Ask the store",
+        body: question,
+        status: "new"
+      }).select("id").single();
+      if (!ins.error) {
+        loggedIssue = true;
+        await db.from("activity_log").insert({ actor_id: member.id, action: "feedback_added", entity: "feedback", entity_id: ins.data.id });
+      }
+    }
+
+    lines.push("\nAPP GUIDE (how this application works; use it for how-do-I and what-can-it-do questions):");
+    lines.push(APP_GUIDE);
+    if (loggedIssue) {
+      lines.push("\nNOTE TO ASSISTANT: this question was just logged in the Suggestions inbox as a problem report. Confirm that to the person in one sentence as part of the answer.");
+    } else if (wantsLog && !member) {
+      lines.push("\nNOTE TO ASSISTANT: the person wants to log an issue but is not signed in as a member, so nothing was logged. Point them to the Suggestions screen in the sidebar.");
+    }
+
     const context = lines.join("\n");
     const system =
-      "You are the assistant for Robinsons General Store. Answer the question using ONLY the store data provided in the user message. Be concise and specific, and cite the vendor name or note topic you used. If the answer is not in the data, say you do not have that on file. Do not invent numbers or vendors. Answer in plain text only: no markdown, no asterisks, no # headers; use simple hyphen lists. No em dashes.";
+      "You are the assistant for Robinsons General Store. Two kinds of questions come here: questions about the store's data (answer ONLY from the store data provided, cite the vendor name or note topic, never invent numbers or vendors, and say when something is not on file) and questions about how this application works or what it can do (answer from the APP GUIDE section, naming the screen to use). Be concise and specific. Answer in plain text only: no markdown, no asterisks, no # headers; use simple hyphen lists. No em dashes.";
 
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

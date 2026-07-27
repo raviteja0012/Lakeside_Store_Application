@@ -20,6 +20,9 @@ export default function Vendors() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  // The directory is organized the way the store thinks: by department. "all" shows
+  // grouped sections; a chip narrows to one category (sections roll up into parents).
+  const [catFilter, setCatFilter] = useState<string>("all");
 
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -31,7 +34,7 @@ export default function Vendors() {
   async function load() {
     let query = supabase
       .from("vendor")
-      .select("id, name, rep_name, phone, email, products_we_carry, default_terms, status, notes, department:department_id(name, accent_color)")
+      .select("id, name, department_id, rep_name, phone, email, products_we_carry, default_terms, status, notes, department:department_id(name, accent_color)")
       .is("voided_at", null)
       .order("name");
     if (storeId) query = query.eq("store_id", storeId);
@@ -109,7 +112,18 @@ export default function Vendors() {
     }
   }
 
-  const filtered = useMemo(() => {
+  const topCats = useMemo(() => departments.filter((d) => !d.parent_department_id), [departments]);
+  // Roll a section (Clothing, Gifts, Garden Center) up into its top-level category.
+  const topOf = useMemo(() => {
+    const parent = new Map(departments.map((d) => [d.id, d.parent_department_id]));
+    return (id: string | null | undefined): string | null => {
+      if (!id) return null;
+      const p = parent.get(id);
+      return (p as string | null) || id;
+    };
+  }, [departments]);
+
+  const searched = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return vendors;
     return vendors.filter(
@@ -119,6 +133,22 @@ export default function Vendors() {
         (v.rep_name || "").toLowerCase().includes(term)
     );
   }, [vendors, q]);
+  const filtered = useMemo(
+    () => (catFilter === "all" ? searched : searched.filter((v) => topOf(v.department_id) === catFilter)),
+    [searched, catFilter, topOf]
+  );
+  // Grouped sections for browsing: every top category with its vendors alphabetical
+  // inside, and the vendors still waiting for a category at the end (a quiet cleanup
+  // list). Searching or picking a chip switches to the flat filtered list.
+  const grouped = useMemo(() => {
+    const groups = topCats
+      .map((d) => ({ id: d.id as string, name: d.name as string, rows: searched.filter((v) => topOf(v.department_id) === d.id) }))
+      .filter((g) => g.rows.length > 0);
+    const none = searched.filter((v) => !v.department_id);
+    if (none.length) groups.push({ id: "none", name: "No category yet", rows: none });
+    return groups;
+  }, [topCats, searched, topOf]);
+  const catCount = (id: string) => vendors.filter((v) => topOf(v.department_id) === id).length;
 
   return (
     <div>
@@ -164,6 +194,26 @@ export default function Vendors() {
         </div>
       )}
 
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+        <button
+          className="chip"
+          style={{ cursor: "pointer", border: catFilter === "all" ? "1px solid var(--primary)" : "1px solid var(--border)", background: "#EEF1F4" }}
+          onClick={() => setCatFilter("all")}
+        >
+          All . {vendors.length}
+        </button>
+        {topCats.map((d) => (
+          <button
+            key={d.id}
+            className="chip"
+            style={{ cursor: "pointer", border: catFilter === d.id ? "1px solid var(--primary)" : "1px solid var(--border)", background: "#EEF1F4", color: d.accent_color || undefined }}
+            onClick={() => setCatFilter(catFilter === d.id ? "all" : d.id)}
+          >
+            {d.name}{catCount(d.id) ? ` . ${catCount(d.id)}` : ""}
+          </button>
+        ))}
+      </div>
+
       <input
         className="input"
         placeholder="Search by name, product, or rep"
@@ -186,12 +236,21 @@ export default function Vendors() {
         </div>
       )}
 
-      <div style={{ display: "grid", gap: 10 }}>
-        {filtered.map((v) => (
+      {(() => {
+        const row = (v: Vendor) => (
           <Link key={v.id} href={`/vendors/${v.id}`} className="card" style={{ padding: 14, textDecoration: "none", color: "inherit", display: "block" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <strong style={{ fontSize: 15 }}>{v.name}</strong>
-              {v.department && <span className="chip" style={{ background: "#EEF1F4", color: v.department.accent_color || "#6B7480" }}>{v.department.name}</span>}
+              {v.department && (
+                <button
+                  className="chip"
+                  style={{ background: "#EEF1F4", color: v.department.accent_color || "#6B7480", cursor: "pointer", border: "none" }}
+                  title={`Show all ${v.department.name} vendors`}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); const t = topOf(v.department_id); if (t) setCatFilter(t); }}
+                >
+                  {v.department.name}
+                </button>
+              )}
               <span className={`chip ${chipClass(v.status)}`}>{labelize(v.status)}</span>
               {v.default_terms && <span className="chip chip-neutral">{v.default_terms}</span>}
               {canEdit(role) && (
@@ -212,8 +271,24 @@ export default function Vendors() {
               </div>
             )}
           </Link>
-        ))}
-      </div>
+        );
+        // Browsing everything with no search: sections per category, the sheet's own shape.
+        if (catFilter === "all" && !q.trim()) {
+          return (
+            <div style={{ display: "grid", gap: 20 }}>
+              {grouped.map((g) => (
+                <section key={g.id}>
+                  <h2 style={{ fontSize: 15, margin: "0 0 8px" }}>
+                    {g.name} <span className="help" style={{ fontWeight: 400 }}>{g.rows.length}</span>
+                  </h2>
+                  <div style={{ display: "grid", gap: 10 }}>{g.rows.map(row)}</div>
+                </section>
+              ))}
+            </div>
+          );
+        }
+        return <div style={{ display: "grid", gap: 10 }}>{filtered.map(row)}</div>;
+      })()}
     </div>
   );
 }
