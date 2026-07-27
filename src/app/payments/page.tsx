@@ -88,7 +88,7 @@ export default function Payments() {
   // products and notes are optional color: what the vendor supplies ("Mugs, wallets") and
   // any rule worth remembering. Both editable later from the vendor page as things drift.
   const [showNewVendor, setShowNewVendor] = useState(false);
-  const [nvForm, setNvForm] = useState({ name: "", department_id: "", phone: "", default_terms: "", products: "", notes: "" });
+  const [nvForm, setNvForm] = useState({ name: "", department_id: "", rep_name: "", phone: "", email: "", default_terms: "", products: "", notes: "" });
 
   // Editing a recorded payment: the facts (date, method, reference, notes, filing) are
   // correctable in place; a wrong amount means void and re-record.
@@ -254,7 +254,7 @@ export default function Payments() {
     setNotes("");
     setFiling("");
     setShowNewVendor(false);
-    setNvForm({ name: "", department_id: "", phone: "", default_terms: "", products: "", notes: "" });
+    setNvForm({ name: "", department_id: "", rep_name: "", phone: "", email: "", default_terms: "", products: "", notes: "" });
   }
 
   // Quick-add a vendor without leaving the payout flow. Category comes from the active
@@ -281,7 +281,9 @@ export default function Payments() {
           store_id: storeId,
           department_id: dept || null,
           name,
+          rep_name: nvForm.rep_name.trim() || null,
           phone: nvForm.phone.trim() || null,
+          email: nvForm.email.trim() || null,
           default_terms: nvForm.default_terms.trim() || null,
           products_we_carry: nvForm.products.trim() || null,
           notes: nvForm.notes.trim() || null,
@@ -295,7 +297,7 @@ export default function Payments() {
         await supabase.from("activity_log").insert({ actor_id: actor, action: "vendor_added", entity: "vendor", entity_id: r.data.id });
       }
       setShowNewVendor(false);
-      setNvForm({ name: "", department_id: "", phone: "", default_terms: "", products: "", notes: "" });
+      setNvForm({ name: "", department_id: "", rep_name: "", phone: "", email: "", default_terms: "", products: "", notes: "" });
       await load();
       pickVendor(r.data.id as string);
     } catch (e: any) {
@@ -760,7 +762,9 @@ export default function Payments() {
                       </select>
                       <p className="help" style={{ margin: "4px 0 0" }}>Leave blank if the vendor spans multiple departments or you are unsure. Assign later from the vendor page.</p>
                     </div>
+                    <div><label className="label" htmlFor="nv-rep">Rep name</label><input id="nv-rep" className="input" value={nvForm.rep_name} onChange={(e) => setNvForm({ ...nvForm, rep_name: e.target.value })} /></div>
                     <div><label className="label" htmlFor="nv-phone">Phone</label><input id="nv-phone" className="input" value={nvForm.phone} onChange={(e) => setNvForm({ ...nvForm, phone: e.target.value })} /></div>
+                    <div><label className="label" htmlFor="nv-email">Email</label><input id="nv-email" className="input" type="email" value={nvForm.email} onChange={(e) => setNvForm({ ...nvForm, email: e.target.value })} /></div>
                     <div><label className="label" htmlFor="nv-terms">Terms</label><input id="nv-terms" className="input" placeholder="Net 30" value={nvForm.default_terms} onChange={(e) => setNvForm({ ...nvForm, default_terms: e.target.value })} /></div>
                     <div><label className="label" htmlFor="nv-products">What they supply (optional)</label><input id="nv-products" className="input" placeholder="Mugs, wallets, everyday gifts" value={nvForm.products} onChange={(e) => setNvForm({ ...nvForm, products: e.target.value })} />
                       <p className="help" style={{ margin: "4px 0 0" }}>Comma-separated; shows as small labels and is searchable. Fine to change any time.</p>

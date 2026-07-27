@@ -8,6 +8,23 @@ import { REQUIRE_AUTH_SERVER } from "@/lib/serverMember";
 
 export const runtime = "nodejs";
 
+// Every recognized upload is archived in the documents bucket under imports/, so the app
+// itself holds the version history of the owner's workbooks (drop a new version any time;
+// the archive keeps the old ones downloadable). Best-effort: an archive failure never
+// blocks the import itself.
+async function archiveUpload(sb: any, buf: Buffer, fileName: string): Promise<void> {
+  try {
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+    const safe = fileName.replace(/[^\w.\-]+/g, "_");
+    await sb.storage.from("documents").upload(`imports/${stamp}_${safe}`, buf, {
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      upsert: false
+    });
+  } catch {
+    /* archive is best-effort */
+  }
+}
+
 // Insert in chunks so a large workbook does not exceed the request size. Counts are summed.
 // sb is typed any: the installed supabase-js generics narrow .insert() to never[] otherwise.
 async function insertChunks(
@@ -414,13 +431,17 @@ export async function POST(req: Request) {
     // Route by file type. The weekly schedule has day-name rows and time+name cells; the
     // bookings ledger has the known department sheet names; an inventory workbook has
     // SKU/description/stock headers. Detect in that order and send to the right loader.
+    const uploadName = (file as any).name ? String((file as any).name) : "workbook.xlsx";
+
     if (looksLikeSchedule(sheets)) {
+      await archiveUpload(sb, buf, uploadName);
       return await importScheduleFlow(sb, sheets, storeId, actorId);
     }
 
     // The evolved ledger layout (named headers like Vendor Company / PaymentMethod) gets
     // the header-driven parser; the original fixed-position layout still goes through v1.
     if (looksLikeBookingsV2(sheets)) {
+      await archiveUpload(sb, buf, uploadName);
       return await importBookingsV2Flow(sb, sheets, storeId, actorId);
     }
 
@@ -428,9 +449,9 @@ export async function POST(req: Request) {
     if (!parsed.vendors.length) {
       const inv = parseInventory(sheets);
       if (inv.lines.length) {
-        const fileName = (file as any).name ? String((file as any).name) : "workbook.xlsx";
         const departmentId = form.get("department_id") ? String(form.get("department_id")) : null;
-        return await importInventoryFlow(sb, sheets, fileName, storeId, actorId, departmentId);
+        await archiveUpload(sb, buf, uploadName);
+        return await importInventoryFlow(sb, sheets, uploadName, storeId, actorId, departmentId);
       }
       return Response.json({
         ok: false,
@@ -443,6 +464,7 @@ export async function POST(req: Request) {
     if (exErr) {
       return Response.json({ ok: false, message: `Could not read existing vendors: ${exErr.message}` }, { status: 200 });
     }
+    await archiveUpload(sb, buf, uploadName);
     const present = new Set(((existing as any[]) || []).map((v) => String(v.name || "").toLowerCase()));
 
     const newVendors = parsed.vendors.filter((v) => !present.has(v.name.toLowerCase()));

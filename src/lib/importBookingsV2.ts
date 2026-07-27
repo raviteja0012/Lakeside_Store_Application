@@ -23,10 +23,12 @@ function uuid(key: string): string {
 }
 
 // Department UUIDs match seed.sql: Gifts (Dry goods sheet), Clothing (Lake side), Grocery.
+// The Local Vendors tab (greeting cards, local makers) files under Others.
 const SHEET_DEPT: Record<string, string> = {
   "dry goods": "22222222-0000-0000-0000-000000000002",
   "lake side": "22222222-0000-0000-0000-000000000005",
-  "grocery vendors": "22222222-0000-0000-0000-000000000003"
+  "grocery vendors": "22222222-0000-0000-0000-000000000003",
+  "local vendors": "22222222-0000-0000-0000-000000000013"
 };
 
 // Section dividers and totals rows that are not vendors (same rule as v1: a divider with
@@ -133,7 +135,7 @@ type Cols = Partial<Record<
   "vendor" | "reorder" | "rep" | "phone" | "email" | "products" | "orderStatus" | "comments" |
   "orderFiling" | "amount" | "ship" | "deliveryStatus" | "deliveryComments" | "invoiceFiling" |
   "invAmount" | "terms" | "due" | "payStatus" | "payAmount" | "payDate" | "payMethod" |
-  "payFiling" | "credit" | "priya" | "storeApp" | "payMonth" | "statusNote",
+  "payFiling" | "payComments" | "credit" | "priya" | "storeApp" | "payMonth" | "statusNote" | "runout",
   number
 >>;
 
@@ -150,21 +152,23 @@ function resolveColumns(headerRow: any[]): Cols {
     else if (k === "productswecarry") set("products");
     else if (k.startsWith("orderstatus")) set("orderStatus");
     else if (k === "comments") set("comments");
-    else if (k.startsWith("ordercon")) set("orderFiling");            // OrderCon(f)irmationFiling
+    else if (k.startsWith("ordercon") || k === "orderfiling") set("orderFiling"); // OrderCon(f)irmationFiling / Order Filing
     else if (k === "amount") set("amount");
     else if (k === "shipdate") set("ship");
     else if (k === "delivery") set("ship");                            // Grocery's ship column
     else if (k === "deliverystatus") set("deliveryStatus");
     else if (k === "deliverycomments") set("deliveryComments");
-    else if (k.startsWith("finalinvoice")) set("invoiceFiling");
+    else if (k.startsWith("finalinvoice") || k === "invoicefilingmethod") set("invoiceFiling");
     else if (k === "invoicedamount" || k === "invoiceamount") set("invAmount");
     else if (k === "terms") set("terms");
     else if (k === "duedate") set("due");
     else if (k === "paymentstatus") set("payStatus");
-    else if (k === "paymentamount") set("payAmount");
+    else if (k === "paymentamount" || k === "payment") set("payAmount"); // "Payment$" and "Payment$$$" normalize to "payment"
     else if (k === "paymentdate") set("payDate");
     else if (k === "paymentmethod") set("payMethod");
-    else if (k === "paymentconfirmationfiling") set("payFiling");
+    else if (k === "paymentconfirmationfiling" || k === "paymentfilingmethod") set("payFiling");
+    else if (k === "paymentcomments") set("payComments");
+    else if (k === "runout") set("runout");
     else if (k.startsWith("creditback")) set("credit");
     else if (k === "priyacomments") set("priya");
     else if (k === "storeapplication") set("storeApp");
@@ -250,16 +254,19 @@ export function parseWorkbookV2(
     if (sheetKey === "askinginventory") {
       const seenAsk = new Set<string>();
       for (let i = 0; i < sheet.rows.length; i++) {
-        const item = text((sheet.rows[i] || [])[0]);
+        const row = sheet.rows[i] || [];
+        const item = text(row[0]);
         if (!item) continue;
         if (seenAsk.has(item.toLowerCase())) continue;
         seenAsk.add(item.toLowerCase());
+        // Side cells carry the owner's remarks ("Dont order more"); keep them with the item.
+        const remark = row.slice(1).map(text).filter(Boolean).join(" | ");
         notes.push({
           id: uuid(`v2|ask|${item.toLowerCase()}`),
           store_id: storeId,
           department_id: SHEET_DEPT["dry goods"],
           topic: "Asking inventory: " + item,
-          body: `${item} — on the owner's asking-inventory wish list from the bookings workbook.`,
+          body: `${item} — on the owner's asking-inventory wish list from the bookings workbook.${remark ? ` Owner's remark: ${remark}` : ""}`,
           tags: ["reorder", "asking-inventory"]
         });
       }
@@ -298,6 +305,8 @@ export function parseWorkbookV2(
       const priya = ctext(r, "priya");
       const storeApp = ctext(r, "storeApp");
       const reorderMark = ctext(r, "reorder");
+      const runoutMark = ctext(r, "runout");
+      const payComments = ctext(r, "payComments");
       const payStatusText = ctext(r, "payStatus");
       const payDateRaw = cell(r, "payDate");
       const payMonthText = ctext(r, "payMonth");
@@ -384,6 +393,7 @@ export function parseWorkbookV2(
         // than the invoice. Raw wording that did not fit a column survives in the notes.
         const amt = payAmount !== null ? payAmount : (invAmount as number);
         const payNotes = [
+          payComments,
           methodText && methodFromText(methodText) === "other" ? `method: ${methodText}` : "",
           filingText && !filing ? `filing: ${filingText}` : "",
           text(payDateRaw) && dateISO(payDateRaw) === null ? `dates: ${text(payDateRaw)}` : "",
@@ -434,14 +444,16 @@ export function parseWorkbookV2(
         });
       }
 
-      // Everything wordy lands in one knowledge note per row so no cell is lost.
+      // Everything wordy lands in one knowledge note per row so no cell is lost. Runout
+      // ("we ran out of this") and reorder marks both tag the note for the reorder screen.
       const noteBody = [
         comments && `Comments: ${comments}`,
         deliveryComments && `Delivery: ${deliveryComments}`,
         priya && `Priya: ${priya}`,
         storeApp && `Store application: ${storeApp}`,
         statusNote && `Status: ${statusNote}`,
-        reorderMark && `Reorder: ${reorderMark}`
+        reorderMark && `Reorder: ${reorderMark}`,
+        runoutMark && `Runout: ${runoutMark}`
       ].filter(Boolean).join(" | ");
       if (noteBody) {
         notes.push({
@@ -450,7 +462,7 @@ export function parseWorkbookV2(
           department_id: dept,
           topic: "Vendor: " + name,
           body: noteBody,
-          tags: reorderMark ? ["vendor", "reorder"] : ["vendor"]
+          tags: reorderMark || runoutMark ? ["vendor", "reorder"] : ["vendor"]
         });
       }
     }

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, authHeader, useMember } from "@/lib/auth";
 import { formatCAD } from "@/lib/format";
+import { docUrls } from "@/lib/docs";
 import type { Department } from "@/lib/types";
 
 // The shape the import API returns. The route auto-detects the bookings ledger, the weekly
@@ -42,6 +43,23 @@ export default function Import() {
   const [deptId, setDeptId] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  // Every recognized upload is archived under imports/ in the documents bucket, so the
+  // owner's workbook versions live inside the app and stay downloadable.
+  const [archive, setArchive] = useState<Array<{ name: string; url: string | null }>>([]);
+
+  async function loadArchive() {
+    try {
+      const { data } = await supabase.storage.from(DOCUMENTS_BUCKET).list("imports", {
+        limit: 12,
+        sortBy: { column: "name", order: "desc" }
+      });
+      const files = (data || []).filter((f) => f.name && !f.name.startsWith("."));
+      const urls = await docUrls(files.map((f) => `imports/${f.name}`));
+      setArchive(files.map((f) => ({ name: f.name, url: urls.get(`imports/${f.name}`) || null })));
+    } catch {
+      setArchive([]);
+    }
+  }
 
   useEffect(() => {
     if (!ready) return;
@@ -52,6 +70,7 @@ export default function Import() {
       const ds = (data as Department[]) || [];
       setDepartments(ds);
       setDeptId(ds.find((d) => d.name === "Hardware")?.id || "");
+      await loadArchive();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, storeId]);
@@ -76,8 +95,10 @@ export default function Import() {
 
       const res = await fetch("/api/import", { method: "POST", body: fd, headers });
       const data = (await res.json().catch(() => ({}))) as ImportResult;
-      if (data.ok) setResult(data);
-      else setError(data.message || "The import did not finish.");
+      if (data.ok) {
+        setResult(data);
+        await loadArchive();
+      } else setError(data.message || "The import did not finish.");
     } catch (e: any) {
       setError(e?.message || "The import did not finish.");
     } finally {
@@ -173,6 +194,26 @@ export default function Import() {
       )}
 
       <div className="card" style={{ padding: 16, display: "grid", gap: 10 }}>
+        {archive.length > 0 && (
+          <div>
+            <h2 style={{ fontSize: 16, margin: 0 }}>Previous uploads</h2>
+            <p className="help" style={{ margin: "4px 0 8px" }}>
+              Every workbook loaded here is kept as a version. Drop a new copy any time; the app applies
+              what changed and the older files stay downloadable.
+            </p>
+            <div style={{ display: "grid", gap: 6 }}>
+              {archive.map((f) => (
+                <div key={f.name} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", fontSize: 13 }}>
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {f.name.replace(/^(\d{4}-\d{2}-\d{2})-(\d{2})-(\d{2})-(\d{2})_/, "$1 $2:$3 . ")}
+                  </span>
+                  {f.url && <a href={f.url} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>Download</a>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div>
           <h2 style={{ fontSize: 16, margin: 0 }}>Export everything</h2>
           <p className="help" style={{ margin: "4px 0 0" }}>
