@@ -125,10 +125,12 @@ create table invoice (
   freight_charges numeric,              -- freight as its own line; total owed = amount + freight + HST
   delivery_status text check (delivery_status is null or delivery_status in ('delivered','not_delivered')),
   -- Property Maintenance payouts only (null for merchandise invoices): estimate number when
-  -- the work was preplanned, repair vs upgrade, and a short description of the work.
+  -- the work was preplanned, repair vs upgrade, service category, and a short description.
   estimate_number text,
   work_type text check (work_type is null or work_type in ('repair','upgrade')),
+  service_category text,                -- Electrical, Plumbing, HVAC, ... or free text via Others
   work_description text,
+  po_number text,                       -- the purchase order number on Hardware invoices
   terms text,
   due_date date,
   -- Derived by recompute_invoice_status from the payment allocations:
@@ -183,6 +185,7 @@ create table credit_note (
   credit_amount numeric not null,
   reason text not null,
   comments text,
+  credit_type text check (credit_type is null or credit_type in ('bank_account','vendor_account')),
   status text not null default 'pending' check (status in ('pending','applied','disputed')),
   created_by uuid references app_user(id),
   created_at timestamptz default now(),
