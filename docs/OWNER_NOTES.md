@@ -325,3 +325,22 @@ items" amounts become pending credit notes tied to the invoice; the AskingInvent
 list becomes reorder-tagged knowledge notes. Idempotency is unchanged: vendors already in
 the store are skipped with all their children, so importing over the live database never
 double-loads or double-pays.
+
+## The 2026_Payments Google Sheet and the statement workflow, seen 2026-07-27
+
+A screenshot of the owner's live "2026_Payments" Google Sheet showed these tabs: Bakery,
+Meet, Utility, Notes, Renewals & Training, MaintanancePayments, Grocery, Loans&Payments.
+The MaintanancePayments tab carries: vendor email, estimate # (e.g. 41426007), estimate
+amount, type (Upgrade / Repair / Maintanance), invoice # (83365, 83364, 17450), date,
+amount, a long work description ("replace the Carrier RTU that controls the clothing
+area...", "located a leak at the middle low temp compressor..."), PAID, paid date. This
+maps one to one onto the app's property invoices (estimate_number, work_type,
+service_category, work_description, amounts, derived status, payment date). Utility,
+Renewals & Training, and Loans&Payments tabs are future payout-category candidates
+alongside Payrolls & Taxes.
+
+The workflow fact that came with it: once an account runs past due, vendors stop sending
+job invoices and send STATEMENTS of the remaining amount from that point on. Built the
+same day: a Statement view on every vendor page (charges and payments in date order with a
+running balance and a printable layout), so the vendor's mailed statement can be checked
+line by line, and the installment auto-spread pays it down oldest-first.
