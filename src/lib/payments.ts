@@ -88,6 +88,16 @@ export function referenceLabel(method: string): string {
   return "Reference";
 }
 
+// One plain sentence under the reference box, so the field explains itself (the owner
+// asked twice what "Card confirmation" meant). Always optional.
+export function referenceHelp(method: string): string {
+  if (method === "cheque") return "The number on the cheque, so the bank statement matches. Optional.";
+  if (method === "etransfer") return "The reference code from the transfer confirmation. Optional.";
+  if (method === "eft") return "The reference from the EFT confirmation. Optional.";
+  if (method.startsWith("cc_")) return "The approval code on the card slip or emailed receipt. Optional.";
+  return "Any number or code that identifies this payment. Optional.";
+}
+
 // Total owed on an invoice: goods + freight + HST.
 export function invoiceTotal(i: Pick<Invoice, "amount" | "hst_amount"> & { freight_charges?: number | null }): number {
   return (Number(i.amount) || 0) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
