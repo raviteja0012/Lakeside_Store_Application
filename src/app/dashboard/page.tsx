@@ -6,8 +6,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, daysOverdue } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, useCurrentRole } from "@/lib/auth";
+import { invoiceTotal, fetchSettlements, type InvoiceSettlement } from "@/lib/payments";
 
-type Inv = { id: string; amount: number | null; hst_amount: number | null; due_date: string | null; status: string; vendor: { name: string; department_id: string | null } | null };
+type Inv = { id: string; amount: number | null; hst_amount: number | null; freight_charges: number | null; due_date: string | null; status: string; vendor: { name: string; department_id: string | null } | null };
 type PO = { order_amount: number | null; status: string; department_id: string | null };
 type Dept = { id: string; name: string; accent_color: string | null };
 type Vend = { id: string; department_id: string | null; status: string };
@@ -31,6 +32,7 @@ export default function Dashboard() {
   const [depts, setDepts] = useState<Dept[]>([]);
   const [vendors, setVendors] = useState<Vend[]>([]);
   const [recentCount, setRecentCount] = useState(0);
+  const [settlements, setSettlements] = useState<Map<string, InvoiceSettlement>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +40,7 @@ export default function Dashboard() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let invq = supabase.from("invoice").select("id, amount, hst_amount, due_date, status, vendor:vendor_id(name, department_id)").is("voided_at", null);
+      let invq = supabase.from("invoice").select("id, amount, hst_amount, freight_charges, due_date, status, vendor:vendor_id(name, department_id)").is("voided_at", null);
       if (storeId) invq = invq.eq("store_id", storeId);
       const inv = await invq;
       if (inv.error) {
@@ -46,7 +48,13 @@ export default function Dashboard() {
         setLoading(false);
         return;
       }
-      setInvoices((inv.data as unknown as Inv[]) || []);
+      const invList = (inv.data as unknown as Inv[]) || [];
+      setInvoices(invList);
+      try {
+        setSettlements(await fetchSettlements(invList.filter((x) => x.status !== "paid").map((x) => x.id)));
+      } catch {
+        setSettlements(new Map());
+      }
       let poq = supabase.from("purchase_order").select("order_amount, status, department_id").is("voided_at", null);
       if (storeId) poq = poq.eq("store_id", storeId);
       const po = await poq;
@@ -67,25 +75,28 @@ export default function Dashboard() {
     })();
   }, [ready, storeId]);
 
-  const total = (i: Inv) => (Number(i.amount) || 0) + (Number(i.hst_amount) || 0);
+  // One definition of the total (goods + freight + HST) and of what is still owed
+  // (total minus settled payments), shared with every money screen via the payments lib.
+  const total = (i: Inv) => invoiceTotal(i);
+  const owedOf = (i: Inv) => Math.max(0, total(i) - (settlements.get(i.id)?.settled || 0));
 
   const m = useMemo(() => {
     const open = invoices.filter((i) => i.status === "unpaid" || i.status === "partially_paid" || i.status === "postdated");
-    const outstanding = open.reduce((s, i) => s + total(i), 0);
+    const outstanding = open.reduce((s, i) => s + owedOf(i), 0);
     let overdueCount = 0, overdueSum = 0, dueSoonSum = 0;
-    for (const i of invoices) {
-      if (i.status !== "unpaid" && i.status !== "partially_paid") continue;
+    for (const i of open) {
       const dd = daysOverdue(i.due_date);
       if (dd == null) continue;
-      if (dd > 0) { overdueCount++; overdueSum += total(i); }
-      else if (dd >= -7) { dueSoonSum += total(i); }
+      if (dd > 0) { overdueCount++; overdueSum += owedOf(i); }
+      else if (dd >= -7) { dueSoonSum += owedOf(i); }
     }
     const paid = invoices.filter((i) => i.status === "paid").reduce((s, i) => s + total(i), 0);
     const ordered = pos.reduce((s, p) => s + (Number(p.order_amount) || 0), 0);
     const invoiced = invoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
     const awaiting = pos.filter((p) => p.status === "ordered").length;
     return { outstanding, overdueCount, overdueSum, dueSoonSum, paid, ordered, invoiced, awaiting };
-  }, [invoices, pos]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoices, settlements, pos]);
 
   const byDept = useMemo(() => {
     return depts

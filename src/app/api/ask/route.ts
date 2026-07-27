@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     const scopeNote = db.from("knowledge_note").select("topic, body, tags, department:department_id(name)").is("voided_at", null);
     const scopeVendor = db.from("vendor").select("name, default_terms, status, notes, phone, department:department_id(name)").is("voided_at", null);
-    const scopeInvoice = db.from("invoice").select("amount, hst_amount, due_date, status, terms, vendor:vendor_id(name)").is("voided_at", null);
+    const scopeInvoice = db.from("invoice").select("amount, hst_amount, freight_charges, due_date, status, terms, vendor:vendor_id(name)").is("voided_at", null);
     const [notes, vendors, invoices] = await Promise.all([
       storeId ? scopeNote.eq("store_id", storeId) : scopeNote,
       storeId ? scopeVendor.eq("store_id", storeId) : scopeVendor,
@@ -57,9 +57,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (includeMoney) {
-      lines.push("\nINVOICES (amount owed = amount + hst):");
+      lines.push("\nINVOICES (amount owed = amount + freight + HST):");
       for (const i of (invoices.data as any[]) || []) {
-        const total = (Number(i.amount) || 0) + (Number(i.hst_amount) || 0);
+        const total = (Number(i.amount) || 0) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
         lines.push(`- ${i.vendor?.name || "unknown"}: $${total.toFixed(2)}, ${i.status}, due ${i.due_date || "n/a"}, terms ${i.terms || "n/a"}`);
       }
     } else {
@@ -70,19 +70,35 @@ export async function POST(req: NextRequest) {
     // Suggestions row BEFORE the model answers: deterministic, verbatim, attributed. Only a
     // signed-in member can log (audit integrity); demo mode is pointed at Suggestions.
     let loggedIssue = false;
-    const wantsLog = /\b(log|file|raise|report)\b/i.test(question) && /\b(issue|bug|problem|error|not working|broken)\b/i.test(question);
+    // Imperative only: "log this issue ...", "report a problem ...". A question ABOUT
+    // logging ("how do I report a problem?") must never file anything.
+    const wantsLog = /\b(log|file|report|raise)\s+(this|that|it|an?\s+|the\s+)/i.test(question)
+      && /\b(issue|bug|problem|error|not working|broken)\b/i.test(question)
+      && !/^\s*(how|where|what|can|could|do|does|is|are)\b/i.test(question);
     if (wantsLog && member) {
-      const ins = await db.from("feedback").insert({
-        store_id: member.store_id,
-        author_id: member.id,
-        kind: "problem",
-        page: "Ask the store",
-        body: question,
-        status: "new"
-      }).select("id").single();
-      if (!ins.error) {
+      // A retry or a repeated ask must not stack duplicates in the inbox.
+      const dup = await db.from("feedback")
+        .select("id")
+        .eq("author_id", member.id)
+        .eq("body", question)
+        .is("voided_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (dup.data) {
         loggedIssue = true;
-        await db.from("activity_log").insert({ actor_id: member.id, action: "feedback_added", entity: "feedback", entity_id: ins.data.id });
+      } else {
+        const ins = await db.from("feedback").insert({
+          store_id: member.store_id,
+          author_id: member.id,
+          kind: "problem",
+          page: "Ask the store",
+          body: question,
+          status: "new"
+        }).select("id").single();
+        if (!ins.error) {
+          loggedIssue = true;
+          await db.from("activity_log").insert({ actor_id: member.id, action: "feedback_added", entity: "feedback", entity_id: ins.data.id });
+        }
       }
     }
 

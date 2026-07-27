@@ -15,7 +15,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, dueBand, round2, todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
-import { canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
+import { REQUIRE_AUTH, canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
 import { chipClass, labelize } from "@/lib/status";
 import * as XLSX from "xlsx";
@@ -96,6 +96,15 @@ export default function Payments() {
   const [editPayId, setEditPayId] = useState<string | null>(null);
   const [editPayForm, setEditPayForm] = useState({ method: "cheque", paid_date: "", reference: "", notes: "", filing: "" });
 
+  // Demo mode identity, fixable on this screen (the guard error otherwise sends people
+  // away and the filled form is lost).
+  const [users, setUsers] = useState<Array<{ id: string; full_name: string; role: string }>>([]);
+  const [actorPick, setActorPick] = useState("");
+  function pickActor(uid: string) {
+    setActorPick(uid);
+    if (typeof window !== "undefined") localStorage.setItem("rgs_actor", uid);
+  }
+
   // Installments against the whole balance (Ravi's maintenance-vendor case: many invoices
   // over time, one consolidated bill, paid off in chunks aimed at the total, not at any
   // one invoice). Type the chunk, spread it oldest-first, eyeball, record.
@@ -114,6 +123,13 @@ export default function Payments() {
     if (storeId) dq = dq.eq("store_id", storeId);
     const { data: deps } = await dq;
     setDepartments((deps as DeptLite[]) || []);
+
+    if (!REQUIRE_AUTH) {
+      const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
+      setUsers((us as any[]) || []);
+      const saved = typeof window !== "undefined" ? localStorage.getItem("rgs_actor") : null;
+      setActorPick(saved || "");
+    }
 
     let vq = supabase
       .from("vendor")
@@ -461,7 +477,20 @@ export default function Payments() {
         const fresh = await fetchSettlements(allocations.map((a) => a.invoice_id));
         for (const a of allocations) {
           const inv = openInvoices.find((i) => i.id === a.invoice_id);
-          if (!inv) continue;
+          if (!inv) {
+            // The invoice left the open list (paid elsewhere, or voided) after it was
+            // ticked. Letting it through would pay an invoice this screen can no longer
+            // see; dropping it silently would record less than the person approved.
+            setError("One of the ticked invoices is no longer open (it was paid or removed since this screen loaded). The list refreshed; check the ticks and record again.");
+            setAlloc((prev) => {
+              const next: Record<string, string> = {};
+              for (const [k, v] of Object.entries(prev)) if (k !== a.invoice_id) next[k] = v;
+              return next;
+            });
+            setBusy(false);
+            await load();
+            return;
+          }
           const left = round2(remainingToAllocate(invoiceTotal(inv), fresh.get(a.invoice_id)));
           if (a.amount > left + 0.005) {
             setError(
@@ -469,6 +498,15 @@ export default function Payments() {
                 ? `Invoice ${inv.invoice_number || "(no number)"} is already fully covered. Refresh to see it.`
                 : `Invoice ${inv.invoice_number || "(no number)"} only has ${formatCAD(left)} left to pay; ${formatCAD(a.amount)} was entered.`
             );
+            // Prune the stale allocation so a blind retry cannot sneak it through once the
+            // invoice drops off the reloaded open list.
+            if (left <= 0) {
+              setAlloc((prev) => {
+                const next: Record<string, string> = {};
+                for (const [k, v] of Object.entries(prev)) if (k !== a.invoice_id) next[k] = v;
+                return next;
+              });
+            }
             setBusy(false);
             await load();
             return;
@@ -649,10 +687,19 @@ export default function Payments() {
     <div style={{ display: "grid", gap: 20 }}>
       <header className="page-head">
         <div>
-          <h1 className="page-title">Payments</h1>
+          <h1 className="page-title">Vendor payouts</h1>
           <p className="page-sub">One place to record any vendor payment. Department comes from the <em>invoice</em>, never a question.</p>
         </div>
         <div className="page-actions">
+          {!REQUIRE_AUTH && users.length > 0 && (
+            <>
+              <label className="help" htmlFor="pay-actor">Acting as </label>
+              <select id="pay-actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px" }} value={actorPick} onChange={(e) => pickActor(e.target.value)}>
+                <option value="">Pick your name</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+              </select>
+            </>
+          )}
           <button className="btn-ghost" onClick={exportPayments} disabled={loading || recent.length === 0}>
             Export Excel
           </button>

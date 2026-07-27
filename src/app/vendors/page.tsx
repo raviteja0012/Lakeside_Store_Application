@@ -50,13 +50,13 @@ export default function Vendors() {
       await load();
       let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
       if (storeId) dq = dq.eq("store_id", storeId);
-      const { data: ds } = await dq;
+      const { data: ds, error: derr } = await dq;
+      if (derr) setError(derr.message);
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
       const dList = (ds as Department[]) || [];
       const usr = (us as AppUser[]) || [];
       setDepartments(dList);
       setUsers(usr);
-      setForm((f) => ({ ...f, department_id: dList[0]?.id || "" }));
       const saved = typeof window !== "undefined" ? localStorage.getItem(ACTOR_KEY) : null;
       setActorId(saved || usr[0]?.id || "");
       setLoading(false);
@@ -70,14 +70,14 @@ export default function Vendors() {
   }
 
   async function save() {
-    if (!form.name.trim() || !form.department_id) return;
+    if (!form.name.trim()) return;
     setBusy(true);
     setError(null);
     try {
       const r = await supabase.from("vendor").insert({
         store_id: storeId,
         name: form.name.trim(),
-        department_id: form.department_id,
+        department_id: form.department_id || null,
         rep_name: form.rep_name || null,
         phone: form.phone || null,
         email: form.email || null,
@@ -166,8 +166,9 @@ export default function Vendors() {
         <div className="card" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 10 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
             <div><label className="label">Name</label><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-            <div><label className="label">Department</label>
+            <div><label className="label">Department (optional)</label>
               <select className="input" value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}>
+                <option value="">Multi-department / Unknown</option>
                 {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </div>
@@ -273,7 +274,9 @@ export default function Vendors() {
           </Link>
         );
         // Browsing everything with no search: sections per category, the sheet's own shape.
-        if (catFilter === "all" && !q.trim()) {
+        // If grouping came up empty while vendors exist (departments failed to load, or a
+        // section points at a missing parent), fall back to the flat list: never blank.
+        if (catFilter === "all" && !q.trim() && grouped.reduce((n, g) => n + g.rows.length, 0) === searched.length && grouped.length > 0) {
           return (
             <div style={{ display: "grid", gap: 20 }}>
               {grouped.map((g) => (
@@ -286,6 +289,10 @@ export default function Vendors() {
               ))}
             </div>
           );
+        }
+        if (catFilter === "all" && !q.trim()) {
+          // Grouping lost rows (missing department rows): show everyone flat instead.
+          return <div style={{ display: "grid", gap: 10 }}>{searched.map(row)}</div>;
         }
         return <div style={{ display: "grid", gap: 10 }}>{filtered.map(row)}</div>;
       })()}

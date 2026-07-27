@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import KpiRow, { type KpiItem } from "@/components/KpiRow";
+import { invoiceTotal, fetchSettlements, type InvoiceSettlement } from "@/lib/payments";
 import { supabase, SUPABASE_CONFIGURED } from "@/lib/supabaseClient";
 import { formatCAD, todayISO, daysOverdue } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
@@ -14,7 +15,7 @@ import { canSeeMoney, useCurrentRole } from "@/lib/auth";
 import { completedToday, dueToday, type TaskLite } from "@/lib/tasks";
 
 type Recv = { created_at: string; department_id: string | null };
-type Inv = { amount: number | null; due_date: string | null; status: string; vendor_id: string | null };
+type Inv = { id: string; amount: number | null; hst_amount: number | null; freight_charges: number | null; due_date: string | null; status: string; vendor_id: string | null };
 type PO = { vendor_id: string | null; ship_date: string | null; status: string; season_year: number | null };
 type Vend = { id: string; status: string };
 type Dept = { id: string; name: string };
@@ -37,6 +38,7 @@ export default function CommandDashboard() {
   const [vendors, setVendors] = useState<Vend[]>([]);
   const [depts, setDepts] = useState<Dept[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
+  const [settlements, setSettlements] = useState<Map<string, InvoiceSettlement>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +56,7 @@ export default function CommandDashboard() {
       const since = new Date(Date.now() - 2 * 86400000).toISOString();
       const [r, i, p, v, d, t] = await Promise.all([
         scoped(supabase.from("receiving_event").select("created_at, department_id").is("voided_at", null)),
-        scoped(supabase.from("invoice").select("amount, due_date, status, vendor_id").is("voided_at", null)),
+        scoped(supabase.from("invoice").select("id, amount, hst_amount, freight_charges, due_date, status, vendor_id").is("voided_at", null)),
         scoped(supabase.from("purchase_order").select("vendor_id, ship_date, status, season_year").is("voided_at", null)),
         scoped(supabase.from("vendor").select("id, status").is("voided_at", null)),
         scoped(supabase.from("department").select("id, name").order("name")),
@@ -64,7 +66,17 @@ export default function CommandDashboard() {
       const firstError = [r, i, p, v, d, t].find((x) => x.error);
       if (firstError?.error) { setError(firstError.error.message); setLoading(false); return; }
       setRecv((r.data as unknown as Recv[]) || []);
-      setInvoices((i.data as unknown as Inv[]) || []);
+      const invList = (i.data as unknown as Inv[]) || [];
+      setInvoices(invList);
+      // Settled portions per open invoice, so the tiles show what is actually still owed
+      // (the same figure the overdue page and vendor pages show).
+      try {
+        const openIds = invList.filter((x) => x.status !== "paid").map((x) => x.id);
+        const st = await fetchSettlements(openIds);
+        if (!cancelled) setSettlements(st);
+      } catch {
+        if (!cancelled) setSettlements(new Map());
+      }
       setPos((p.data as unknown as PO[]) || []);
       setVendors((v.data as unknown as Vend[]) || []);
       setDepts((d.data as unknown as Dept[]) || []);
@@ -81,20 +93,19 @@ export default function CommandDashboard() {
     // Captures today.
     const capturesToday = recv.filter((r) => localISO(r.created_at) === today).length;
 
-    // Outstanding: open invoice amounts (unpaid, partially paid, post-dated), plus distinct
-    // vendor count. Partially paid counts in full here; the Payments screens show the exact
-    // remaining figure from the allocations.
+    // Outstanding: what is actually still owed on open invoices (goods + freight + HST
+    // minus settled payments), matching the overdue page and every vendor page to the cent.
+    const owedOf = (i: Inv) => Math.max(0, invoiceTotal(i) - (settlements.get(i.id)?.settled || 0));
     const open = invoices.filter((i) => i.status === "unpaid" || i.status === "partially_paid" || i.status === "postdated");
-    const outstanding = open.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const outstanding = open.reduce((s, i) => s + owedOf(i), 0);
     const openVendors = new Set(open.map((i) => i.vendor_id).filter(Boolean)).size;
 
-    // Overdue: unpaid invoices past their due date.
+    // Overdue: open invoices past their due date, at their remaining figure.
     let overdueCount = 0;
     let overdueSum = 0;
-    for (const i of invoices) {
-      if (i.status !== "unpaid" && i.status !== "partially_paid") continue;
+    for (const i of open) {
       const d = daysOverdue(i.due_date);
-      if (d != null && d > 0) { overdueCount++; overdueSum += Number(i.amount) || 0; }
+      if (d != null && d > 0) { overdueCount++; overdueSum += owedOf(i); }
     }
 
     // Late deliveries: orders past their ship date that have not been received or cancelled.
@@ -158,7 +169,7 @@ export default function CommandDashboard() {
       }
     ];
     return items;
-  }, [recv, invoices, pos, vendors, duties, showMoney]);
+  }, [recv, invoices, settlements, pos, vendors, duties, showMoney]);
 
   // By department: receiving events this calendar month, per department.
   const byDept = useMemo(() => {

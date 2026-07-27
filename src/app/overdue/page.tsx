@@ -5,7 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, daysOverdue, round2, todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
-import { canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
+import { REQUIRE_AUTH, canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
 import { canEdit } from "@/lib/edit";
 import {
   PAYMENT_METHODS, CONFIRMATION_FILING, referenceLabel, referenceHelp, invoiceTotal, isFutureDate,
@@ -25,7 +25,15 @@ export default function Overdue() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
-  const [payForm, setPayForm] = useState({ paid_date: todayISO(), method: "cheque", reference: "", notes: "", filing: "" });
+  // Demo mode identity: the error "pick who you are" must be fixable RIGHT HERE, not by
+  // navigating away and losing the filled-in form.
+  const [users, setUsers] = useState<Array<{ id: string; full_name: string; role: string }>>([]);
+  const [actorId, setActorIdState] = useState("");
+  function setActor(uid: string) {
+    setActorIdState(uid);
+    if (typeof window !== "undefined") localStorage.setItem("rgs_actor", uid);
+  }
+  const [payForm, setPayForm] = useState({ amount: "", paid_date: todayISO(), method: "cheque", reference: "", notes: "", filing: "" });
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -37,7 +45,6 @@ export default function Overdue() {
       .select("id, vendor_id, invoice_number, amount, hst_amount, freight_charges, terms, due_date, status, vendor:vendor_id(name)")
       .is("voided_at", null)
       .in("status", ["unpaid", "partially_paid", "postdated"])
-      .not("due_date", "is", null)
       .order("due_date", { ascending: true });
     if (storeId) query = query.eq("store_id", storeId);
     const { data, error } = await query;
@@ -59,6 +66,12 @@ export default function Overdue() {
     setLoading(true);
     (async () => {
       await load();
+      if (!REQUIRE_AUTH) {
+        const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
+        setUsers((us as any[]) || []);
+        const saved = typeof window !== "undefined" ? localStorage.getItem("rgs_actor") : null;
+        setActorIdState(saved || "");
+      }
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,10 +108,19 @@ export default function Overdue() {
       // loaded earlier: this is the double-payment guard when a retry or a second person
       // already settled the invoice.
       const fresh = await fetchSettlements([i.id]);
-      const amount = round2(remainingToAllocate(total(i), fresh.get(i.id)));
-      if (amount <= 0) {
+      const left = round2(remainingToAllocate(total(i), fresh.get(i.id)));
+      if (left <= 0) {
         setError("Nothing left to pay on this invoice; a payment already covers it. Refreshing the list.");
         await load();
+        return;
+      }
+      const amount = round2(Number(payForm.amount) || 0);
+      if (amount <= 0) {
+        setError("Enter the payment amount.");
+        return;
+      }
+      if (amount > left) {
+        setError(`That is more than the ${formatCAD(left)} still owed on this invoice. Lower the amount, or record the extra as a deposit on the Vendor payouts screen.`);
         return;
       }
       await recordPaymentRpc({
@@ -139,6 +161,15 @@ export default function Overdue() {
           <h1 className="page-title">Outstanding and overdue</h1>
         </div>
         <div className="page-actions">
+          {!REQUIRE_AUTH && users.length > 0 && (
+            <>
+              <label className="help" htmlFor="od-actor">Acting as </label>
+              <select id="od-actor" className="input" style={{ width: "auto", display: "inline-block", padding: "6px 8px", marginRight: 10 }} value={actorId} onChange={(e) => setActor(e.target.value)}>
+                <option value="">Pick your name</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+              </select>
+            </>
+          )}
           {showMoney && <span className="tabular help">{formatCAD(outstanding)} owed</span>}
         </div>
       </header>
@@ -186,7 +217,7 @@ export default function Overdue() {
                     <button
                       className="btn-ghost"
                       style={{ padding: "4px 10px" }}
-                      onClick={() => { setPayingId(i.id); setPayForm({ paid_date: todayISO(), method: "cheque", reference: "", notes: "", filing: "" }); }}
+                      onClick={() => { setPayingId(i.id); setPayForm({ amount: String(toPay(i) || ""), paid_date: todayISO(), method: "cheque", reference: "", notes: "", filing: "" }); }}
                       disabled={busy}
                     >
                       Record payment
@@ -196,6 +227,11 @@ export default function Overdue() {
               </div>
               {showMoney && mayEdit && payingId === i.id && (
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+                  <div>
+                    <label className="label" htmlFor={`pay-amt-${i.id}`}>Amount</label>
+                    <input id={`pay-amt-${i.id}`} className="input tabular" style={{ width: 120 }} type="number" step="0.01" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+                    <p className="help" style={{ margin: "4px 0 0" }}>A smaller amount records a partial payment.</p>
+                  </div>
                   <div>
                     <label className="label" htmlFor={`pay-date-${i.id}`}>Paid date</label>
                     <input id={`pay-date-${i.id}`} className="input" type="date" value={payForm.paid_date} onChange={(e) => setPayForm({ ...payForm, paid_date: e.target.value })} />
@@ -224,7 +260,7 @@ export default function Overdue() {
                     <input id={`pay-notes-${i.id}`} className="input" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
                   </div>
                   <button className="btn-primary" onClick={() => recordPayment(i)} disabled={busy}>
-                    {busy ? "Saving." : `Mark paid ${formatCAD(toPay(i))}`}
+                    {busy ? "Saving." : `Record ${formatCAD(round2(Number(payForm.amount) || 0))}`}
                   </button>
                   <button className="btn-ghost" onClick={() => setPayingId(null)} disabled={busy}>Cancel</button>
                 </div>

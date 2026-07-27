@@ -56,7 +56,10 @@ async function fetchAll(db: any, table: string, filter: (q: any) => any): Promis
   const out: any[] = [];
   const page = 1000;
   for (let from = 0; ; from += page) {
-    const { data, error } = await filter(db.from(table).select("*")).range(from, from + page - 1);
+    // A stable ORDER BY makes multi-page reads consistent; without it Postgres may
+    // repeat or drop rows across pages and the archival workbook silently lies.
+    const orderCol = table === "tax_rules" ? "province" : "id";
+    const { data, error } = await filter(db.from(table).select("*").order(orderCol)).range(from, from + page - 1);
     if (error) throw new Error(`${table}: ${error.message}`);
     const rows = (data as any[]) || [];
     out.push(...rows);
@@ -109,7 +112,11 @@ export async function GET(req: NextRequest) {
         : XLSX.utils.aoa_to_sheet([["(no rows)"]]);
       // Sheet names cap at 31 chars in Excel.
       XLSX.utils.book_append_sheet(wb, sheet, spec.name.slice(0, 31));
-      readme.push({ table: spec.name, rows: rows.length, what: spec.what, relationships: spec.links });
+      const voidedCount = rows.filter((r) => r.voided_at).length;
+      readme.push({
+        table: spec.name, rows: rows.length, what: spec.what, relationships: spec.links,
+        note: voidedCount ? `${voidedCount} deleted row${voidedCount === 1 ? "" : "s"} included (voided_at set); filter voided_at blank to match the app` : ""
+      });
     }
 
     const intro = XLSX.utils.json_to_sheet(readme);

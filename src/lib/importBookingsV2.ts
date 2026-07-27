@@ -202,7 +202,7 @@ export type ParsedOrderV2 = {
   order_amount: number; ship_date: string | null; status: "cancelled" | "received" | "ordered"; notes: string;
 };
 export type ParsedInvoiceV2 = {
-  id: string; store_id: string; vendor_id: string; amount: number; hst_amount: number;
+  id: string; store_id: string; vendor_id: string; amount: number; hst_amount: number | null;
   terms: string; due_date: string | null; delivery_status: string | null;
   status: "paid" | "postdated" | "unpaid" | "partially_paid";
 };
@@ -236,7 +236,8 @@ export type ParsedImportV2 = {
 
 export function parseWorkbookV2(
   sheets: { name: string; rows: any[][] }[],
-  storeId: string
+  storeId: string,
+  defaultYear: number = new Date().getFullYear()
 ): ParsedImportV2 {
   const vendors: ParsedVendorV2[] = [];
   const orders: ParsedOrderV2[] = [];
@@ -266,7 +267,7 @@ export function parseWorkbookV2(
           store_id: storeId,
           department_id: SHEET_DEPT["dry goods"],
           topic: "Asking inventory: " + item,
-          body: `${item} — on the owner's asking-inventory wish list from the bookings workbook.${remark ? ` Owner's remark: ${remark}` : ""}`,
+          body: `${item}: on the owner's asking-inventory wish list from the bookings workbook.${remark ? ` Owner's remark: ${remark}` : ""}`,
           tags: ["reorder", "asking-inventory"]
         });
       }
@@ -339,7 +340,7 @@ export function parseWorkbookV2(
         const poNotes = [
           deliveryComments,
           // A text ship cell like "April1,May1, june1" is a split shipment; keep the words.
-          shipText && dateISO(shipRaw) === null ? `ship: ${shipText}` : (typeof shipRaw === "string" && /,|&|and/i.test(shipText) ? `ship: ${shipText}` : ""),
+          shipText && dateISO(shipRaw, defaultYear) === null ? `ship: ${shipText}` : (typeof shipRaw === "string" && /,|&|and/i.test(shipText) ? `ship: ${shipText}` : ""),
           orderFiling ? `confirmation filed: ${orderFiling}` : ""
         ].filter(Boolean).join(" | ");
         orders.push({
@@ -347,9 +348,9 @@ export function parseWorkbookV2(
           store_id: storeId,
           vendor_id: vId,
           department_id: dept,
-          season_year: 2026,
+          season_year: defaultYear,
           order_amount: amount,
-          ship_date: dateISO(shipRaw),
+          ship_date: dateISO(shipRaw, defaultYear),
           status: poStatus(orderStatus, deliveryStatusText, shipText),
           notes: poNotes
         });
@@ -368,18 +369,26 @@ export function parseWorkbookV2(
         invId = uuid(`v2|inv|${sheet.name}|${name.toLowerCase()}${dupSuffix}`);
         const delivered = /deliver|received/i.test(deliveryStatusText) ? "delivered"
           : deliveryStatusText ? "not_delivered" : null;
-        // The inserted status is provisional: any payment row below re-derives it through
-        // the payments engine trigger, so partial and post-dated always settle correctly.
+        // The inserted status is provisional (the engine trigger re-derives it from any
+        // payment emitted below), but it must never claim what no payment backs:
+        // post-dated only with a dated cheque behind it; a wordy "partial" with no
+        // figure stays unpaid with the words kept in the vendor note.
+        const pdcDatePeek = dateISO(cell(r, "payDate"), defaultYear) || dateISO(dueRaw, defaultYear);
         invoices.push({
           id: invId,
           store_id: storeId,
           vendor_id: vId,
           amount: invAmount,
-          hst_amount: 0,
+          // The workbook carries no HST column: null means "refer to the actual invoice",
+          // never 0 (which would assert a no-tax vendor the data cannot support).
+          hst_amount: null,
           terms,
-          due_date: dateISO(dueRaw),
+          due_date: dateISO(dueRaw, defaultYear),
           delivery_status: delivered,
-          status: paid ? (partial ? "partially_paid" : "paid") : postdated ? "postdated" : "unpaid"
+          status: paid && !partial ? "paid"
+            : (paid || partial) && num(cell(r, "payAmount")) !== null ? "partially_paid"
+            : postdated && pdcDatePeek ? "postdated"
+            : "unpaid"
         });
       }
 
@@ -387,46 +396,50 @@ export function parseWorkbookV2(
       const filingText = ctext(r, "payFiling");
       const filing = filingFromText(filingText);
       const payAmount = num(cell(r, "payAmount"));
+      const pdcDate = dateISO(payDateRaw, defaultYear) || dateISO(dueRaw, defaultYear);
 
-      if (invId && paid) {
-        // What the sheet says was paid; the engine derives partially_paid when it is less
-        // than the invoice. Raw wording that did not fit a column survives in the notes.
-        const amt = payAmount !== null ? payAmount : (invAmount as number);
+      // What the sheet says has actually been paid so far:
+      //   fully paid       -> Payment$ if stated, else the invoice total
+      //   "2 Partial ..."  -> ONLY the stated Payment$ (a missing figure must never
+      //                       fabricate a full payment the sheet did not claim)
+      const emitAmt = paid && !partial ? (payAmount !== null ? payAmount : (invAmount as number))
+        : (paid || partial) ? payAmount
+        : null;
+
+      if (invId && emitAmt !== null && emitAmt > 0) {
         const payNotes = [
           payComments,
+          partial ? "partial per the sheet" : "",
           methodText && methodFromText(methodText) === "other" ? `method: ${methodText}` : "",
           filingText && !filing ? `filing: ${filingText}` : "",
-          text(payDateRaw) && dateISO(payDateRaw) === null ? `dates: ${text(payDateRaw)}` : "",
+          text(payDateRaw) && dateISO(payDateRaw, defaultYear) === null ? `dates: ${text(payDateRaw)}` : "",
           /,|and|&/i.test(text(payDateRaw)) && typeof payDateRaw === "string" ? `dates: ${text(payDateRaw)}` : "",
           payStatusText && !/^paid$/i.test(payStatusText) ? `status: ${payStatusText}` : ""
         ].filter(Boolean);
         payments.push({
           id: uuid(`v2|pay|${sheet.name}|${name.toLowerCase()}${dupSuffix}`),
           invoice_id: invId,
-          amount: round2(amt),
+          amount: round2(emitAmt),
           method: methodFromText(methodText) || methodFromText(terms, true),
-          paid_date: dateISO(payDateRaw) || dateISO(payMonthText),
+          paid_date: dateISO(payDateRaw, defaultYear) || dateISO(payMonthText, defaultYear),
           reference: null,
           notes: [...new Set(payNotes)].join(" | ") || null,
           confirmation_filing: filing
         });
-        paySum += amt;
-      } else if (invId && postdated) {
+        paySum += emitAmt;
+      } else if (invId && postdated && pdcDate) {
         // A post-dated cheque already written: emit the future-dated payment the engine
         // derives "postdated" from (a bare status would flip back to unpaid on reconcile).
-        const pdcDate = dateISO(payDateRaw) || dateISO(dueRaw);
-        if (pdcDate) {
-          payments.push({
-            id: uuid(`v2|pdc|${sheet.name}|${name.toLowerCase()}${dupSuffix}`),
-            invoice_id: invId,
-            amount: round2(payAmount !== null ? payAmount : (invAmount as number)),
-            method: methodFromText(methodText) || "cheque",
-            paid_date: pdcDate,
-            reference: null,
-            notes: "Post-dated per the bookings workbook",
-            confirmation_filing: filing
-          });
-        }
+        payments.push({
+          id: uuid(`v2|pdc|${sheet.name}|${name.toLowerCase()}${dupSuffix}`),
+          invoice_id: invId,
+          amount: round2(payAmount !== null ? payAmount : (invAmount as number)),
+          method: methodFromText(methodText) || "cheque",
+          paid_date: pdcDate,
+          reference: null,
+          notes: "Post-dated per the bookings workbook",
+          confirmation_filing: filing
+        });
       }
 
       const creditAmount = num(cell(r, "credit"));

@@ -10,7 +10,7 @@ import { canSeeMoney, useCurrentRole } from "@/lib/auth";
 import { fetchSettlements, type InvoiceSettlement } from "@/lib/payments";
 
 type Inv = { id: string; amount: number | null; hst_amount: number | null; freight_charges: number | null; invoice_date: string | null; created_at: string | null; due_date: string | null; status: string; vendor_id: string | null; vendor: { name: string; department_id: string | null } | null };
-type PO = { vendor_id: string | null; order_amount: number | null; department_id: string | null };
+type PO = { vendor_id: string | null; order_amount: number | null; department_id: string | null; ship_date: string | null; status: string | null };
 type Dept = { id: string; name: string; accent_color: string | null; parent_department_id: string | null };
 type Vend = { id: string; name: string; department_id: string | null };
 
@@ -52,12 +52,12 @@ export default function Reports() {
       setInvoices(invList);
       // Settled amounts per open invoice, so aging shows what is actually still owed.
       try {
-        const openIds = invList.filter((i) => i.status === "unpaid" || i.status === "partially_paid").map((i) => i.id);
+        const openIds = invList.filter((i) => i.status === "unpaid" || i.status === "partially_paid" || i.status === "postdated").map((i) => i.id);
         setSettlements(await fetchSettlements(openIds));
       } catch {
         setSettlements(new Map());
       }
-      let poq = supabase.from("purchase_order").select("vendor_id, order_amount, department_id").is("voided_at", null);
+      let poq = supabase.from("purchase_order").select("vendor_id, order_amount, department_id, ship_date, status").is("voided_at", null);
       if (storeId) poq = poq.eq("store_id", storeId);
       const po = await poq;
       setPos((po.data as unknown as PO[]) || []);
@@ -95,7 +95,7 @@ export default function Reports() {
   const aging = useMemo(() => {
     const b = { current: 0, b1: 0, b2: 0, b3: 0 };
     for (const i of invoices) {
-      if (i.status !== "unpaid" && i.status !== "partially_paid") continue;
+      if (i.status !== "unpaid" && i.status !== "partially_paid" && i.status !== "postdated") continue;
       // What is still owed: goods + freight + HST minus what has settled. A partially paid
       // invoice ages only its remainder, matching the overdue screen's owed figure.
       const total = invAmount(i) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
@@ -164,6 +164,29 @@ export default function Reports() {
   }, [invoices, depts, hstYear]);
   const hstTotal = hstByDept.reduce((s, r) => s + r.hst, 0);
   const maxHst = Math.max(1, ...hstByDept.map((r) => r.hst));
+  // Tax mode "refer to the actual invoice" stores a blank HST; those invoices are real tax
+  // the report cannot see, so the report says so instead of silently under-counting.
+  const hstUnknownCount = useMemo(
+    () => invoices.filter((i) => i.hst_amount == null && invoiceYear(i) === hstYear).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [invoices, hstYear]
+  );
+
+  // Late deliveries: the Today tile's number, itemized, so clicking it lands on the rows
+  // to act on (same filter as the tile: past ship date, not received, not cancelled).
+  const lateDeliveries = useMemo(() => {
+    const names = new Map(vendors.map((v) => [v.id, v.name]));
+    return pos
+      .filter((p) => p.ship_date && (daysOverdue(p.ship_date) || 0) > 0 && p.status !== "received" && p.status !== "cancelled")
+      .map((p) => ({
+        vendorId: p.vendor_id,
+        vendor: (p.vendor_id && names.get(p.vendor_id)) || "Vendor",
+        ship: p.ship_date as string,
+        daysLate: daysOverdue(p.ship_date) || 0,
+        amount: Number(p.order_amount) || 0
+      }))
+      .sort((a, b) => b.daysLate - a.daysLate);
+  }, [pos, vendors]);
 
   // Department drill-down (the board's SCRUM-8 ask): every department's money picture at a
   // glance, opening into its vendors. Owed follows the app's rule: post-dated money has not
@@ -172,7 +195,8 @@ export default function Reports() {
     const invTotal = (i: Inv) => invAmount(i) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
     const owedOf = (i: Inv): number => {
       if (i.status === "paid") return 0;
-      if (i.status === "postdated") return invTotal(i);
+      // Post-dated still counts as owed (the money has not left), but any portion that
+      // HAS settled comes off, matching the overdue and vendor pages to the cent.
       return Math.max(0, invTotal(i) - (settlements.get(i.id)?.settled || 0));
     };
     return depts
@@ -249,7 +273,7 @@ export default function Reports() {
           </section>
 
           <section>
-            <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Ordered vs invoiced by department</h2>
+            <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Ordered vs invoiced by department <span className="help" style={{ fontWeight: 400 }}>(before HST and freight)</span></h2>
             <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
               {byDept.length === 0 ? <p className="help" style={{ margin: 0 }}>No data.</p> :
                 byDept.map((d) => (
@@ -265,6 +289,23 @@ export default function Reports() {
                   <span><span style={{ display: "inline-block", width: 10, height: 10, background: paletteColor(1), borderRadius: 2, marginRight: 5 }} />Invoiced</span>
                 </div>
               )}
+            </div>
+          </section>
+
+          <section>
+            <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Late deliveries</h2>
+            <div className="card" style={{ padding: 16, display: "grid", gap: 6 }}>
+              {lateDeliveries.length === 0 && <p className="help" style={{ margin: 0 }}>Nothing is past its expected ship date.</p>}
+              {lateDeliveries.map((l, idx) => (
+                <div key={idx} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", fontSize: 13, flexWrap: "wrap" }}>
+                  <span style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
+                    {l.vendorId ? <a href={`/vendors/${l.vendorId}`} style={{ textDecoration: "none", fontWeight: 600 }}>{l.vendor}</a> : <strong>{l.vendor}</strong>}
+                    <span className="chip chip-warning">{l.daysLate} day{l.daysLate === 1 ? "" : "s"} late</span>
+                  </span>
+                  <span className="help tabular">expected {l.ship}{l.amount ? ` . ${formatCAD(l.amount)}` : ""}</span>
+                </div>
+              ))}
+              {lateDeliveries.length > 0 && <p className="help" style={{ margin: "6px 0 0" }}>A vendor name opens the ledger; mark the order received there when it lands, or phone the rep.</p>}
             </div>
           </section>
 
@@ -311,7 +352,7 @@ export default function Reports() {
             <div className="card" style={{ padding: 16 }}>
               {aging.every((a) => a.value === 0) ? <p className="help" style={{ margin: 0 }}>Nothing outstanding.</p> :
                 aging.map((a) => <Bar key={a.label} label={a.label} value={a.value} max={maxAging} color={a.color} display={formatCAD(a.value)} />)}
-              <p className="help" style={{ marginTop: 10, marginBottom: 0 }}>From unpaid invoice due dates. Current means not yet due.</p>
+              <p className="help" style={{ marginTop: 10, marginBottom: 0 }}>From open invoice due dates, post-dated remainders included. Current means not yet due.</p>
             </div>
           </section>
 
@@ -360,6 +401,7 @@ export default function Reports() {
               )}
               <p className="help" style={{ marginTop: 10, marginBottom: 0 }}>
                 From the HST line on every invoice, grouped by the vendor&apos;s department (sections roll up into their category).
+                {hstUnknownCount > 0 && ` ${hstUnknownCount} invoice${hstUnknownCount === 1 ? " says" : "s say"} see-the-invoice for tax; that HST is not in this total until it is entered.`}
                 Uses the invoice date, falling back to due date, then entry date. For the six-year records, the full export keeps every line.
               </p>
             </div>
@@ -370,7 +412,7 @@ export default function Reports() {
             <div className="card tbl-wrap" style={{ padding: 0 }}>
               <div style={{ minWidth: 560 }}>
                 <div className="help" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.2fr 1fr", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
-                  <span>Vendor</span><span style={{ textAlign: "right" }}>Orders</span><span style={{ textAlign: "right" }}>Invoiced</span><span style={{ textAlign: "right" }}>Discrepancies</span>
+                  <span>Vendor</span><span style={{ textAlign: "right" }}>Orders</span><span style={{ textAlign: "right" }}>Invoiced (pre-tax)</span><span style={{ textAlign: "right" }}>Discrepancies</span>
                 </div>
                 {scorecard.length === 0 && <div style={{ padding: 14 }}><span className="help">No vendor activity.</span></div>}
                 {scorecard.map((r) => (
