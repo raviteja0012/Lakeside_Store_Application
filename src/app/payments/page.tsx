@@ -11,6 +11,7 @@
 // invoice statuses + audit, one transaction.
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, dueBand, round2, todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
@@ -31,8 +32,25 @@ type VendorLite = {
   name: string;
   department_id: string | null;
   status: string;
+  products_we_carry: string | null;
   department: { name: string; accent_color: string | null } | null;
 };
+
+// "Mugs, wallets, everyday gifts" reads as quiet chips wherever vendors are picked or
+// shown. Free text stays the storage (it drifts over time and the search box already
+// matches it); the chips are only how it reads.
+function productChips(products: string | null | undefined, max = 4) {
+  const items = (products || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!items.length) return null;
+  return (
+    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+      {items.slice(0, max).map((p) => (
+        <span key={p} className="chip chip-neutral" style={{ fontSize: 11 }}>{p}</span>
+      ))}
+      {items.length > max && <span className="help">+{items.length - max}</span>}
+    </span>
+  );
+}
 
 export default function Payments() {
   const { storeId, ready } = useActiveStore();
@@ -67,8 +85,10 @@ export default function Payments() {
   const [filing, setFiling] = useState(""); // digital | physical | "" (not said)
 
   // Quick-add vendor, so entering a category never dead-ends when the vendor is new.
+  // products and notes are optional color: what the vendor supplies ("Mugs, wallets") and
+  // any rule worth remembering. Both editable later from the vendor page as things drift.
   const [showNewVendor, setShowNewVendor] = useState(false);
-  const [nvForm, setNvForm] = useState({ name: "", department_id: "", phone: "", default_terms: "" });
+  const [nvForm, setNvForm] = useState({ name: "", department_id: "", phone: "", default_terms: "", products: "", notes: "" });
 
   // Editing a recorded payment: the facts (date, method, reference, notes, filing) are
   // correctable in place; a wrong amount means void and re-record.
@@ -96,7 +116,7 @@ export default function Payments() {
 
     let vq = supabase
       .from("vendor")
-      .select("id, name, department_id, status, department:department_id(name, accent_color)")
+      .select("id, name, department_id, status, products_we_carry, department:department_id(name, accent_color)")
       .is("voided_at", null)
       .order("name");
     if (storeId) vq = vq.eq("store_id", storeId);
@@ -234,7 +254,7 @@ export default function Payments() {
     setNotes("");
     setFiling("");
     setShowNewVendor(false);
-    setNvForm({ name: "", department_id: "", phone: "", default_terms: "" });
+    setNvForm({ name: "", department_id: "", phone: "", default_terms: "", products: "", notes: "" });
   }
 
   // Quick-add a vendor without leaving the payout flow. Category comes from the active
@@ -263,6 +283,8 @@ export default function Payments() {
           name,
           phone: nvForm.phone.trim() || null,
           default_terms: nvForm.default_terms.trim() || null,
+          products_we_carry: nvForm.products.trim() || null,
+          notes: nvForm.notes.trim() || null,
           status: "active"
         })
         .select("id")
@@ -273,7 +295,7 @@ export default function Payments() {
         await supabase.from("activity_log").insert({ actor_id: actor, action: "vendor_added", entity: "vendor", entity_id: r.data.id });
       }
       setShowNewVendor(false);
-      setNvForm({ name: "", department_id: "", phone: "", default_terms: "" });
+      setNvForm({ name: "", department_id: "", phone: "", default_terms: "", products: "", notes: "" });
       await load();
       pickVendor(r.data.id as string);
     } catch (e: any) {
@@ -681,7 +703,10 @@ export default function Payments() {
                     style={{ padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", textAlign: "left" }}
                     onClick={() => pickVendor(v.id)}
                   >
-                    <span style={{ fontWeight: 600 }}>{v.name}</span>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ fontWeight: 600 }}>{v.name}</span>
+                      {v.products_we_carry && <span style={{ display: "block", marginTop: 3 }}>{productChips(v.products_we_carry, 3)}</span>}
+                    </span>
                     <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       {v.department ? (
                         <span className="chip" style={{ background: "#EEF1F4", color: v.department.accent_color || "#6B7480" }}>
@@ -737,6 +762,10 @@ export default function Payments() {
                     </div>
                     <div><label className="label" htmlFor="nv-phone">Phone</label><input id="nv-phone" className="input" value={nvForm.phone} onChange={(e) => setNvForm({ ...nvForm, phone: e.target.value })} /></div>
                     <div><label className="label" htmlFor="nv-terms">Terms</label><input id="nv-terms" className="input" placeholder="Net 30" value={nvForm.default_terms} onChange={(e) => setNvForm({ ...nvForm, default_terms: e.target.value })} /></div>
+                    <div><label className="label" htmlFor="nv-products">What they supply (optional)</label><input id="nv-products" className="input" placeholder="Mugs, wallets, everyday gifts" value={nvForm.products} onChange={(e) => setNvForm({ ...nvForm, products: e.target.value })} />
+                      <p className="help" style={{ margin: "4px 0 0" }}>Comma-separated; shows as small labels and is searchable. Fine to change any time.</p>
+                    </div>
+                    <div><label className="label" htmlFor="nv-notes">Notes (optional)</label><input id="nv-notes" className="input" placeholder="Rep visits in summer, order by March" value={nvForm.notes} onChange={(e) => setNvForm({ ...nvForm, notes: e.target.value })} /></div>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button className="btn-primary" onClick={addVendor} disabled={busy}>{busy ? "Saving." : "Add vendor"}</button>
@@ -903,7 +932,11 @@ export default function Payments() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                   <div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <strong>{p.vendor?.name || "Vendor"}</strong>
+                      {p.vendor_id ? (
+                        <Link href={`/vendors/${p.vendor_id}`} style={{ fontWeight: 700, textDecoration: "none" }}>{p.vendor?.name || "Vendor"}</Link>
+                      ) : (
+                        <strong>{p.vendor?.name || "Vendor"}</strong>
+                      )}
                       <span className="chip chip-progress">clears {p.paid_date}</span>
                     </div>
                     <div className="help" style={{ marginTop: 4 }}>
@@ -943,7 +976,11 @@ export default function Payments() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                   <div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <strong>{p.vendor?.name || "Vendor"}</strong>
+                      {p.vendor_id ? (
+                        <Link href={`/vendors/${p.vendor_id}`} style={{ fontWeight: 700, textDecoration: "none" }}>{p.vendor?.name || "Vendor"}</Link>
+                      ) : (
+                        <strong>{p.vendor?.name || "Vendor"}</strong>
+                      )}
                       {isFutureDate(p.paid_date) && <span className="chip chip-progress">post-dated</span>}
                     </div>
                     <div className="help" style={{ marginTop: 4 }}>

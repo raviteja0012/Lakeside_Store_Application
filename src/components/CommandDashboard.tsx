@@ -116,40 +116,45 @@ export default function CommandDashboard() {
     const doneToday = duties.filter((t) => completedToday(t)).length;
 
     const items: KpiItem[] = [
-      { title: "Captures today", value: String(capturesToday), icon: "📦", foot: "captures" },
+      { title: "Captures today", value: String(capturesToday), icon: "📦", foot: "captures", href: "/feed" },
       {
         title: "Tasks today",
         value: `${doneToday}/${doneToday + dueNow}`,
         icon: "✅",
         tone: dueNow > 0 ? "warning" : undefined,
-        foot: dueNow > 0 ? `${dueNow} still to do` : "all done"
+        foot: dueNow > 0 ? `${dueNow} still to do` : "all done",
+        href: "/maintenance"
       },
       {
         title: "Outstanding",
         value: showMoney ? formatCAD(outstanding) : "—",
         icon: "🧾",
-        foot: showMoney ? `${openVendors} ${openVendors === 1 ? "vendor" : "vendors"}` : "leads and up"
+        foot: showMoney ? `${openVendors} ${openVendors === 1 ? "vendor" : "vendors"}` : "leads and up",
+        href: "/overdue"
       },
       {
         title: "Overdue",
         value: String(overdueCount),
         icon: "⏰",
         tone: overdueCount > 0 ? "error" : undefined,
-        foot: showMoney ? formatCAD(overdueSum) : "past due"
+        foot: showMoney ? formatCAD(overdueSum) : "past due",
+        href: "/overdue"
       },
       {
         title: "Late deliveries",
         value: String(lateDeliveries),
         icon: "🚚",
         tone: lateDeliveries > 0 ? "warning" : undefined,
-        foot: "past ship date"
+        foot: "past ship date",
+        href: "/reports"
       },
       {
         title: "To reorder",
         value: String(toReorder),
         icon: "🔁",
         tone: toReorder > 0 ? "warning" : undefined,
-        foot: "vendors"
+        foot: "vendors",
+        href: "/reorder"
       }
     ];
     return items;

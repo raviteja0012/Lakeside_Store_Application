@@ -344,3 +344,20 @@ job invoices and send STATEMENTS of the remaining amount from that point on. Bui
 same day: a Statement view on every vendor page (charges and payments in date order with a
 running balance and a printable layout), so the vendor's mailed statement can be checked
 line by line, and the installment auto-spread pays it down oldest-first.
+
+## Sync vision and linking round, 2026-07-27 (Raviteja)
+
+Decisions from this discussion, all shipped the same day unless marked:
+- Vendor "what they supply" info: keep the existing products_we_carry free text as the
+  storage (volatile by nature, already searchable), capture it optionally right in the
+  payments quick-add along with notes, and render it as small neutral chips on the vendor
+  page and the payout vendor picker. No new grain, no schema change.
+- The live Google Sheets are the current system of record; the agreed direction is two-way
+  sync (pull deltas from the sheets, push app data back) until full migration or a
+  permanent hybrid. Design and phases: docs/SYNC_PLAN.md. Phase 1 (importer refresh of
+  existing vendors' info fields from the sheet) shipped; Phase 2 needs the two live sheets
+  shared with raviteja.potluru@gmail.com and a service account.
+- Cross-linking: vendor names on Due and overdue and on both payout lists now open the
+  vendor ledger; Today's KPI tiles open the screen where each number is acted on; the
+  vendor header shows the latest order and latest cleared payment at the top right.
+- Jira tasks for the sync phases: queued for when the Atlassian connector is back online.
