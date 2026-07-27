@@ -228,13 +228,24 @@ export default function Payments() {
     };
   }, [departments]);
 
-  const filteredVendors = useMemo(() => {
+  const vendorMatches = useMemo(() => {
     const q = search.trim().toLowerCase();
     return vendors
       .filter((v) => deptFilter === "all" || !v.department_id || inCategory(v.department_id, deptFilter))
-      .filter((v) => !q || v.name.toLowerCase().includes(q))
-      .slice(0, 30);
+      .filter((v) => !q || v.name.toLowerCase().includes(q));
   }, [vendors, deptFilter, search, inCategory]);
+  // Browsing everything stays short, but a chosen category or a search shows EVERY match:
+  // the owner's big department has 70+ vendors and number 31 must not silently vanish.
+  const vendorsCapped = deptFilter === "all" && !search.trim() && vendorMatches.length > 30;
+  const filteredVendors = vendorsCapped ? vendorMatches.slice(0, 30) : vendorMatches;
+  // Counts on the chips: how many vendors are filed under each category (sections roll up).
+  const categoryCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const d of topCategories) {
+      m.set(d.id, vendors.filter((v) => v.department_id && inCategory(v.department_id, d.id)).length);
+    }
+    return m;
+  }, [topCategories, vendors, inCategory]);
 
   const allocTotal = useMemo(
     () => Object.values(alloc).reduce((s, v) => s + (Number(v) || 0), 0),
@@ -676,7 +687,7 @@ export default function Payments() {
                   style={{ cursor: "pointer", border: deptFilter === "all" ? "1px solid var(--primary-base, #2F6FEB)" : "1px solid var(--border)", background: "#EEF1F4" }}
                   onClick={() => setDeptFilter("all")}
                 >
-                  All categories
+                  All categories . {vendors.length}
                 </button>
                 {topCategories.map((d) => (
                   <button
@@ -685,7 +696,7 @@ export default function Payments() {
                     style={{ cursor: "pointer", border: deptFilter === d.id ? "1px solid var(--primary-base, #2F6FEB)" : "1px solid var(--border)", background: "#EEF1F4", color: d.accent_color || undefined }}
                     onClick={() => setDeptFilter(deptFilter === d.id ? "all" : d.id)}
                   >
-                    {d.name}
+                    {d.name}{categoryCounts.get(d.id) ? ` . ${categoryCounts.get(d.id)}` : ""}
                   </button>
                 ))}
               </div>
@@ -746,6 +757,11 @@ export default function Payments() {
                   </div>
                 ))}
                 {filteredVendors.length === 0 && <p className="help">No vendors match. Clear the search or the category filter, or add the vendor below.</p>}
+                {vendorsCapped && (
+                  <p className="help" style={{ margin: 0 }}>
+                    Showing 30 of {vendorMatches.length}. Pick a category chip or start typing to see everyone.
+                  </p>
+                )}
               </div>
               {!showNewVendor && (
                 <div>
