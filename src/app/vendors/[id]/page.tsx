@@ -623,6 +623,40 @@ export default function VendorDetail() {
     .filter((i) => i.status !== "paid")
     .reduce((s, i) => s + remainingOwed(invTotal(i), settlements.get(i.id)), 0);
 
+  // The statement: what a vendor mails once an account runs past due, rebuilt from our own
+  // ledger. Charges and payments in date order with a running balance, so their "remaining
+  // amount" letter can be checked line by line against ours. Post-dated cheques appear as
+  // scheduled lines but do not reduce the balance until their date arrives.
+  const statement = (() => {
+    type Row = { date: string; label: string; detail: string; charge: number; credit: number; scheduled: boolean };
+    const rows: Row[] = [];
+    for (const i of invoices) {
+      rows.push({
+        date: i.invoice_date || i.due_date || "",
+        label: `Invoice ${i.invoice_number || ""}`.trim(),
+        detail: [i.terms, i.due_date ? `due ${i.due_date}` : ""].filter(Boolean).join(" . "),
+        charge: invTotal(i), credit: 0, scheduled: false
+      });
+    }
+    for (const p of payments) {
+      const scheduled = isFutureDate(p.paid_date);
+      rows.push({
+        date: p.paid_date || "",
+        label: scheduled ? `Post-dated ${methodLabel(p.method)}` : `Payment, ${methodLabel(p.method)}`,
+        detail: [p.reference, (p.payment_allocation || []).map((a) => a.invoice?.invoice_number).filter(Boolean).join(", ")].filter(Boolean).join(" . "),
+        charge: 0, credit: Number(p.amount) || 0, scheduled
+      });
+    }
+    rows.sort((a, b) => (a.date || "9999-99-99") < (b.date || "9999-99-99") ? -1 : 1);
+    let bal = 0;
+    const withBal = rows.map((r) => {
+      if (!r.scheduled) bal = round2(bal + r.charge - r.credit);
+      return { ...r, balance: bal };
+    });
+    return { rows: withBal, ending: bal };
+  })();
+  const [showStatement, setShowStatement] = useState(false);
+
   if (loading) return <p className="help">Loading vendor.</p>;
   if (error && !vendor)
     return (
@@ -1008,6 +1042,59 @@ export default function VendorDetail() {
           ))}
         </div>
       </section>
+
+      {showMoney && (
+        <section>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <h2 style={{ fontSize: 16, margin: 0 }}>Statement</h2>
+            <div style={{ display: "flex", gap: 8 }}>
+              {showStatement && <button className="btn-ghost" onClick={() => window.print()}>Print</button>}
+              <button className="btn-ghost" onClick={() => setShowStatement((s) => !s)}>{showStatement ? "Close" : "Open statement"}</button>
+            </div>
+          </div>
+          {showStatement && (
+            <div className="card" style={{ padding: 16, display: "grid", gap: 6 }}>
+              <p className="help" style={{ margin: "0 0 6px" }}>
+                Every charge and payment in date order, the way the vendor&rsquo;s own statement reads. Check their
+                &ldquo;remaining amount&rdquo; against the ending balance here, line by line.
+              </p>
+              <div className="help" style={{ display: "grid", gridTemplateColumns: "90px 1fr 90px 90px 100px", gap: 8, fontWeight: 600 }}>
+                <span>Date</span><span>Item</span><span style={{ textAlign: "right" }}>Charge</span><span style={{ textAlign: "right" }}>Payment</span><span style={{ textAlign: "right" }}>Balance</span>
+              </div>
+              {statement.rows.length === 0 && <p className="help" style={{ margin: 0 }}>Nothing on file yet.</p>}
+              {statement.rows.map((r, idx) => (
+                <div key={idx} style={{ display: "grid", gridTemplateColumns: "90px 1fr 90px 90px 100px", gap: 8, fontSize: 13, alignItems: "baseline", opacity: r.scheduled ? 0.75 : 1 }}>
+                  <span className="tabular">{r.date || ""}</span>
+                  <span style={{ minWidth: 0 }}>
+                    {r.label}
+                    {r.scheduled && <span className="chip chip-progress" style={{ marginLeft: 6 }}>not cleared yet</span>}
+                    {r.detail && <span className="help" style={{ display: "block" }}>{r.detail}</span>}
+                  </span>
+                  <span className="tabular" style={{ textAlign: "right" }}>{r.charge ? formatCAD(r.charge) : ""}</span>
+                  <span className="tabular" style={{ textAlign: "right" }}>{r.credit ? formatCAD(r.credit) : ""}</span>
+                  <span className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{r.scheduled ? "" : formatCAD(r.balance)}</span>
+                </div>
+              ))}
+              <div style={{ borderTop: "1px solid var(--border)", marginTop: 6, paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 600 }}>Remaining to pay off</span>
+                <span className="tabular" style={{ fontWeight: 700, fontSize: 16 }}>{formatCAD(statement.ending)}</span>
+              </div>
+              {Math.abs(statement.ending - outstanding) >= 0.01 && (
+                <p className="help" style={{ margin: 0 }}>
+                  The Outstanding figure above shows {formatCAD(outstanding)} because a deposit or prepayment has not been
+                  applied to a specific invoice yet; the statement subtracts every cleared payment.
+                </p>
+              )}
+              {credits.length > 0 && (
+                <p className="help" style={{ margin: 0 }}>
+                  Credits on file ({credits.map((c) => formatCAD(c.credit_amount)).join(", ")}) are tracked in the Credits
+                  section and are not subtracted here until the vendor applies them on their side.
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {showMoney && (
         <section>
