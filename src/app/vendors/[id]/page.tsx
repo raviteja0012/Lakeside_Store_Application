@@ -623,6 +623,17 @@ export default function VendorDetail() {
     .filter((i) => i.status !== "paid")
     .reduce((s, i) => s + remainingOwed(invTotal(i), settlements.get(i.id)), 0);
 
+  // The two situations that make a bare $0.00 read like a bug (Ravi asked): money paid on
+  // account with no invoice to land on, and orders whose invoices have not been entered
+  // yet. Say both out loud next to the Outstanding figure.
+  const depositOnAccount = payments
+    .filter((p) => (p.payment_allocation || []).length === 0 && !isFutureDate(p.paid_date))
+    .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const invoicedTotal = invoices.reduce((s, i) => s + invTotal(i), 0);
+  const orderedAwaitingInvoice = Math.max(0,
+    orders.filter((o) => o.status !== "cancelled").reduce((s, o) => s + (Number(o.order_amount) || 0), 0) - invoicedTotal
+  );
+
   // The statement: what a vendor mails once an account runs past due, rebuilt from our own
   // ledger. Charges and payments in date order with a running balance, so their "remaining
   // amount" letter can be checked line by line against ours. Post-dated cheques appear as
@@ -717,6 +728,16 @@ export default function VendorDetail() {
                   <Link href={`/payments?vendor=${vendor.id}`} className="btn-ghost" style={{ padding: "4px 10px", marginTop: 6, display: "inline-block", textDecoration: "none" }}>
                     Pay across invoices
                   </Link>
+                )}
+                {depositOnAccount > 0 && (
+                  <div className="help" style={{ marginTop: 4 }}>
+                    {formatCAD(depositOnAccount)} paid on account, waiting for an invoice
+                  </div>
+                )}
+                {orderedAwaitingInvoice > 0 && (
+                  <div className="help" style={{ marginTop: 2 }}>
+                    {formatCAD(orderedAwaitingInvoice)} ordered, invoice not entered yet
+                  </div>
                 )}
                 {/* The glance facts Ravi asked for: the latest order and the latest cleared
                     payment, right where the eye lands when the page opens. */}
