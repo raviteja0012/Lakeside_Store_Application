@@ -82,6 +82,24 @@ a { color: var(--primary); }
 }
 .brand-name { font-weight: 700; font-size: 13.5px; line-height: 1.25; }
 
+/* ---------- Login hero ----------
+   The front door of the app carries the store itself. When public/storefront.jpg exists
+   (the winter dusk photo of the real building), it fills the screen behind a darkening
+   overlay so the sign-in card stays readable. Without the file, the layered dusk gradient
+   beneath still gives the same evening-sky mood, so nothing ever looks broken. */
+.login-hero {
+  min-height: 100vh; display: grid; place-items: center; padding: 16px;
+  background-image:
+    linear-gradient(180deg, rgba(24, 28, 44, 0.45) 0%, rgba(24, 22, 30, 0.55) 60%, rgba(20, 16, 12, 0.65) 100%),
+    url("/storefront.jpg"),
+    linear-gradient(180deg, #2E3D55 0%, #55506E 55%, #8A6D5E 100%);
+  background-size: cover, cover, cover;
+  background-position: center, center 62%, center;
+  background-repeat: no-repeat;
+}
+.login-hero .card { box-shadow: var(--shadow-md); }
+.login-hero .help a { color: var(--primary); }
+
 /* ---------- Storefront plaque (login) ----------
    The full sign, for the front door of the app: deep-brown boards, double gold inline
    border, golden slab lettering. Rendered in CSS so nothing heavy loads before sign-in. */
