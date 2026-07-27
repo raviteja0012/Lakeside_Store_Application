@@ -231,3 +231,20 @@ export type CreditNote = {
   voided_at?: string | null;
   invoice?: { invoice_number: string | null; amount: number | null; hst_amount: number | null } | null;
 };
+
+// The owner suggestion box: a note with optional screenshot and voice recording.
+export type Feedback = {
+  id: string;
+  store_id: string | null;
+  author_id: string | null;
+  kind: "idea" | "problem" | "question" | "praise";
+  page: string | null;
+  body: string | null;
+  screenshot_path: string | null;
+  audio_path: string | null;
+  ai_summary: string | null;
+  status: "new" | "planned" | "done" | "declined";
+  created_at: string;
+  voided_at?: string | null;
+  author?: { full_name: string | null } | null;
+};

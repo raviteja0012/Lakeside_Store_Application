@@ -236,3 +236,92 @@ this layout is the next build. Header map recorded verbatim so the file itself i
 > Other vendors
 > 1. DT :- hardware, grocery 2nd aisle, dry goods
 > 2. Link:- need to list done what all the department involved in LP
+
+## Owner feedback round 3, received 2026-07-26 (WhatsApp texts, videos, voice notes)
+
+What arrived: three WhatsApp text messages (Telugu written in English), three screen-recording
+videos of the owner using the live app at the store, three voice notes, two app screenshots,
+and three photos of the actual storefront (Robinson's General Store, Dorset, in winter).
+
+Translated asks and what happened to each:
+
+1. "Payments record chasatapudu Payrolls & Taxes ani kuda oka department or category kavali.
+   Payroll Taxes and Incorporation taxes track chayadaniki" = when recording payments we also
+   need a Payrolls & Taxes department/category, to track payroll taxes and incorporation
+   taxes. BUILT: "Payrolls & Taxes" is now a seeded payout category (payments_v2.sql section
+   8 adds it to a live database; seed.sql for fresh installs). Vendors under it (for example
+   "CRA - Payroll remittance") record payouts like any other vendor; their invoice forms drop
+   delivery and freight noise (isFinanceDept in src/lib/payments.ts).
+2. "Once we record the payment its not allowing to edit... I entered a wrong date and it's
+   not allowing me to edit the date once it post." BUILT: Edit on every payment row (vendor
+   page and the payments screen) fixes date, method, reference, notes, and filing through the
+   new edit_payment RPC, which re-derives every touched invoice's status in the same
+   transaction (a date moved across today flips post-dated correctly). The amount stays
+   locked: void and re-record, because allocations hang off it. The payment "Delete" label is
+   now "Void" to match what it always did.
+3. "Ara LakeSide&DryGoodsDepartment Payment record field below location nundi thesuko...
+   OneDrive\All\StoreApplication\Departments&WorkFlow.xlsx, sheet
+   Lakeside&DryGoodsPaymentRecordF. This is the only department I deal with 100+ Vendors."
+   PARTIAL: that file lives in the owner's OneDrive, which is not shared; the payment-record
+   fields visible in his workbook and videos (method, date, amount, confirmation filing,
+   notes, credit back) all exist in the app already. OPEN: upload Departments&WorkFlow.xlsx
+   (or share the OneDrive folder) to confirm nothing on that sheet is missing.
+4. His dropdown wish list (CC_Visa, CC_AMEX, E-Transfer, EFT, Cash, Other with note box) was
+   already live before the message; the screenshot showing only cheque predates the
+   payments-v2 deploy.
+5. A forwarded replit.com/join link (gopalmadala) arrived with no explanation. Recorded here;
+   no action taken.
+
+The videos (decoded with a local speech model; frames read):
+- 10:01 AM (2:24): live demo of Capture at the store. He picks a department, drops "Bella
+  Flor Sales Invoice No. PSI161772.pdf", the AI reads it (Wishing/... PRINTR lines, freight,
+  $545.25 total), the order-vs-invoiced discrepancy warning appears with the acknowledgement
+  box, and Save to feed works: "So, save to feed working. Okay, all good... if you go to the
+  vendors, you can see the updates here and there." The capture flow works for him end to end.
+- 12:57 PM (1:07 and 0:38): the Bella Flor vendor page with invoices marked paid and the
+  payments listed, next to his bookings Google Sheet. The 38-second video says it plainly:
+  "here when you see the payment, update the first paid and then save invoice. This invoice,
+  payment information is not reflected. So what you can do is, go again, edit, unpaid, save,
+  record payment is updated." = marking an invoice paid through Edit records NO payment, and
+  his workaround was flip-back-and-Record-payment. FIXED: saving an invoice edit as "paid"
+  with nothing recorded against it now opens the Record payment form on the spot, prefilled
+  with what is owed, with a plain-words explanation.
+
+The voice notes (12:15, 12:18, 12:27 on 2026-07-10): heavily Telugu-English code-switched at
+20 kbps mono; three local Whisper models (small, medium, boosted audio, forced Telugu and
+English passes) recovered only fragments: 12:18 "The main thing is that we have to pay the
+deposit on the device"; 12:27 "I was trying to get a domain email... got the storage and
+space. It costed almost 1.50 dollars. It's expensive." They appear to concern service or
+device costs (domain email, possibly the POS/terminal deposit). STILL OPEN: the owner calls
+these the most important notes; ask him to type them (or re-record inside the app's new
+Suggestions page, which keeps recordings attached to a note).
+
+Also in this round, from the user's own screenshots:
+- The Outstanding KPI ($138,666.09) overflowed its tile: fixed (long figures step down in
+  size; tiles clip instead of spilling).
+- The notification bell count froze at 3 for the whole session: fixed (the count now
+  refreshes on navigation, focus, panel open, and a slow timer).
+- The Reorder AI summary showed raw ** markdown: fixed (plain-text prompts plus a
+  server-side markdown strip on every AI text route).
+- The storefront photos arrived at last: the login now carries the sign as a CSS plaque
+  (dark boards, gold lettering, "Dorset, Ontario") and the sidebar mark matches. No photo
+  file ships in the app; it is all CSS, so nothing heavy loads before sign-in.
+
+## The annotated workbook, re-received 2026-07-26, and the header-driven importer
+
+The updated "2026  bookings L_S & Dry goods.xlsx" was re-uploaded and this time the importer
+was BUILT against the real file (src/lib/importBookingsV2.ts, wired into /api/import ahead
+of the original parser; detection keys on the evolved layout's own headers such as Vendor
+Company / PaymentMethod). Real-file test: 125 vendors, 98 orders, 86 invoices, 33 payments,
+2 credit notes, 54 notes; per-sheet order and invoice sums match the sheet.
+
+Layout facts the parser handles (all present in the real file): column order differs per
+sheet, so mapping is by header name; dates arrive as Excel serials AND as text ("May 12th",
+"Jun 8, and July 10", "April1,May1, june1" split shipments); PaymentMethod spellings like
+"Check", "CC_Visa (Email Link)", "VISA_CC", "AMEX (Link in Email to Pay)"; PaymentStatus like
+"PAID (545025)", "2 Partial Payments"; filing cells like "Digital/Physical" (maps to both)
+and free text like "CC Statment" (preserved in payment notes); "Credit back for damaged
+items" amounts become pending credit notes tied to the invoice; the AskingInventory wish
+list becomes reorder-tagged knowledge notes. Idempotency is unchanged: vendors already in
+the store are skipped with all their children, so importing over the live database never
+double-loads or double-pays.

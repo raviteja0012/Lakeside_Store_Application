@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 import { parseWorkbook } from "@/lib/importBookings";
+import { parseWorkbookV2, looksLikeBookingsV2 } from "@/lib/importBookingsV2";
 import { parseSchedule, looksLikeSchedule } from "@/lib/importSchedule";
 import { parseInventory } from "@/lib/importInventory";
 import { REQUIRE_AUTH_SERVER } from "@/lib/serverMember";
@@ -208,6 +209,112 @@ async function importInventoryFlow(
   });
 }
 
+// Load the owner's EVOLVED bookings layout (header-named columns, payment and credit
+// detail). Same idempotency rule as the original ledger: vendors already in the store
+// (by name, case-insensitive) are skipped along with all their children, so re-running
+// the import over a live database never duplicates or double-pays anything.
+async function importBookingsV2Flow(
+  sb: any,
+  sheets: { name: string; rows: any[][] }[],
+  storeId: string,
+  actorId: string | null
+): Promise<Response> {
+  const parsed = parseWorkbookV2(sheets, storeId);
+  if (!parsed.vendors.length) {
+    return Response.json({ ok: false, message: "The workbook looked like the bookings ledger but no vendor rows were found." }, { status: 200 });
+  }
+
+  const { data: existing, error: exErr } = await sb.from("vendor").select("id, name").eq("store_id", storeId);
+  if (exErr) {
+    return Response.json({ ok: false, message: `Could not read existing vendors: ${exErr.message}` }, { status: 200 });
+  }
+  const present = new Map(((existing as any[]) || []).map((v) => [String(v.name || "").toLowerCase(), v.id as string]));
+
+  const newVendors = parsed.vendors.filter((v) => !present.has(v.name.toLowerCase()));
+  const newVendorIds = new Set(newVendors.map((v) => v.id));
+  const skippedVendors = parsed.vendors.length - newVendors.length;
+
+  const newInvoices = parsed.invoices.filter((inv) => newVendorIds.has(inv.vendor_id));
+  const newInvoiceIds = new Set(newInvoices.map((inv) => inv.id));
+  const newOrders = parsed.orders.filter((o) => newVendorIds.has(o.vendor_id));
+  const newPayments = parsed.payments.filter((p) => newInvoiceIds.has(p.invoice_id));
+
+  // Credits load for EVERY vendor in the workbook, not just new ones: the live store was
+  // first loaded by the original importer, so its vendors carry different ids. A credit for
+  // an already-present vendor remaps onto that vendor's real id and drops the invoice link
+  // (that invoice was not inserted this run). The deterministic credit ids make the whole
+  // thing idempotent: anything already on file is filtered out below.
+  const vendorNameById = new Map(parsed.vendors.map((v) => [v.id, v.name.toLowerCase()]));
+  const creditCandidates = parsed.credits
+    .map((cr) => {
+      if (newVendorIds.has(cr.vendor_id)) return cr;
+      const liveVendorId = present.get(vendorNameById.get(cr.vendor_id) || "");
+      if (!liveVendorId) return null;
+      return { ...cr, vendor_id: liveVendorId, invoice_id: cr.invoice_id && newInvoiceIds.has(cr.invoice_id) ? cr.invoice_id : null };
+    })
+    .filter(Boolean) as typeof parsed.credits;
+  let creditsTableMissing = false;
+  let existingCreditIds = new Set<string>();
+  if (creditCandidates.length) {
+    const probe = await sb.from("credit_note").select("id").in("id", creditCandidates.map((c) => c.id));
+    if (probe.error) {
+      // Only a missing table (database from before credit_notes.sql) is recoverable by the
+      // advertised "run the script, re-upload" path; anything else is a real failure.
+      if (/credit_note/.test(probe.error.message) && /does not exist|schema cache/i.test(probe.error.message)) {
+        creditsTableMissing = true;
+      } else {
+        return Response.json({ ok: false, message: `credit_note: ${probe.error.message}` }, { status: 200 });
+      }
+    } else {
+      existingCreditIds = new Set(((probe.data as any[]) || []).map((r) => r.id as string));
+    }
+  }
+  const newCredits = creditsTableMissing ? [] : creditCandidates.filter((c) => !existingCreditIds.has(c.id));
+
+  // Notes: vendor-keyed ones follow their (new) vendor; the AskingInventory wish list is
+  // store-wide with deterministic ids, so it dedupes against what is already on file.
+  const askNotes = parsed.notes.filter((n) => n.topic.startsWith("Asking inventory:"));
+  let existingAskIds = new Set<string>();
+  if (askNotes.length) {
+    const { data: exAsk } = await sb.from("knowledge_note").select("id").in("id", askNotes.map((n) => n.id));
+    existingAskIds = new Set(((exAsk as any[]) || []).map((r) => r.id as string));
+  }
+  const newVendorKeys = new Set(newVendors.map((v) => `${v.department_id}|${v.name.toLowerCase()}`));
+  const newNotes = parsed.notes.filter((n) => {
+    if (n.topic.startsWith("Asking inventory:")) return !existingAskIds.has(n.id);
+    const name = n.topic.replace(/^Vendor:\s*/, "").toLowerCase();
+    return newVendorKeys.has(`${n.department_id}|${name}`);
+  });
+
+  const ordersOut = newOrders.map((o) => ({ ...o, created_by: actorId }));
+  const paymentsOut = newPayments.map((p) => ({ ...p, created_by: actorId }));
+  const creditsOut = newCredits.map((cr) => ({ ...cr, created_by: actorId }));
+  const notesOut = newNotes.map((n) => ({ ...n, created_by: actorId }));
+
+  const insertedVendors = await insertChunks(sb, "vendor", newVendors);
+  const insertedOrders = await insertChunks(sb, "purchase_order", ordersOut);
+  const insertedInvoices = await insertChunks(sb, "invoice", newInvoices);
+  const insertedPayments = await insertChunks(sb, "payment", paymentsOut);
+  const insertedCredits = creditsTableMissing ? 0 : await insertChunks(sb, "credit_note", creditsOut);
+  const insertedNotes = await insertChunks(sb, "knowledge_note", notesOut);
+
+  return Response.json({
+    ok: true,
+    kind: "bookings_v2",
+    message:
+      `Loaded ${insertedVendors} new vendors, ${insertedOrders} orders, ${insertedInvoices} invoices, ` +
+      `${insertedPayments} payments, ${insertedCredits} credits, and ${insertedNotes} notes from the updated ledger. ` +
+      `Skipped ${skippedVendors} vendors already in this store.` +
+      (creditsTableMissing ? " Credits were skipped because the credit_note table is not set up yet: run supabase/credit_notes.sql once, then re-upload this same file and the credits will load (everything else stays skipped as already-loaded)." : ""),
+    summary: parsed.summary,
+    inserted: {
+      vendors: insertedVendors, orders: insertedOrders, invoices: insertedInvoices,
+      payments: insertedPayments, credits: insertedCredits, notes: insertedNotes
+    },
+    skippedVendors
+  });
+}
+
 // Upload the 2026 bookings workbook and load the full vendor ledger into a store.
 // Idempotent by vendor name: a vendor already present (case-insensitive) is skipped along
 // with all of its children, so the import is safe to re-run. Returns ok:false with status
@@ -283,6 +390,12 @@ export async function POST(req: Request) {
       return await importScheduleFlow(sb, sheets, storeId, actorId);
     }
 
+    // The evolved ledger layout (named headers like Vendor Company / PaymentMethod) gets
+    // the header-driven parser; the original fixed-position layout still goes through v1.
+    if (looksLikeBookingsV2(sheets)) {
+      return await importBookingsV2Flow(sb, sheets, storeId, actorId);
+    }
+
     const parsed = parseWorkbook(sheets, storeId);
     if (!parsed.vendors.length) {
       const inv = parseInventory(sheets);
@@ -293,7 +406,7 @@ export async function POST(req: Request) {
       }
       return Response.json({
         ok: false,
-        message: "This workbook was not recognized. It handles three shapes: the 2026 bookings ledger, the weekly schedule, and category inventory sheets (SKU, description, stock)."
+        message: "This workbook was not recognized. It handles four shapes: the 2026 bookings ledger (original or updated layout), the weekly schedule, and category inventory sheets (SKU, description, stock)."
       }, { status: 200 });
     }
 

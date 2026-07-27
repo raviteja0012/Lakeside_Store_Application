@@ -26,7 +26,8 @@ export default function KpiRow({ items }: { items: KpiItem[] }) {
             <span className="kpi-title">{it.title}</span>
             {it.icon && <span className="kpi-icon" aria-hidden="true">{it.icon}</span>}
           </div>
-          <div className={`kpi-value${it.tone ? ` ${toneClass[it.tone]}` : ""}`}>{it.value}</div>
+          {/* Six-digit dollar totals get a smaller size so they never spill into the next tile. */}
+          <div className={`kpi-value${it.tone ? ` ${toneClass[it.tone]}` : ""}${it.value.length > 13 ? " is-xlong" : it.value.length > 8 ? " is-long" : ""}`}>{it.value}</div>
           {it.foot && <div className="kpi-foot">{it.foot}</div>}
         </div>
       ))}

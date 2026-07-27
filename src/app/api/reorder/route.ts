@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveMember, memberSeesMoney } from "@/lib/serverMember";
+import { plainText } from "@/lib/aiText";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,7 @@ const CURRENT_SEASON = new Date().getFullYear();
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+    const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
     if (!apiKey) {
       return NextResponse.json({ message: "AI summary is off. Set ANTHROPIC_API_KEY to enable it. The formula-based list above still works." });
     }
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
 
     const context = lines.join("\n");
     const system =
-      "You are the reorder assistant for Robinsons General Store. Using ONLY the data provided, list the vendors most likely to need an order this season and the reason for each (no current-season order, a note that says to reorder, or a discontinue/skip note to respect). Be concise, use the vendor names, and end by reminding that a person makes the final call. Do not invent vendors or numbers. No em dashes.";
+      "You are the reorder assistant for Robinsons General Store. Using ONLY the data provided, list the vendors most likely to need an order this season and the reason for each (no current-season order, a note that says to reorder, or a discontinue/skip note to respect). Be concise, use the vendor names, and end by reminding that a person makes the final call. Do not invent vendors or numbers. Answer in plain text only: no markdown, no asterisks, no # headers; use simple hyphen lists. No em dashes.";
 
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -69,6 +70,8 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model,
         max_tokens: 1024,
+        // No temperature override: current Claude models reject non-default sampling
+        // params; consistency comes from the grounded prompt instead.
         system,
         messages: [{ role: "user", content: `STORE DATA:\n${context}\n\nSummarize the likely reorders.` }]
       })
@@ -81,7 +84,7 @@ export async function POST(req: NextRequest) {
 
     const data = await resp.json();
     const textPart = (data.content || []).find((c: any) => c.type === "text");
-    return NextResponse.json({ answer: textPart?.text || "" });
+    return NextResponse.json({ answer: plainText(textPart?.text || "") });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "unexpected error" }, { status: 500 });
   }

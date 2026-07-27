@@ -47,6 +47,7 @@ const TABLES: TableSpec[] = [
   { name: "pay_rate", scope: "parent", parent: { table: "employee", column: "employee_id" }, what: "Effective-dated pay rates", links: "employee_id -> employee.id" },
   { name: "shift", scope: "parent", parent: { table: "employee", column: "employee_id" }, what: "Scheduled shifts", links: "employee_id -> employee.id; department_id -> department.id" },
   { name: "tax_rules", scope: "global", what: "Province tax rates (reference)", links: "" },
+  { name: "feedback", scope: "store", what: "Owner suggestion box (ideas, problems, screenshots read into ai_summary)", links: "store_id -> store.id; author_id -> app_user.id" },
   { name: "activity_log", scope: "parent", parent: { table: "app_user", column: "actor_id" }, what: "Audit trail of every write", links: "actor_id -> app_user.id" },
 ];
 

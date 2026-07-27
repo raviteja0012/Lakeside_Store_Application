@@ -107,7 +107,7 @@ begin
   foreach t in array array[
     'vendor','item','receiving_event','purchase_order','invoice',
     'inventory_count','knowledge_note','maintenance_asset','maintenance_task',
-    'insurance_policy','employee','licence','credit_note'
+    'insurance_policy','employee','licence','credit_note','feedback'
   ]
   loop
     -- Skip tables that do not exist yet (for example credit_note before credit_notes.sql has

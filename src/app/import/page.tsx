@@ -12,7 +12,7 @@ import type { Department } from "@/lib/types";
 // summarizes what loaded, and the bookings result also carries a per-sheet breakdown.
 type ImportResult = {
   ok: boolean;
-  kind?: "bookings" | "schedule" | "inventory";
+  kind?: "bookings" | "bookings_v2" | "schedule" | "inventory";
   message?: string;
   summary?: any;
   inserted?: Record<string, number>;
@@ -91,7 +91,7 @@ export default function Import() {
         <div>
           <h1 className="page-title">Import a spreadsheet</h1>
           <p className="page-sub">
-            Upload the 2026 bookings workbook, the weekly schedule, or a category inventory sheet (SKU,
+            Upload the 2026 bookings workbook (original or updated layout), the weekly schedule, or a category inventory sheet (SKU,
             description, stock). It detects which one and loads it into the current store. Anything already
             on file is skipped, so it is safe to re-run.
           </p>
@@ -139,7 +139,7 @@ export default function Import() {
         <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
           <span className="chip chip-progress">Done</span>
           {result.message && <p style={{ margin: 0 }}>{result.message}</p>}
-          {result.kind === "bookings" && Array.isArray(result.summary?.perSheet) && (
+          {(result.kind === "bookings" || result.kind === "bookings_v2") && Array.isArray(result.summary?.perSheet) && (
             <div style={{ display: "grid", gap: 8 }}>
               {result.summary.perSheet.map((s: any) => (
                 <div
@@ -149,6 +149,8 @@ export default function Import() {
                   <strong style={{ fontSize: 14 }}>{s.sheet}</strong>
                   <span className="help tabular">
                     {s.vendors} vendors . orders {formatCAD(s.orderSum)} . invoices {formatCAD(s.invSum)}
+                    {s.paySum != null && s.paySum > 0 ? ` . payments ${formatCAD(s.paySum)}` : ""}
+                    {s.credits ? ` . ${s.credits} credit${s.credits === 1 ? "" : "s"}` : ""}
                   </span>
                 </div>
               ))}

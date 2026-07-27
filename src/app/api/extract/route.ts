@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+    const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
     if (!apiKey) {
       return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set" }, { status: 500 });
     }
@@ -57,6 +57,8 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model,
         max_tokens: 2000,
+        // No temperature override: current Claude models reject non-default sampling
+        // params; the strict JSON contract in the prompt keeps extraction stable.
         messages: [{ role: "user", content: [block, { type: "text", text: PROMPT }] }]
       })
     });

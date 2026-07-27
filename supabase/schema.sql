@@ -192,6 +192,27 @@ create table credit_note (
 create index credit_note_vendor_idx on credit_note(vendor_id);
 create index credit_note_invoice_idx on credit_note(invoice_id);
 
+-- Owner suggestion box: ideas, problems, and screenshots land here instead of WhatsApp.
+-- Fresh installs get this here; existing databases get the identical table from
+-- supabase/feedback.sql. ai_summary holds what the AI read off an attached screenshot.
+create table feedback (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references store(id),   -- multi-store
+  author_id uuid references app_user(id),
+  kind text not null default 'idea' check (kind in ('idea','problem','question','praise')),
+  page text,                -- which screen it is about, in the author's words
+  body text,
+  screenshot_path text,     -- storage path under feedback/ in the documents bucket
+  audio_path text,          -- voice recording path under feedback/
+  ai_summary text,
+  status text not null default 'new' check (status in ('new','planned','done','declined')),
+  created_at timestamptz default now(),
+  voided_at timestamptz,
+  voided_by uuid references app_user(id)
+);
+create index feedback_store_idx on feedback(store_id);
+create index feedback_status_idx on feedback(status);
+
 -- Payments engine: one atomic path every screen records through. Bodies reference tables
 -- created later in this file (activity_log); plpgsql resolves them at call time.
 
@@ -323,6 +344,52 @@ begin
   if p_actor is not null then
     insert into public.activity_log (actor_id, action, entity, entity_id)
     values (p_actor, 'voided', 'payment', p_payment_id);
+  end if;
+end;
+$$;
+
+-- Fix a recorded payment's facts (a wrong date must be correctable): date, method,
+-- reference, notes, and filing are editable in one transaction, and every invoice the
+-- payment touches gets its status re-derived, because a date change can move money
+-- between settled and post-dated. The amount is NOT editable here: allocations hang off
+-- it, so a wrong amount means void the payment and record it again.
+create or replace function public.edit_payment(
+  p_payment_id uuid,
+  p_method text,
+  p_paid_date date,
+  p_reference text default null,
+  p_notes text default null,
+  p_confirmation_filing text default null,
+  p_actor uuid default null
+) returns void
+language plpgsql
+as $$
+declare
+  r record;
+begin
+  if p_paid_date is null then
+    raise exception 'a paid date is required';
+  end if;
+
+  update public.payment
+  set method = p_method,
+      paid_date = p_paid_date,
+      reference = nullif(p_reference, ''),
+      notes = nullif(p_notes, ''),
+      confirmation_filing = nullif(p_confirmation_filing, '')
+  where id = p_payment_id and voided_at is null;
+  if not found then
+    raise exception 'payment not found or already voided';
+  end if;
+
+  for r in select distinct invoice_id from public.payment_allocation where payment_id = p_payment_id
+  loop
+    perform public.recompute_invoice_status(r.invoice_id);
+  end loop;
+
+  if p_actor is not null then
+    insert into public.activity_log (actor_id, action, entity, entity_id)
+    values (p_actor, 'payment_edited', 'payment', p_payment_id);
   end if;
 end;
 $$;

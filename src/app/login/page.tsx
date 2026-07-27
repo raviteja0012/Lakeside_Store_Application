@@ -38,8 +38,14 @@ export default function Login() {
 
   return (
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--app-bg)", padding: 16 }}>
-      <div className="card" style={{ padding: 24, display: "grid", gap: 16, width: "100%", maxWidth: 380 }}>
-        <div className="brand" style={{ marginBottom: 8 }}><span className="brand-mark">R</span><span className="brand-name">Robinsons<br/>General Store</span></div>
+      <div style={{ display: "grid", gap: 18, width: "100%", maxWidth: 380, justifyItems: "center" }}>
+        {/* The storefront sign welcomes people the same way the building does. */}
+        <div className="store-plaque" aria-label="Robinson's General Store, Dorset, Ontario">
+          <span className="store-plaque-top">Robinson&rsquo;s</span>
+          <span className="store-plaque-main">General Store</span>
+          <span className="store-plaque-sub">Dorset, Ontario</span>
+        </div>
+      <div className="card" style={{ padding: 24, display: "grid", gap: 16, width: "100%" }}>
         <div>
           <h1 style={{ fontSize: 20, margin: "0 0 4px" }}>Sign in</h1>
           <p className="help" style={{ margin: 0 }}>Robinsons General Store</p>
@@ -97,6 +103,7 @@ export default function Login() {
         <p className="help" style={{ margin: 0 }}>
           No account? There is no public sign-up. Ask the owner to create one for you.
         </p>
+      </div>
       </div>
     </div>
   );
