@@ -361,3 +361,38 @@ Decisions from this discussion, all shipped the same day unless marked:
   vendor ledger; Today's KPI tiles open the screen where each number is acted on; the
   vendor header shows the latest order and latest cleared payment at the top right.
 - Jira tasks for the sync phases: queued for when the Atlassian connector is back online.
+
+## Both live workbooks received as files, 2026-07-27 (late)
+
+2026_Payments.xlsx, full tab census (fields differ BY DEPARTMENT, the owner's core point):
+- Vendors: Vendor, DeliveryDate, Amount, DueDate, Paid, Comments (running totals in row 1).
+- StoreSupplies&Maintenance / Bakery / Meet: Vendor, DeliveryDate/ServiceDate, Amount,
+  DueDate, Comments (the light form).
+- LocalVendors: + Invoice#, Terms, PaymentStatus/Date/Method/ConfirmationFilling/Comments.
+- Grocery: Vendor, TypeOfGoods, DeliveryStatus, Invoice#, Invoice$, HST$, FrightCharges,
+  DeliveryDate, Payment$, PaymentStatus/Date/Method/Filling, Comments (full merchandise).
+- Hardware: the Grocery shape + PO# (validates the po_number field shipped in PR #15).
+- ChipStand: merchandise shape; owner DOES track it (SCRUM-9 said "not needed"; sheet wins).
+- MaintanancePayments: Company(TBD_Vendor), SpecilizedOn, TechName, Phone, Email,
+  Estimate#, Estimated$, TypeOfWork, Invoice#, InvoiceDate, InvoiceAmount, Description,
+  PaymentStatus/Date/Method/Filling, Comments. Maps to property invoices; SpecilizedOn is
+  service_category, TechName is the rep. GAP QUEUED: estimate AMOUNT (Estimated$).
+- Pays,CRA&CashPayments: payroll (Rana) and CRA PAD rows; the Payrolls & Taxes category.
+- Utility: Provider + EmailSubjectLine (Vianet monthly statements; email-driven, ties to
+  the email-invoice-intake future).
+- Loans&Payments: LendingSource, Loan#, Total# of payments, PaymentFrequency,
+  PaymentAmount, PaymentDate, PaymentMethod (autopay). NEW CONCEPT QUEUED: recurring
+  obligations (loans, utilities) with frequency, distinct from vendor invoices.
+- Renewals & Trainings: certification expiries (JHSC) with email dates: Compliance module
+  material. Notes: freeform.
+- New method spellings seen: ACH, "Auto debit from Bank Account", "Autopay from Scotia"
+  (map to eft/other with the raw words kept in notes).
+
+Updated bookings workbook (same upload): headers renamed (Order Filing, Delivery Status,
+Invoice Filing Method, Payment$, Payment Filing Method, PaymentComments), trailing Runout
+and Reorder Vendors columns, a NEW Local Vendors tab, and AskingInventory rows now carry
+remark cells ("Dont order more"). The header-driven importer was updated the same night
+and re-verified against the real file: 130 vendors across 4 tabs, richer methods
+(cc_visa, cc_amex, etransfer, eft), the remark preserved on the wish-list note, all
+structural assertions passing. Recognized uploads are now also archived under imports/ in
+the documents bucket and listed on the Import screen as downloadable versions.

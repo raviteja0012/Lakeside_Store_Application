@@ -23,7 +23,7 @@ export default function Vendors() {
 
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ name: "", department_id: "", rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active" });
+  const [form, setForm] = useState({ name: "", department_id: "", rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active", notes: "" });
 
   // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
   const { effectiveActorId, role } = useEffectiveActor(users, actorId);
@@ -80,11 +80,12 @@ export default function Vendors() {
         email: form.email || null,
         products_we_carry: form.products_we_carry || null,
         default_terms: form.default_terms || null,
-        status: form.status
+        status: form.status,
+        notes: form.notes.trim() || null
       }).select("id").single();
       if (r.error) throw new Error(r.error.message);
       if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "vendor_added", entity: "vendor", entity_id: r.data.id as string });
-      setForm({ name: "", department_id: departments[0]?.id || "", rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active" });
+      setForm({ name: "", department_id: departments[0]?.id || "", rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active", notes: "" });
       setAdding(false);
       await load();
     } catch (e: any) {
@@ -157,7 +158,8 @@ export default function Vendors() {
               </div>
             )}
           </div>
-          <div><label className="label">Products we carry</label><input className="input" value={form.products_we_carry} onChange={(e) => setForm({ ...form, products_we_carry: e.target.value })} /></div>
+          <div><label className="label">Products we carry</label><input className="input" placeholder="Mugs, wallets, everyday gifts (comma-separated)" value={form.products_we_carry} onChange={(e) => setForm({ ...form, products_we_carry: e.target.value })} /></div>
+          <div><label className="label">Notes (optional)</label><input className="input" placeholder="Rep visits in summer, order by March" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
           <div><button className="btn-primary" onClick={save} disabled={busy || !form.name.trim()}>{busy ? "Saving." : "Save vendor"}</button></div>
         </div>
       )}

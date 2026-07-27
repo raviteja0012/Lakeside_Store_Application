@@ -80,6 +80,15 @@ SHIPPED (see VERIFICATION.md for sign-off):
   print stays clean.
 
 QUEUED (agreed, not built):
+- From the 2026_Payments workbook (2026-07-27): recurring obligations (loans and utilities
+  with payment frequency and autopay method, the Loans&Payments and Utility tabs);
+  estimate AMOUNT on property invoices (Estimated$ next to the existing estimate number);
+  renewals/training expiries (JHSC certification) into Compliance; an importer for the
+  2026_Payments workbook itself once its layout settles (the owner calls it work in
+  progress).
+- Sheets sync phase 2 (service-account pull from the live sheets) and phase 3 (FromApp
+  push tabs): docs/SYNC_PLAN.md. Blocked on sharing the live sheets with
+  raviteja.potluru@gmail.com.
 - QuickBooks export of invoices/payments; POS sales import (margin, shrinkage, demand-based
   reorder). Owner confirmed the store runs a POS and QuickBooks.
 - Three-way match (PO vs receiving vs invoice) before payment.
