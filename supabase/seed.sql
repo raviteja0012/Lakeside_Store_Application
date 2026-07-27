@@ -13,7 +13,7 @@ insert into store (id, name, legal_entity, address) values
 
 -- The owner's department-level categories for payout attribution:
 --   DryGoods & Lakeside, Hardware, Grocery, Produce, Bakery, Meat, Chip Stand,
---   Checkouts, Property Maintenance, Others.
+--   Checkouts, Property Maintenance, Payrolls & Taxes, Others.
 -- Clothing and Gifts are sections inside DryGoods & Lakeside (children keep their own
 -- vendors and history); Garden Center stays a section inside Hardware.
 insert into department (id, store_id, name, parent_department_id, accent_color) values
@@ -29,7 +29,8 @@ insert into department (id, store_id, name, parent_department_id, accent_color) 
   ('22222222-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111', 'Garden Center', '22222222-0000-0000-0000-000000000001', '#1E8E5A'),
   ('22222222-0000-0000-0000-000000000011', '11111111-1111-1111-1111-111111111111', 'Checkouts', null, '#2F5FA8'),
   ('22222222-0000-0000-0000-000000000012', '11111111-1111-1111-1111-111111111111', 'Property Maintenance', null, '#6B7480'),
-  ('22222222-0000-0000-0000-000000000013', '11111111-1111-1111-1111-111111111111', 'Others', null, '#6B7480');
+  ('22222222-0000-0000-0000-000000000013', '11111111-1111-1111-1111-111111111111', 'Others', null, '#6B7480'),
+  ('22222222-0000-0000-0000-000000000014', '11111111-1111-1111-1111-111111111111', 'Payrolls & Taxes', null, '#4A5568');
 
 -- Demo accounts, one per role, so enforced auth can be tested end to end. The email is what
 -- auth_setup.sql links to a Supabase Auth account: create each account with the same email,

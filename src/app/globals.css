@@ -67,12 +67,48 @@ a { color: var(--primary); }
 .app-body { margin-left: var(--sidebar-w); min-width: 0; }
 
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text-primary); }
+/* The mark is the storefront sign in miniature: Robinson's dark-brown plaque with the
+   golden western lettering, straight off the photo of the Dorset building. Everything
+   else in the shell stays calm; the brand carries the store's character alone. */
 .brand-mark {
   width: 34px; height: 34px; border-radius: 9px; flex: none;
-  background: var(--primary); color: #fff; font-weight: 700; font-size: 17px;
+  background: linear-gradient(180deg, #4A342A 0%, #33231B 55%, #2A1C15 100%);
+  border: 1px solid #5C4433;
+  box-shadow: inset 0 1px 0 rgba(255, 235, 190, 0.18);
+  color: #E8B84B; font-weight: 700; font-size: 17px;
+  font-family: Georgia, "Times New Roman", serif;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
   display: grid; place-items: center;
 }
 .brand-name { font-weight: 700; font-size: 13.5px; line-height: 1.25; }
+
+/* ---------- Storefront plaque (login) ----------
+   The full sign, for the front door of the app: deep-brown boards, double gold inline
+   border, golden slab lettering. Rendered in CSS so nothing heavy loads before sign-in. */
+.store-plaque {
+  display: grid; justify-items: center; gap: 2px;
+  background: linear-gradient(180deg, #4A342A 0%, #33231B 55%, #2A1C15 100%);
+  border: 1px solid #5C4433; border-radius: 12px;
+  box-shadow:
+    inset 0 0 0 2px rgba(232, 184, 75, 0.28),
+    inset 0 1px 0 rgba(255, 235, 190, 0.16),
+    var(--shadow-md);
+  padding: 18px 22px 14px;
+}
+.store-plaque-top {
+  color: #E8B84B; font-family: Georgia, "Times New Roman", serif; font-weight: 700;
+  font-size: 14px; letter-spacing: 0.16em; text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+.store-plaque-main {
+  color: #E8B84B; font-family: Georgia, "Times New Roman", serif; font-weight: 700;
+  font-size: 23px; letter-spacing: 0.12em; text-transform: uppercase; line-height: 1.15;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+.store-plaque-sub {
+  color: #C9A15E; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  margin-top: 6px;
+}
 
 .side-capture { display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
 
@@ -231,11 +267,16 @@ a { color: var(--primary); }
 .kpi {
   background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-sm);
   padding: 14px 16px; display: grid; gap: 10px;
+  min-width: 0; /* grid children otherwise refuse to shrink and the value overflows the tile */
 }
 .kpi-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .kpi-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .kpi-icon { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--tile); color: var(--text-secondary); flex: none; }
-.kpi-value { font-family: var(--font-mono), monospace; font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 600; line-height: 1; color: var(--text-primary); }
+.kpi-value { font-family: var(--font-mono), monospace; font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 600; line-height: 1; color: var(--text-primary); overflow: hidden; }
+/* Long figures (six-digit dollar totals) step down instead of spilling into the next tile.
+   Sized so the figure still fits a minimum-width (150px) tile in the mono face. */
+.kpi-value.is-long { font-size: 18px; }
+.kpi-value.is-xlong { font-size: 15px; }
 .kpi-value.is-error { color: var(--error-base); }
 .kpi-value.is-warning { color: var(--warning-base); }
 .kpi-value.is-success { color: var(--success-base); }

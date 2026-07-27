@@ -202,6 +202,52 @@ begin
 end;
 $$;
 
+-- Fix a recorded payment's facts (Ravi typed a wrong date and could not correct it): date,
+-- method, reference, notes, and filing are editable in one transaction, and every invoice
+-- the payment touches gets its status re-derived, because a date change can move money
+-- between settled and post-dated. The amount is NOT editable here: allocations hang off
+-- it, so a wrong amount means void the payment and record it again.
+create or replace function public.edit_payment(
+  p_payment_id uuid,
+  p_method text,
+  p_paid_date date,
+  p_reference text default null,
+  p_notes text default null,
+  p_confirmation_filing text default null,
+  p_actor uuid default null
+) returns void
+language plpgsql
+as $$
+declare
+  r record;
+begin
+  if p_paid_date is null then
+    raise exception 'a paid date is required';
+  end if;
+
+  update public.payment
+  set method = p_method,
+      paid_date = p_paid_date,
+      reference = nullif(p_reference, ''),
+      notes = nullif(p_notes, ''),
+      confirmation_filing = nullif(p_confirmation_filing, '')
+  where id = p_payment_id and voided_at is null;
+  if not found then
+    raise exception 'payment not found or already voided';
+  end if;
+
+  for r in select distinct invoice_id from public.payment_allocation where payment_id = p_payment_id
+  loop
+    perform public.recompute_invoice_status(r.invoice_id);
+  end loop;
+
+  if p_actor is not null then
+    insert into public.activity_log (actor_id, action, entity, entity_id)
+    values (p_actor, 'payment_edited', 'payment', p_payment_id);
+  end if;
+end;
+$$;
+
 -- Flip post-dated invoices whose payment dates have arrived. Cheap; the payments screens
 -- call it on load, so nothing needs a cron. Returns how many invoices were rechecked.
 create or replace function public.reconcile_postdated()
@@ -316,7 +362,10 @@ where i.status = 'postdated'
 -- Clothing and Gifts become children of DryGoods & Lakeside so their vendors and history
 -- stay attached while the top level matches the sheet:
 --   DryGoods & Lakeside, Hardware, Grocery, Produce, Bakery, Meat, Chip Stand,
---   Checkouts, Property Maintenance, Others.
+--   Checkouts, Property Maintenance, Payrolls & Taxes, Others.
+-- Payrolls & Taxes is Ravi's ask (2026-07 voice round): payroll remittances and
+-- incorporation taxes need their own payout category, recorded like any vendor payout
+-- (vendors under it: e.g. "CRA - Payroll remittance", "CRA - Corporate tax").
 do $$
 declare
   s record;
@@ -330,6 +379,7 @@ begin
       ('DryGoods & Lakeside', '#B7791F'),
       ('Checkouts', '#2F5FA8'),
       ('Property Maintenance', '#6B7480'),
+      ('Payrolls & Taxes', '#4A5568'),
       ('Others', '#6B7480')
     ) as x(name, color)
     where not exists (

@@ -20,7 +20,7 @@ import { chipClass, labelize } from "@/lib/status";
 import * as XLSX from "xlsx";
 import {
   PAYMENT_METHODS, CONFIRMATION_FILING, methodLabel, referenceLabel, invoiceTotal, isFutureDate,
-  recordPaymentRpc, voidPaymentRpc, reconcilePostdated, fetchSettlements,
+  recordPaymentRpc, voidPaymentRpc, editPaymentRpc, reconcilePostdated, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
 import type { Invoice, Payment } from "@/lib/types";
@@ -69,6 +69,11 @@ export default function Payments() {
   // Quick-add vendor, so entering a category never dead-ends when the vendor is new.
   const [showNewVendor, setShowNewVendor] = useState(false);
   const [nvForm, setNvForm] = useState({ name: "", department_id: "", phone: "", default_terms: "" });
+
+  // Editing a recorded payment: the facts (date, method, reference, notes, filing) are
+  // correctable in place; a wrong amount means void and re-record.
+  const [editPayId, setEditPayId] = useState<string | null>(null);
+  const [editPayForm, setEditPayForm] = useState({ method: "cheque", paid_date: "", reference: "", notes: "", filing: "" });
 
   const PAY_SELECT =
     "id, vendor_id, invoice_id, amount, method, paid_date, reference, notes, confirmation_filing, created_at, " +
@@ -427,6 +432,82 @@ export default function Payments() {
     }
   }
 
+  function startEditPayment(p: Payment) {
+    setEditPayId(p.id);
+    setEditPayForm({
+      method: p.method || "cheque",
+      paid_date: p.paid_date || todayISO(),
+      reference: p.reference || "",
+      notes: p.notes || "",
+      filing: p.confirmation_filing || ""
+    });
+  }
+
+  async function saveEditPayment() {
+    if (!editPayId) return;
+    if (!editPayForm.paid_date) {
+      setError("Enter the paid date.");
+      return;
+    }
+    if (editPayForm.method === "other" && !editPayForm.notes.trim()) {
+      setError("Method is Other: say what it was in the notes.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      // One transaction: the corrected facts plus a re-derive of every invoice this
+      // payment touches, so moving the date across today flips post-dated correctly.
+      await editPaymentRpc({
+        paymentId: editPayId,
+        method: editPayForm.method,
+        paidDate: editPayForm.paid_date,
+        reference: editPayForm.reference,
+        notes: editPayForm.notes,
+        confirmationFiling: editPayForm.filing,
+        actorId: currentActorId(member)
+      });
+      setEditPayId(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // The shared corrective form under a payment row (both lists use it).
+  function editPayFormBlock(p: Payment) {
+    if (editPayId !== p.id) return null;
+    return (
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+          <div><label className="label">Method</label>
+            <select className="input" value={editPayForm.method} onChange={(e) => setEditPayForm({ ...editPayForm, method: e.target.value })}>
+              {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+          <div><label className="label">Paid date</label><input className="input" type="date" value={editPayForm.paid_date} onChange={(e) => setEditPayForm({ ...editPayForm, paid_date: e.target.value })} />
+            {isFutureDate(editPayForm.paid_date) && <p className="help" style={{ margin: "4px 0 0" }}>Future date: becomes post-dated.</p>}
+          </div>
+          <div><label className="label">{referenceLabel(editPayForm.method)}</label><input className="input" value={editPayForm.reference} onChange={(e) => setEditPayForm({ ...editPayForm, reference: e.target.value })} /></div>
+          <div><label className="label">Confirmation filed</label>
+            <select className="input" value={editPayForm.filing} onChange={(e) => setEditPayForm({ ...editPayForm, filing: e.target.value })}>
+              <option value="">Not said</option>
+              {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            </select>
+          </div>
+          <div><label className="label">Notes{editPayForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" value={editPayForm.notes} onChange={(e) => setEditPayForm({ ...editPayForm, notes: e.target.value })} /></div>
+        </div>
+        <p className="help" style={{ margin: 0 }}>The amount stays {formatCAD(p.amount)}. Wrong amount? Void this payment and record it again.</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn-primary" onClick={saveEditPayment} disabled={busy}>{busy ? "Saving." : "Save payment"}</button>
+          <button className="btn-ghost" onClick={() => setEditPayId(null)}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
   // One line describing what a payment covered.
   function coverage(p: Payment): string {
     const nums = (p.payment_allocation || [])
@@ -754,26 +835,32 @@ export default function Payments() {
           <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Post-dated and scheduled</h2>
           <div style={{ display: "grid", gap: 8 }}>
             {scheduled.map((p) => (
-              <div key={p.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                <div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <strong>{p.vendor?.name || "Vendor"}</strong>
-                    <span className="chip chip-progress">clears {p.paid_date}</span>
-                  </div>
-                  <div className="help" style={{ marginTop: 4 }}>
-                    {methodLabel(p.method)}{p.reference ? ` . ${p.reference}` : ""} . {coverage(p)}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
-                  {mayEdit && (
-                    <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
-                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePayment(p)} disabled={busy} title="The payment stays in the history for the tax record; its invoices go back to owing">
-                        Void
-                      </button>
+              <div key={p.id} className="card" style={{ padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <strong>{p.vendor?.name || "Vendor"}</strong>
+                      <span className="chip chip-progress">clears {p.paid_date}</span>
                     </div>
-                  )}
+                    <div className="help" style={{ marginTop: 4 }}>
+                      {methodLabel(p.method)}{p.reference ? ` . ${p.reference}` : ""} . {coverage(p)}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
+                    {mayEdit && (
+                      <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
+                        <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditPayment(p)} disabled={busy} title="Fix the date, method, reference, notes, or filing">
+                          Edit
+                        </button>
+                        <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePayment(p)} disabled={busy} title="The payment stays in the history for the tax record; its invoices go back to owing">
+                          Void
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
+                {mayEdit && editPayFormBlock(p)}
               </div>
             ))}
           </div>
@@ -785,29 +872,39 @@ export default function Payments() {
           <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Recent payments</h2>
           {recent.length === 0 && <p className="help">No payments recorded yet.</p>}
           <div style={{ display: "grid", gap: 8 }}>
+            {/* A post-dated payment appears in the scheduled list above too; its Edit lives
+                there so the shared edit form never renders twice for one payment. */}
             {recent.map((p) => (
-              <div key={p.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                <div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <strong>{p.vendor?.name || "Vendor"}</strong>
-                    {isFutureDate(p.paid_date) && <span className="chip chip-progress">post-dated</span>}
-                  </div>
-                  <div className="help" style={{ marginTop: 4 }}>
-                    {methodLabel(p.method)}{p.reference ? ` . ${p.reference}` : ""}{p.paid_date ? ` . paid ${p.paid_date}` : ""} . {coverage(p)}
-                    {p.confirmation_filing ? ` . filed ${p.confirmation_filing}` : ""}
-                    {p.notes ? ` . ${p.notes}` : ""}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
-                  {mayEdit && (
-                    <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
-                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePayment(p)} disabled={busy} title="The payment stays in the history for the tax record; its invoices go back to owing">
-                        Void
-                      </button>
+              <div key={p.id} className="card" style={{ padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <strong>{p.vendor?.name || "Vendor"}</strong>
+                      {isFutureDate(p.paid_date) && <span className="chip chip-progress">post-dated</span>}
                     </div>
-                  )}
+                    <div className="help" style={{ marginTop: 4 }}>
+                      {methodLabel(p.method)}{p.reference ? ` . ${p.reference}` : ""}{p.paid_date ? ` . paid ${p.paid_date}` : ""} . {coverage(p)}
+                      {p.confirmation_filing ? ` . filed ${p.confirmation_filing}` : ""}
+                      {p.notes ? ` . ${p.notes}` : ""}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div className="tabular" style={{ fontWeight: 600 }}>{formatCAD(p.amount)}</div>
+                    {mayEdit && (
+                      <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
+                        {!scheduled.some((s) => s.id === p.id) && (
+                          <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditPayment(p)} disabled={busy} title="Fix the date, method, reference, notes, or filing">
+                            Edit
+                          </button>
+                        )}
+                        <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePayment(p)} disabled={busy} title="The payment stays in the history for the tax record; its invoices go back to owing">
+                          Void
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
+                {mayEdit && !scheduled.some((s) => s.id === p.id) && editPayFormBlock(p)}
               </div>
             ))}
           </div>

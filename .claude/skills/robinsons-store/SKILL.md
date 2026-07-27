@@ -126,6 +126,9 @@ Breaking any of these is a regression even if the build passes.
 5. Human in the loop on dollars: extracted lines carry confidence; low-confidence dollar fields never auto-post; an order-vs-invoiced discrepancy needs an explicit acknowledgement before save.
 6. New table, two places: a new table added to schema.sql is covered by the dev_all loop automatically, but under enforced auth it has RLS on and NO policy, which denies everyone. You MUST add it to auth_setup.sql (the store-scoped array, or a child-table policy that scopes through its parent) or production breaks silently. This is the most common way a new feature regresses auth.
 7. Build-safe: code must build with blank env. Auth and data helpers degrade to null rather than throwing; never require Supabase env or auth.users to exist at build time.
+8. Payments only through the engine RPCs in src/lib/payments.ts: record_payment (record), edit_payment (fix date/method/reference/notes/filing; re-derives touched invoice statuses), void_payment (undo; invoices go back to owing), reconcile_postdated (editors only, on load). Never update or delete payment rows directly, never hand-set a derived invoice status without a payment behind it (the vendor page auto-opens Record payment when an edit marks an invoice paid with nothing recorded). Post-dated is a future paid_date on a cheque, never a method value.
+9. AI text answers are plain text: prompts forbid markdown, routes strip it with plainText() from src/lib/aiText.ts, temperature stays low (0 extraction, 0.2 grounded answers), default model claude-sonnet-5 with ANTHROPIC_MODEL as the override.
+10. Owner feedback lives in the feedback table (Suggestions page): note + screenshot + voice recording, screenshot auto-read into ai_summary via /api/feedback-triage, statuses new/planned/done/declined, soft-voided like everything else. New rounds of WhatsApp feedback still get recorded verbatim in docs/OWNER_NOTES.md and triaged into docs/REQUIREMENTS.md.
 
 ## AI agents (all shipped)
 1. Document extraction (/api/extract). Sends the image or PDF to Claude vision with a strict JSON-only contract (vendor, invoice_date, notes, line_items each with description, qty, unit_cost, retail_price_note, confidence), validates it, and shows a confirm screen that flags low-confidence fields and an order-vs-invoiced warning a human acknowledges. Never auto-post low-confidence amounts.
@@ -168,6 +171,10 @@ Keep this as one skill for now. Split only if a piece grows past what fits clean
 - A Canada tax skill if multi-province support becomes real.
 
 ## References
+- CLAUDE.md at the repo root, the entry-point summary that loads in every session.
+- docs/REQUIREMENTS.md, the living requirements ledger: every owner ask with its state (shipped, queued, open) and where it lives in code.
+- docs/SUPABASE_SETUP.md, every SQL script and the exact order to run them (fresh install and live-database upgrade paths).
+- docs/OWNER_NOTES.md, the owner's feedback verbatim round by round, Telugu translated, including the 2026-07 recordings transcripts.
 - docs/STATUS.md, the live status: what is built, what is left, the before-production checklist. The current source of truth.
 - CONTRIBUTING.md, the coding and writing standards, branch and commit rules, and how to run build, lint, and tests.
 - docs/ARCHITECTURE.md, the architecture, the data flow, and the Mermaid diagrams.

@@ -2,7 +2,18 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-06-12, on branch claude/great-johnson-CFSbi (PR #8, finalized and awaiting the owner's merge).
+Last updated: 2026-07-27, on branch claude/great-johnson-CFSbi (owner feedback round 3: recordings ingested, payment editing, Payrolls & Taxes, Suggestions space, importer v2, brand plaque; see the round-3 section below and docs/REQUIREMENTS.md).
+
+Owner feedback round 3 (2026-07-26/27), all shipped this round:
+- Payment EDIT everywhere (vendor page and payments screen): date, method, reference, notes, filing through the new edit_payment RPC; touched invoice statuses re-derive in the same transaction; amount stays locked (void and re-record). Payment row action labels are Void.
+- Marking an invoice paid through Edit with no payment recorded now opens the Record payment form prefilled (the owner's video showed his flip-back workaround; that loop is closed).
+- Payrolls & Taxes payout category seeded (payments_v2.sql section 8 + seed.sql); finance vendors drop delivery/freight fields.
+- Suggestions page (/suggestions + feedback table + /api/feedback-triage): notes, screenshots auto-read into text with the store's Anthropic key, in-browser voice recordings, status flow, developer digest copy, feedback tab in the export.
+- Header-driven bookings importer v2 (src/lib/importBookingsV2.ts) built and tested against the owner's real annotated workbook: 125 vendors, 98 orders, 86 invoices, 33 payments with methods/filing/dates, 2 credit notes, AskingInventory wish-list notes. Auto-detected by /api/import ahead of the v1 parser.
+- Storefront brand: CSS plaque (dark boards, gold lettering) on login and the sidebar mark, from the owner's photos. KPI tiles no longer overflow on six-digit totals. The notification bell count refreshes live (navigation, focus, open, timer). AI routes return plain text (aiText strip + prompt rules + low temperature + claude-sonnet-5 default).
+- New docs: CLAUDE.md (root), docs/REQUIREMENTS.md (living requirements ledger), docs/SUPABASE_SETUP.md (script run order). OWNER_NOTES carries the round-3 transcripts, including the two voice notes that resisted transcription (open item).
+
+Owner actions for this round (in order, each safe to re-run): payments_v2.sql, credit_notes.sql, feedback.sql, then auth_setup.sql last if enforced login is on.
 
 Owner decisions (2026-06-12, revised 2026-07-07):
 - 2026-06-12: finalize and ship what exists; build no new features for now.

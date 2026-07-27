@@ -50,6 +50,12 @@ export function isPropertyDept(name: string | null | undefined): boolean {
   return !!name && /property/i.test(name);
 }
 
+// True for the Payrolls & Taxes payout category (payroll remittances, incorporation
+// taxes). Those payouts have no delivery or freight, so the forms drop that noise.
+export function isFinanceDept(name: string | null | undefined): boolean {
+  return !!name && /payroll|tax/i.test(name);
+}
+
 export function methodLabel(value: string | null | undefined): string {
   if (!value) return "Payment";
   return PAYMENT_METHODS.find((m) => m.value === value)?.label || LEGACY_LABELS[value] || value;
@@ -109,6 +115,29 @@ export async function recordPaymentRpc(args: {
 // Void a payment and put every invoice it touched back to its true status.
 export async function voidPaymentRpc(paymentId: string, actorId: string | null): Promise<void> {
   const { error } = await supabase.rpc("void_payment", { p_payment_id: paymentId, p_actor: actorId });
+  if (error) throw new Error(error.message);
+}
+
+// Fix a recorded payment's facts (date, method, reference, notes, filing) and re-derive
+// the touched invoice statuses. The amount stays: void and re-record for a wrong amount.
+export async function editPaymentRpc(args: {
+  paymentId: string;
+  method: string;
+  paidDate: string;
+  reference?: string;
+  notes?: string;
+  confirmationFiling?: string;
+  actorId: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("edit_payment", {
+    p_payment_id: args.paymentId,
+    p_method: args.method,
+    p_paid_date: args.paidDate,
+    p_reference: args.reference || null,
+    p_notes: args.notes || null,
+    p_confirmation_filing: args.confirmationFiling || null,
+    p_actor: args.actorId
+  });
   if (error) throw new Error(error.message);
 }
 

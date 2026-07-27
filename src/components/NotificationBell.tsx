@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { SUPABASE_CONFIGURED } from "@/lib/supabaseClient";
 import { useActiveStore } from "@/lib/store";
 import { useCurrentRole } from "@/lib/auth";
@@ -24,16 +25,29 @@ export default function NotificationBell() {
   const [items, setItems] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
 
+  // The count is live state, not an unread inbox: it must fall as things get fixed. The
+  // shell survives client-side navigation, so a mount-only load would freeze the number
+  // for the whole session (Ravi noticed). Recheck on every route change, when the tab
+  // regains focus, when the panel opens, and on a slow timer as a backstop.
   useEffect(() => {
     if (!ready || !roleReady || !storeId || !SUPABASE_CONFIGURED) return;
     let alive = true;
-    (async () => {
+    const refresh = async () => {
       const list = await loadNotifications(storeId, role);
       if (alive) setItems(list);
-    })();
-    return () => { alive = false; };
-  }, [ready, roleReady, storeId, role]);
+    };
+    refresh();
+    const onFocus = () => refresh();
+    window.addEventListener("focus", onFocus);
+    const timer = setInterval(refresh, 3 * 60 * 1000);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", onFocus);
+      clearInterval(timer);
+    };
+  }, [ready, roleReady, storeId, role, pathname, open]);
 
   // Close on outside click or Escape, only while the panel is open.
   useEffect(() => {

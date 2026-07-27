@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveMember, memberSeesMoney } from "@/lib/serverMember";
+import { plainText } from "@/lib/aiText";
 
 export const runtime = "nodejs";
 
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
     const includeMoney = member ? memberSeesMoney(member.role) : true;
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+    const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
     if (!apiKey) {
       return NextResponse.json({ message: "Ask is off. Set ANTHROPIC_API_KEY to enable it." });
     }
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
 
     const context = lines.join("\n");
     const system =
-      "You are the assistant for Robinsons General Store. Answer the question using ONLY the store data provided in the user message. Be concise and specific, and cite the vendor name or note topic you used. If the answer is not in the data, say you do not have that on file. Do not invent numbers or vendors. No em dashes.";
+      "You are the assistant for Robinsons General Store. Answer the question using ONLY the store data provided in the user message. Be concise and specific, and cite the vendor name or note topic you used. If the answer is not in the data, say you do not have that on file. Do not invent numbers or vendors. Answer in plain text only: no markdown, no asterisks, no # headers; use simple hyphen lists. No em dashes.";
 
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -78,6 +79,8 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model,
         max_tokens: 1024,
+        // No temperature override: current Claude models reject non-default sampling
+        // params; consistency comes from the grounded prompt instead.
         system,
         messages: [{ role: "user", content: `STORE DATA:\n${context}\n\nQUESTION: ${question}` }]
       })
@@ -90,7 +93,7 @@ export async function POST(req: NextRequest) {
 
     const data = await resp.json();
     const textPart = (data.content || []).find((c: any) => c.type === "text");
-    return NextResponse.json({ answer: textPart?.text || "" });
+    return NextResponse.json({ answer: plainText(textPart?.text || "") });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "unexpected error" }, { status: 500 });
   }
