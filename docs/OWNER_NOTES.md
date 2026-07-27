@@ -396,3 +396,18 @@ and re-verified against the real file: 130 vendors across 4 tabs, richer methods
 (cc_visa, cc_amex, etransfer, eft), the remark preserved on the wish-list note, all
 structural assertions passing. Recognized uploads are now also archived under imports/ in
 the documents bucket and listed on the Import screen as downloadable versions.
+
+## Late-night walkthrough round, 2026-07-27 (live demo with the owner)
+
+Shipped during and right after the call: reference boxes explain themselves per method
+(the Card confirmation question, asked twice); the payout vendor picker lists whole
+categories with counts (the silent 30-row cap was hiding vendor #31+ in the big
+departments); a vendor's zero Outstanding explains deposits on account and
+ordered-but-not-invoiced amounts (the ABBOT confusion: orders are commitments, invoices
+are debts); the vendors directory is grouped by department with count chips and clickable
+category chips; and Ask the store learned the application itself (an APP GUIDE ships with
+the code) plus deterministic issue logging: saying "log this issue: ..." files the exact
+words into Suggestions when signed in. Department walkthrough photos (one per department,
+from the owner's phone) are queued for visual navigation tiles and knowledge-note
+attachments; website photos were ruled out (blocked network, third-party rights,
+pre-sale vintage).

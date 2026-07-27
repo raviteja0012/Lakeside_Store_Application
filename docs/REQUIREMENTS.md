@@ -80,6 +80,8 @@ SHIPPED (see VERIFICATION.md for sign-off):
   print stays clean.
 
 QUEUED (agreed, not built):
+- Department photo tiles and knowledge-note photo attachments, sourced from the owner's
+  walkthrough (one photo per department from his phone; website photos ruled out).
 - From the 2026_Payments workbook (2026-07-27): recurring obligations (loans and utilities
   with payment frequency and autopay method, the Loans&Payments and Utility tabs);
   estimate AMOUNT on property invoices (Estimated$ next to the existing estimate number);
