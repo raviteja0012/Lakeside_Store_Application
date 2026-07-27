@@ -679,6 +679,11 @@ export default function VendorDetail() {
               <>
                 <div className="help">Outstanding</div>
                 <div className="tabular" style={{ fontSize: 20, fontWeight: 700 }}>{formatCAD(outstanding)}</div>
+                {canEdit(role) && outstanding > 0 && invoices.filter((i) => i.status !== "paid").length > 1 && (
+                  <Link href={`/payments?vendor=${vendor.id}`} className="btn-ghost" style={{ padding: "4px 10px", marginTop: 6, display: "inline-block", textDecoration: "none" }}>
+                    Pay across invoices
+                  </Link>
+                )}
               </>
             )}
             <div className="help">{vendor.default_terms || ""}</div>
