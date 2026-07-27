@@ -42,7 +42,7 @@ export default function VendorDetail() {
   const [editVendor, setEditVendor] = useState(false);
   const [vForm, setVForm] = useState({ rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active", notes: "" });
   const [showPO, setShowPO] = useState(false);
-  const [poForm, setPoForm] = useState({ order_amount: "", ship_date: "", delivery_commit: "", status: "ordered", season_year: "2026", notes: "" });
+  const [poForm, setPoForm] = useState({ order_amount: "", ship_date: "", delivery_commit: "", status: "ordered", season_year: String(new Date().getFullYear()), notes: "" });
   const [showInv, setShowInv] = useState(false);
   // The workflow-sheet fields. status "paid" at entry also records the payment
   // (Ravi: an invoice arrives paid or unpaid). Property Maintenance vendors get the
@@ -222,7 +222,7 @@ export default function VendorDetail() {
       if (r.error) throw new Error(r.error.message);
       await log("order_added", "purchase_order", r.data.id as string);
       setShowPO(false);
-      setPoForm({ order_amount: "", ship_date: "", delivery_commit: "", status: "ordered", season_year: "2026", notes: "" });
+      setPoForm({ order_amount: "", ship_date: "", delivery_commit: "", status: "ordered", season_year: String(new Date().getFullYear()), notes: "" });
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -356,29 +356,15 @@ export default function VendorDetail() {
         service_category: isProperty ? svcCat || null : null,
         work_description: editInvForm.work_description || null,
         terms: editInvForm.terms || null,
-        due_date: editInvForm.due_date || null,
-        status: editInvForm.status
+        due_date: editInvForm.due_date || null
       }).eq("id", editInvId);
       if (r.error) throw new Error(r.error.message);
+      // Status is DERIVED, never written here: an amount change can move an invoice
+      // between paid and partially paid, so the engine re-derives it right away.
+      await supabase.rpc("recompute_invoice_status", { p_invoice_id: editInvId });
       await log("invoice_edited", "invoice", editInvId);
-      const savedId = editInvId;
-      const markedPaid = editInvForm.status === "paid";
       setEditInvId(null);
       await load();
-      // Ravi's video: he marked an invoice paid through Edit and the payment never showed,
-      // so he had to flip it back and use Record payment himself. Close that loop here:
-      // a manual "paid" with no payment behind it opens the payment form right away, so
-      // the money record always follows the status.
-      if (markedPaid) {
-        const fresh = await fetchSettlements([savedId]);
-        const inv = { amount: num(editInvForm.amount), hst_amount: hstFromMode(editInvForm.tax_mode, editInvForm.hst_amount), freight_charges: num(editInvForm.freight_charges) } as Invoice;
-        const left = round2(remainingToAllocate(invTotal(inv), fresh.get(savedId)));
-        if (left > 0) {
-          setPayFor(savedId);
-          setPayForm({ amount: String(left), method: "cheque", paid_date: todayISO(), reference: "", notes: "", filing: "" });
-          setError("Marked paid, but no payment is recorded yet. Say how it was paid below so the payment shows in the list.");
-        }
-      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -658,7 +644,14 @@ export default function VendorDetail() {
         charge: 0, credit: Number(p.amount) || 0, scheduled
       });
     }
-    rows.sort((a, b) => (a.date || "9999-99-99") < (b.date || "9999-99-99") ? -1 : 1);
+    rows.sort((a, b) => {
+      const da = a.date || "9999-99-99", db = b.date || "9999-99-99";
+      if (da !== db) return da < db ? -1 : 1;
+      // Same day: the charge lands before its payment, so the running balance never dips
+      // negative mid-statement for an arrived-already-paid invoice.
+      if ((a.charge > 0) !== (b.charge > 0)) return a.charge > 0 ? -1 : 1;
+      return 0;
+    });
     let bal = 0;
     const withBal = rows.map((r) => {
       if (!r.scheduled) bal = round2(bal + r.charge - r.credit);
@@ -936,10 +929,10 @@ export default function VendorDetail() {
                       <div><label className="label">Terms</label><input className="input" value={editInvForm.terms} onChange={(e) => setEditInvForm({ ...editInvForm, terms: e.target.value })} /></div>
                       <div><label className="label">Due date</label><input className="input" type="date" value={editInvForm.due_date} onChange={(e) => setEditInvForm({ ...editInvForm, due_date: e.target.value })} /></div>
                       <div><label className="label">Status</label>
-                        {/* Normally derived from payments; this is the owner's manual override. */}
-                        <select className="input" value={editInvForm.status} onChange={(e) => setEditInvForm({ ...editInvForm, status: e.target.value })}>
-                          {["unpaid", "partially_paid", "paid", "postdated"].map((s) => <option key={s} value={s}>{labelize(s)}</option>)}
-                        </select>
+                        <div style={{ paddingTop: 6 }}>
+                          <span className={`chip ${chipClass(editInvForm.status)}`}>{labelize(editInvForm.status)}</span>
+                        </div>
+                        <p className="help" style={{ margin: "4px 0 0" }}>Follows the payments: record one to mark paid, void one to undo.</p>
                       </div>
                     </div>
                     {isProperty && (
@@ -997,7 +990,7 @@ export default function VendorDetail() {
                       <div><label className="label">Notes{payForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} /></div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button className="btn-primary" onClick={recordPayment} disabled={busy}>{busy ? "Saving." : "Save"}</button>
+                      <button className="btn-primary" onClick={recordPayment} disabled={busy}>{busy ? "Saving." : "Record payment"}</button>
                       <button className="btn-ghost" onClick={() => setPayFor(null)}>Cancel</button>
                     </div>
                   </div>
@@ -1092,6 +1085,7 @@ export default function VendorDetail() {
                 Every charge and payment in date order, the way the vendor&rsquo;s own statement reads. Check their
                 &ldquo;remaining amount&rdquo; against the ending balance here, line by line.
               </p>
+              <div className="tbl-wrap"><div style={{ minWidth: 560 }}>
               <div className="help" style={{ display: "grid", gridTemplateColumns: "90px 1fr 90px 90px 100px", gap: 8, fontWeight: 600 }}>
                 <span>Date</span><span>Item</span><span style={{ textAlign: "right" }}>Charge</span><span style={{ textAlign: "right" }}>Payment</span><span style={{ textAlign: "right" }}>Balance</span>
               </div>
@@ -1109,6 +1103,7 @@ export default function VendorDetail() {
                   <span className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>{r.scheduled ? "" : formatCAD(r.balance)}</span>
                 </div>
               ))}
+              </div></div>
               <div style={{ borderTop: "1px solid var(--border)", marginTop: 6, paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <span style={{ fontWeight: 600 }}>Remaining to pay off</span>
                 <span className="tabular" style={{ fontWeight: 700, fontSize: 16 }}>{formatCAD(statement.ending)}</span>
@@ -1247,13 +1242,15 @@ export default function VendorDetail() {
                 <label className="label">Comments</label>
                 <textarea className="input" rows={2} value={creditForm.comments} onChange={(e) => setCreditForm({ ...creditForm, comments: e.target.value })} />
               </div>
-              {creditForm.invoice_id && (
-                <div className="help">
-                  Adjusted invoice amount after credit: {formatCAD(
-                    invTotal(invoices.find((i) => i.id === creditForm.invoice_id)!) - (Number(creditForm.credit_amount) || 0)
-                  )}
-                </div>
-              )}
+              {(() => {
+                const linked = invoices.find((i) => i.id === creditForm.invoice_id);
+                if (!linked) return null;
+                return (
+                  <div className="help">
+                    Adjusted invoice amount after credit: {formatCAD(invTotal(linked) - (Number(creditForm.credit_amount) || 0))}
+                  </div>
+                );
+              })()}
               <div>
                 <button className="btn-primary" onClick={addCredit} disabled={busy}>{busy ? "Saving." : "Save credit"}</button>
               </div>

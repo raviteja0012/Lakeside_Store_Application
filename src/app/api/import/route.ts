@@ -25,6 +25,21 @@ async function archiveUpload(sb: any, buf: Buffer, fileName: string): Promise<vo
   }
 }
 
+// Insert only rows whose deterministic ids are not already on file, in chunks. This is
+// what makes a re-upload heal a partially failed earlier run instead of skipping a
+// vendor's whole ledger because the vendor row itself made it in.
+async function insertMissing(sb: any, table: string, rows: any[]): Promise<number> {
+  if (!rows.length) return 0;
+  const existing = new Set<string>();
+  for (let i = 0; i < rows.length; i += 200) {
+    const ids = rows.slice(i, i + 200).map((r) => r.id);
+    const { data, error } = await sb.from(table).select("id").in("id", ids);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    for (const r of (data as any[]) || []) existing.add(r.id);
+  }
+  return insertChunks(sb, table, rows.filter((r) => !existing.has(r.id)));
+}
+
 // Insert in chunks so a large workbook does not exceed the request size. Counts are summed.
 // sb is typed any: the installed supabase-js generics narrow .insert() to never[] otherwise.
 async function insertChunks(
@@ -211,7 +226,7 @@ async function importInventoryFlow(
     }
   }
 
-  await sb.from("activity_log").insert({ actor_id: actorId, action: "imported", entity: "inventory_count", entity_id: countId });
+  if (actorId) await sb.from("activity_log").insert({ actor_id: actorId, action: "imported", entity: "inventory_count", entity_id: countId });
 
   const skipped = parsed.perSheet.reduce((s, p) => s + p.skipped, 0);
   return Response.json({
@@ -236,19 +251,33 @@ async function importBookingsV2Flow(
   storeId: string,
   actorId: string | null
 ): Promise<Response> {
-  const parsed = parseWorkbookV2(sheets, storeId);
+  const parsed = parseWorkbookV2(sheets, storeId, new Date().getFullYear());
   if (!parsed.vendors.length) {
     return Response.json({ ok: false, message: "The workbook looked like the bookings ledger but no vendor rows were found." }, { status: 200 });
   }
 
-  const { data: existing, error: exErr } = await sb.from("vendor").select("id, name, rep_name, phone, email, products_we_carry, default_terms").eq("store_id", storeId);
+  const { data: existing, error: exErr } = await sb.from("vendor").select("id, name, voided_at, rep_name, phone, email, products_we_carry, default_terms").eq("store_id", storeId);
   if (exErr) {
     return Response.json({ ok: false, message: `Could not read existing vendors: ${exErr.message}` }, { status: 200 });
   }
-  const present = new Map(((existing as any[]) || []).map((v) => [String(v.name || "").toLowerCase(), v]));
+  const allRows = (existing as any[]) || [];
+  // A vendor deleted in the app is ABSENT for matching (it would otherwise silently
+  // swallow its sheet rows forever and get its dead record refreshed); it is reported
+  // instead so a person decides.
+  const present = new Map(allRows.filter((v) => !v.voided_at).map((v) => [String(v.name || "").toLowerCase(), v]));
+  const voidedNames = new Set(allRows.filter((v) => v.voided_at).map((v) => String(v.name || "").toLowerCase()));
+  const voidedOnSheet = parsed.vendors.filter((v) => voidedNames.has(v.name.toLowerCase()) && !present.has(v.name.toLowerCase())).map((v) => v.name);
 
-  const newVendors = parsed.vendors.filter((v) => !present.has(v.name.toLowerCase()));
+  const newVendors = parsed.vendors.filter((v) => !present.has(v.name.toLowerCase()) && !voidedNames.has(v.name.toLowerCase()));
   const newVendorIds = new Set(newVendors.map((v) => v.id));
+  // Children also load for vendors this importer created before (same deterministic id):
+  // that heals a partially failed earlier run and lets later sheet rows land, while
+  // vendors imported by the ORIGINAL importer (different ids) stay skip-only so their
+  // money is never double-booked.
+  const eligibleVendorIds = new Set([
+    ...newVendors.map((v) => v.id),
+    ...parsed.vendors.filter((v) => present.get(v.name.toLowerCase())?.id === v.id).map((v) => v.id)
+  ]);
   const skippedVendors = parsed.vendors.length - newVendors.length;
 
   // The pull side of keeping the owner's sheets and the app in sync: a vendor already in
@@ -278,9 +307,9 @@ async function importBookingsV2Flow(
     }
   }
 
-  const newInvoices = parsed.invoices.filter((inv) => newVendorIds.has(inv.vendor_id));
+  const newInvoices = parsed.invoices.filter((inv) => eligibleVendorIds.has(inv.vendor_id));
   const newInvoiceIds = new Set(newInvoices.map((inv) => inv.id));
-  const newOrders = parsed.orders.filter((o) => newVendorIds.has(o.vendor_id));
+  const newOrders = parsed.orders.filter((o) => eligibleVendorIds.has(o.vendor_id));
   const newPayments = parsed.payments.filter((p) => newInvoiceIds.has(p.invoice_id));
 
   // Credits load for EVERY vendor in the workbook, not just new ones: the live store was
@@ -335,12 +364,12 @@ async function importBookingsV2Flow(
   const creditsOut = newCredits.map((cr) => ({ ...cr, created_by: actorId }));
   const notesOut = newNotes.map((n) => ({ ...n, created_by: actorId }));
 
-  const insertedVendors = await insertChunks(sb, "vendor", newVendors);
-  const insertedOrders = await insertChunks(sb, "purchase_order", ordersOut);
-  const insertedInvoices = await insertChunks(sb, "invoice", newInvoices);
-  const insertedPayments = await insertChunks(sb, "payment", paymentsOut);
+  const insertedVendors = await insertMissing(sb, "vendor", newVendors);
+  const insertedOrders = await insertMissing(sb, "purchase_order", ordersOut);
+  const insertedInvoices = await insertMissing(sb, "invoice", newInvoices);
+  const insertedPayments = await insertMissing(sb, "payment", paymentsOut);
   const insertedCredits = creditsTableMissing ? 0 : await insertChunks(sb, "credit_note", creditsOut);
-  const insertedNotes = await insertChunks(sb, "knowledge_note", notesOut);
+  const insertedNotes = await insertMissing(sb, "knowledge_note", notesOut);
 
   return Response.json({
     ok: true,
@@ -350,7 +379,8 @@ async function importBookingsV2Flow(
       `${insertedPayments} payments, ${insertedCredits} credits, and ${insertedNotes} notes from the updated ledger. ` +
       `Skipped ${skippedVendors} vendors already in this store` +
       (refreshedVendors ? ` and refreshed contact/product info on ${refreshedVendors} of them from the sheet.` : ".") +
-      (creditsTableMissing ? " Credits were skipped because the credit_note table is not set up yet: run supabase/credit_notes.sql once, then re-upload this same file and the credits will load (everything else stays skipped as already-loaded)." : ""),
+      (creditsTableMissing ? " Credits were skipped because the credit_note table is not set up yet: run supabase/credit_notes.sql once, then re-upload this same file and the credits will load (everything else stays skipped as already-loaded)." : "") +
+      (voidedOnSheet.length ? ` Heads up: ${voidedOnSheet.length} vendor${voidedOnSheet.length === 1 ? " is" : "s are"} deleted in the app but still on the sheet (${voidedOnSheet.slice(0, 3).join(", ")}${voidedOnSheet.length > 3 ? ", ..." : ""}); nothing was imported for ${voidedOnSheet.length === 1 ? "it" : "them"}. Re-add in the app or remove from the sheet.` : ""),
     summary: parsed.summary,
     inserted: {
       vendors: insertedVendors, orders: insertedOrders, invoices: insertedInvoices,
@@ -460,7 +490,7 @@ export async function POST(req: Request) {
     }
 
     // Idempotent upsert: keep only vendors whose name is not already in the store.
-    const { data: existing, error: exErr } = await sb.from("vendor").select("name").eq("store_id", storeId);
+    const { data: existing, error: exErr } = await sb.from("vendor").select("name").eq("store_id", storeId).is("voided_at", null);
     if (exErr) {
       return Response.json({ ok: false, message: `Could not read existing vendors: ${exErr.message}` }, { status: 200 });
     }
