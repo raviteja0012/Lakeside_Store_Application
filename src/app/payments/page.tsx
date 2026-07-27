@@ -75,6 +75,11 @@ export default function Payments() {
   const [editPayId, setEditPayId] = useState<string | null>(null);
   const [editPayForm, setEditPayForm] = useState({ method: "cheque", paid_date: "", reference: "", notes: "", filing: "" });
 
+  // Installments against the whole balance (Ravi's maintenance-vendor case: many invoices
+  // over time, one consolidated bill, paid off in chunks aimed at the total, not at any
+  // one invoice). Type the chunk, spread it oldest-first, eyeball, record.
+  const [spreadAmount, setSpreadAmount] = useState("");
+
   const PAY_SELECT =
     "id, vendor_id, invoice_id, amount, method, paid_date, reference, notes, confirmation_filing, created_at, " +
     "vendor:vendor_id(name), payment_allocation(invoice_id, amount, invoice:invoice_id(invoice_number))";
@@ -150,6 +155,18 @@ export default function Payments() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, storeId]);
+
+  // Arriving from a vendor page ("Pay across invoices"): open the form with that vendor
+  // picked. Read from window so the page needs no Suspense boundary for search params.
+  useEffect(() => {
+    if (loading || typeof window === "undefined") return;
+    const vid = new URLSearchParams(window.location.search).get("vendor");
+    if (vid && !vendorId && vendors.some((v) => v.id === vid)) {
+      pickVendor(vid);
+      setShowForm(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, vendors]);
 
   const selVendor = useMemo(() => vendors.find((v) => v.id === vendorId) || null, [vendors, vendorId]);
   const vendorInvoices = useMemo(
@@ -309,6 +326,41 @@ export default function Payments() {
       await voidRow("vendor", vid, currentActorId(member));
       await load();
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  // Fill the allocation boxes from one installment amount, oldest due date first, a
+  // partial on the last invoice it reaches. Nothing records here: the person still sees
+  // the spread and presses Record, and the engine derives partially_paid on its own.
+  function spreadOldestFirst() {
+    const amt = round2(Number(spreadAmount) || 0);
+    if (amt <= 0) {
+      setError("Enter the installment amount to spread first.");
+      return;
+    }
+    const open = [...vendorInvoices].sort((a, b) => ((a.due_date || "9999-99-99") < (b.due_date || "9999-99-99") ? -1 : 1));
+    let left = amt;
+    const next: Record<string, string> = {};
+    for (const i of open) {
+      if (left <= 0) break;
+      const rem = round2(remainingToAllocate(invoiceTotal(i), settlements.get(i.id)));
+      if (rem <= 0) continue;
+      const take = round2(Math.min(rem, left));
+      next[i.id] = String(take);
+      left = round2(left - take);
+    }
+    setNoInvoice(false);
+    setAlloc(next);
+    const n = Object.keys(next).length;
+    if (n === 0) {
+      setError("Nothing is owed on this vendor's open invoices, so there is nothing to spread. A payment with no invoice can be recorded as a deposit below.");
+      return;
+    }
+    setError(null);
+    setOkMsg(
+      `Spread ${formatCAD(amt - left)} across ${n} invoice${n === 1 ? "" : "s"}, oldest first.` +
+      (left > 0 ? ` ${formatCAD(left)} did not fit because everything owed is covered; lower the amount or record the extra separately as a deposit.` : "") +
+      " Check the split, then record."
+    );
   }
 
   function toggleInvoice(i: Invoice) {
@@ -715,6 +767,18 @@ export default function Payments() {
                   <div className="label">Apply to invoices</div>
                   {vendorInvoices.length === 0 && (
                     <p className="help">No open invoices for this vendor. Mark it as a deposit or prepayment below, or add the invoice on the vendor page first.</p>
+                  )}
+                  {vendorInvoices.length > 1 && (
+                    <div className="card" style={{ padding: 10, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", background: "var(--tile)" }}>
+                      <div>
+                        <label className="label" htmlFor="pay-spread">Paying an installment toward everything owed?</label>
+                        <input id="pay-spread" className="input tabular" style={{ width: 150 }} type="number" step="0.01" placeholder="Amount" value={spreadAmount} onChange={(e) => setSpreadAmount(e.target.value)} />
+                      </div>
+                      <button className="btn-ghost" onClick={spreadOldestFirst} disabled={busy}>Spread it oldest first</button>
+                      <p className="help" style={{ margin: 0, flexBasis: "100%" }}>
+                        Fills the boxes below across the open invoices, oldest due date first, with a partial on the last one it reaches. Adjust anything before recording.
+                      </p>
+                    </div>
                   )}
                   {vendorInvoices.map((i) => {
                     const s = settlements.get(i.id);
