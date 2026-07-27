@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, daysOverdue, round2, todayISO } from "@/lib/format";
 import { useActiveStore } from "@/lib/store";
@@ -165,7 +166,12 @@ export default function Overdue() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                 <div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <strong>{i.vendor?.name || "Vendor"}</strong>
+                    {/* The name opens the vendor's full ledger, so an overdue row is never a dead end. */}
+                    {i.vendor_id ? (
+                      <Link href={`/vendors/${i.vendor_id}`} style={{ fontWeight: 700, textDecoration: "none" }}>{i.vendor?.name || "Vendor"}</Link>
+                    ) : (
+                      <strong>{i.vendor?.name || "Vendor"}</strong>
+                    )}
                     <span className={`chip ${b.cls}`}>{b.text}</span>
                     {i.status === "partially_paid" && <span className="chip chip-progress">partially paid</span>}
                   </div>

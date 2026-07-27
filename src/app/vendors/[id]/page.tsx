@@ -718,6 +718,15 @@ export default function VendorDetail() {
                     Pay across invoices
                   </Link>
                 )}
+                {/* The glance facts Ravi asked for: the latest order and the latest cleared
+                    payment, right where the eye lands when the page opens. */}
+                {(orders[0] || payments.find((p) => !isFutureDate(p.paid_date))) && (
+                  <div className="help" style={{ marginTop: 6 }}>
+                    {orders[0] && <span>Last order {orders[0].order_amount != null ? formatCAD(orders[0].order_amount) : ""}{orders[0].ship_date ? ` (ship ${orders[0].ship_date})` : ""}</span>}
+                    {orders[0] && payments.find((p) => !isFutureDate(p.paid_date)) && <span> . </span>}
+                    {(() => { const lp = payments.find((p) => !isFutureDate(p.paid_date)); return lp ? <span>last paid {lp.paid_date}</span> : null; })()}
+                  </div>
+                )}
               </>
             )}
             <div className="help">{vendor.default_terms || ""}</div>

@@ -224,15 +224,42 @@ async function importBookingsV2Flow(
     return Response.json({ ok: false, message: "The workbook looked like the bookings ledger but no vendor rows were found." }, { status: 200 });
   }
 
-  const { data: existing, error: exErr } = await sb.from("vendor").select("id, name").eq("store_id", storeId);
+  const { data: existing, error: exErr } = await sb.from("vendor").select("id, name, rep_name, phone, email, products_we_carry, default_terms").eq("store_id", storeId);
   if (exErr) {
     return Response.json({ ok: false, message: `Could not read existing vendors: ${exErr.message}` }, { status: 200 });
   }
-  const present = new Map(((existing as any[]) || []).map((v) => [String(v.name || "").toLowerCase(), v.id as string]));
+  const present = new Map(((existing as any[]) || []).map((v) => [String(v.name || "").toLowerCase(), v]));
 
   const newVendors = parsed.vendors.filter((v) => !present.has(v.name.toLowerCase()));
   const newVendorIds = new Set(newVendors.map((v) => v.id));
   const skippedVendors = parsed.vendors.length - newVendors.length;
+
+  // The pull side of keeping the owner's sheets and the app in sync: a vendor already in
+  // the store gets its INFO fields refreshed from the sheet when the sheet says something
+  // new. Only non-empty sheet values win (a blank cell never erases app data), and money
+  // rows (orders, invoices, payments) are never touched for existing vendors, so a
+  // re-upload can never double-book or double-pay.
+  let refreshedVendors = 0;
+  for (const pv of parsed.vendors) {
+    const live = present.get(pv.name.toLowerCase());
+    if (!live || newVendorIds.has(pv.id)) continue;
+    const patch: Record<string, string> = {};
+    const consider: Array<[string, string, string | null]> = [
+      ["rep_name", pv.rep_name, live.rep_name],
+      ["phone", pv.phone, live.phone],
+      ["email", pv.email, live.email],
+      ["products_we_carry", pv.products_we_carry, live.products_we_carry],
+      ["default_terms", pv.default_terms, live.default_terms]
+    ];
+    for (const [col, sheetVal, liveVal] of consider) {
+      const sv = (sheetVal || "").trim();
+      if (sv && sv !== String(liveVal || "").trim()) patch[col] = sv;
+    }
+    if (Object.keys(patch).length) {
+      const { error: upErr } = await sb.from("vendor").update(patch).eq("id", live.id);
+      if (!upErr) refreshedVendors++;
+    }
+  }
 
   const newInvoices = parsed.invoices.filter((inv) => newVendorIds.has(inv.vendor_id));
   const newInvoiceIds = new Set(newInvoices.map((inv) => inv.id));
@@ -248,7 +275,7 @@ async function importBookingsV2Flow(
   const creditCandidates = parsed.credits
     .map((cr) => {
       if (newVendorIds.has(cr.vendor_id)) return cr;
-      const liveVendorId = present.get(vendorNameById.get(cr.vendor_id) || "");
+      const liveVendorId = present.get(vendorNameById.get(cr.vendor_id) || "")?.id as string | undefined;
       if (!liveVendorId) return null;
       return { ...cr, vendor_id: liveVendorId, invoice_id: cr.invoice_id && newInvoiceIds.has(cr.invoice_id) ? cr.invoice_id : null };
     })
@@ -304,7 +331,8 @@ async function importBookingsV2Flow(
     message:
       `Loaded ${insertedVendors} new vendors, ${insertedOrders} orders, ${insertedInvoices} invoices, ` +
       `${insertedPayments} payments, ${insertedCredits} credits, and ${insertedNotes} notes from the updated ledger. ` +
-      `Skipped ${skippedVendors} vendors already in this store.` +
+      `Skipped ${skippedVendors} vendors already in this store` +
+      (refreshedVendors ? ` and refreshed contact/product info on ${refreshedVendors} of them from the sheet.` : ".") +
       (creditsTableMissing ? " Credits were skipped because the credit_note table is not set up yet: run supabase/credit_notes.sql once, then re-upload this same file and the credits will load (everything else stays skipped as already-loaded)." : ""),
     summary: parsed.summary,
     inserted: {
