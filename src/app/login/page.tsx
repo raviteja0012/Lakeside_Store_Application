@@ -37,13 +37,13 @@ export default function Login() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--app-bg)", padding: 16 }}>
+    <div className="login-hero">
       <div style={{ display: "grid", gap: 18, width: "100%", maxWidth: 380, justifyItems: "center" }}>
         {/* The storefront sign welcomes people the same way the building does. */}
-        <div className="store-plaque" aria-label="Robinson's General Store, Dorset, Ontario">
+        <div className="store-plaque" aria-label="Robinson's General Store, serving Dorset, Ontario since 1921">
           <span className="store-plaque-top">Robinson&rsquo;s</span>
           <span className="store-plaque-main">General Store</span>
-          <span className="store-plaque-sub">Dorset, Ontario</span>
+          <span className="store-plaque-sub">Serving Dorset, Ontario since 1921</span>
         </div>
       <div className="card" style={{ padding: 24, display: "grid", gap: 16, width: "100%" }}>
         <div>

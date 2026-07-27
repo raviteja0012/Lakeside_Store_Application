@@ -19,6 +19,24 @@ voice notes, and annotated Excel workbooks. Roles: owner, manager, lead, staff. 
 leads never see dollar figures (leads do: see canSeeMoney; staff never). One store today,
 multi-store built in.
 
+What the world knows about the store (researched 2026-07-27; sources: Discover Muskoka,
+1000 Towns of Canada, Tripadvisor, Yelp, BayToday, dorsetcanada.com):
+- A century-old landmark: family-run from 1921 until the recent sale to the current owner;
+  about 14,000 square feet by the bridge on Main Street; voted "Canada's Best Country
+  Store"; a must-see stop for Muskoka and Haliburton visitors.
+- Known for: one-of-everything (gifts, souvenirs, housewares, clothing), moccasins as the
+  signature item, the Food Town grocery side, the hardware side, and The Red Onion ladies'
+  boutique upstairs.
+- What recent reviews criticize under the ownership transition: thinning stock, slow
+  replenishment, rising prices. PRODUCT IMPLICATION: the reorder engine, inventory counts,
+  late-delivery tracking, and vendor ledger are not conveniences; they attack the exact
+  thing the public is currently judging the store on. The Suggestions space and knowledge
+  base preserve what a century of family operation used to hold in memory.
+- Identity used in the app: the storefront sign (dark boards, gold western lettering)
+  drives the login plaque and sidebar mark; "Serving Dorset, Ontario since 1921" is the
+  verified tagline. The winter dusk photo of the building becomes the login backdrop when
+  public/storefront.jpg is added to the repo (the code already supports it).
+
 ## Standing invariants (never regress these)
 
 1. Every read and write is store-scoped; new tables get store_id, RLS, and a line in
