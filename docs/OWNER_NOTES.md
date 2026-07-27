@@ -4,7 +4,7 @@ A living document. Every feature idea, note, or document the owner shares gets r
 refined into something buildable, and checked against what the app already does, so nothing is
 lost and nothing is built twice. Edit freely; append new notes at the bottom with a date.
 
-Last updated: 2026-07-20.
+Last updated: 2026-07-27.
 
 ## Sources on file
 
@@ -411,3 +411,35 @@ words into Suggestions when signed in. Department walkthrough photos (one per de
 from the owner's phone) are queued for visual navigation tiles and knowledge-note
 attachments; website photos were ruled out (blocked network, third-party rights,
 pre-sale vintage).
+
+## Domain and email round, 2026-07-27 (control-panel screenshots)
+
+Three screenshots of the store's domain control panel arrived, carrying Ravi's WhatsApp
+messages of 2026-07-21: "We have a sctive domain and they charge 10 doller per month up to
+10 emails" and "Those are the five email which are configured by previous owners, but we
+are not using them yet. We can configure 5 more if we need. Up to 10 email its 10 dollars
+per month."
+
+What the panel shows (recorded in full, with the integration plan, in docs/DOMAIN_EMAIL.md):
+- robinsonsgeneralstore.ca, DOMAIN.CA registration, active since 2006-10-17. Email plan
+  HST-EMAIL-1 (max 10 mailboxes, about $10 per month), active since 2024-09-17.
+- Five mailboxes, all configured by the previous owners and unused by the current
+  ownership: drygoods@ (249.99MB of 250MB, FULL), hardware@ (250MB of 250MB, FULL),
+  info@ (250MB of 250MB, FULL), joanne@ (the previous owner's personal box, 0.05MB),
+  redonion@ (The Red Onion boutique, 78.76MB).
+- One alias: stories@ forwarding to robinsonsstories@hotmail.com.
+
+This CLOSES the 12:27 voice-note mystery from round 3: "I was trying to get a domain
+email... got the storage and space. It costed almost 1.50 dollars. It's expensive" was
+about this domain email plan and its cost. The 12:18 fragment ("deposit on the device")
+is now the only voice note still un-decoded.
+
+Two urgent findings relayed to the owner the same day:
+1. drygoods@, hardware@, and info@ are AT QUOTA and rejecting incoming mail. Any vendor
+   emailing an invoice or order confirmation to those addresses gets a bounce today.
+2. The stories@ alias sends store mail to the previous owners' personal hotmail; unless
+   deliberate, it should be repointed or deleted, and joanne@ archived then retired.
+
+The integration plan (the app on app.robinsonsgeneralstore.ca, the 10-slot mailbox
+mapping with invoices@ as the future intake feed, Resend sending the daily alert as the
+store, and the concrete email-invoice-intake design) lives in docs/DOMAIN_EMAIL.md.

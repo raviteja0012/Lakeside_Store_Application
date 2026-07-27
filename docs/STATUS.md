@@ -2,7 +2,7 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-07-27, on branch claude/great-johnson-CFSbi (owner feedback round 3: recordings ingested, payment editing, Payrolls & Taxes, Suggestions space, importer v2, brand plaque; see the round-3 section below and docs/REQUIREMENTS.md).
+Last updated: 2026-07-27, on branch claude/great-johnson-CFSbi (latest: the domain and email integration round, docs/DOMAIN_EMAIL.md; before it the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3, all below).
 
 Owner feedback round 3 (2026-07-26/27), all shipped this round:
 - Payment EDIT everywhere (vendor page and payments screen): date, method, reference, notes, filing through the new edit_payment RPC; touched invoice statuses re-derive in the same transaction; amount stays locked (void and re-record). Payment row action labels are Void.
@@ -29,6 +29,16 @@ counts; the vendors directory grouped by department with count chips; reference 
 self-explain per method; Ask the store gained the APP GUIDE (how-the-app-works answers)
 and deterministic issue logging into Suggestions ("log this issue: ..."). Migration for
 the round: payout_fields.sql.
+
+Domain and email round (2026-07-27, docs only): the owner's control-panel screenshots put
+the store's own domain on record: robinsonsgeneralstore.ca (registered 2006) with email
+plan HST-EMAIL-1 (10 mailboxes, about $10 per month), five boxes configured by the
+previous owners. Three of them (drygoods@, hardware@, info@) are FULL and bouncing mail,
+and the stories@ alias forwards store mail to the previous owners' personal hotmail; both
+flagged to the owner as urgent. The inventory, the mailbox plan (invoices@ as the future
+intake feed), the app on app.robinsonsgeneralstore.ca via a Vercel custom domain, and
+Resend SPF/DKIM so the daily alert sends as the store are all in docs/DOMAIN_EMAIL.md.
+This also closes the 12:27 voice note from round 3 (it was the domain email cost).
 
 Jira backlog round (2026-07-27, same day): the connected board (robinsonsgenerastore.atlassian.net, SCRUM project) was read ticket by ticket and its remaining gaps built: Property Maintenance service categories (SCRUM-9 AC 6) with Others free text, Hardware invoice PO numbers (AC 2), the tax modes exact / no-tax vendor / see-the-invoice (AC 5), credit type bank refund vs vendor account credit (AC 7), and the department drill-down report (SCRUM-8). Migration: payout_fields.sql. An hourly Routine now sweeps the board for new tickets and comments and works them.
 

@@ -8,7 +8,8 @@ the same pull request as the work; if it is not recorded here, it is not agreed.
 
 Companion files: docs/STATUS.md (build state), docs/VERIFICATION.md (sign-off record),
 docs/OWNER_NOTES.md (raw owner feedback, verbatim plus translation), docs/SUPABASE_SETUP.md
-(every SQL script and the run order), docs/ARCHITECTURE.md (stack and data model).
+(every SQL script and the run order), docs/ARCHITECTURE.md (stack and data model),
+docs/DOMAIN_EMAIL.md (the store's domain and mailboxes: inventory and integration runbook).
 
 ## The store and the people
 
@@ -97,11 +98,21 @@ QUEUED (agreed, not built):
 - Food-safety compliance module (temp logs, sanitation, certifications) per Ontario
   HPPA / O. Reg. 493/17.
 - Email invoice intake ("get and organise the invoice from Email", configurable senders).
+  Now concrete: vendors send to invoices@robinsonsgeneralstore.ca, the mailbox forwards
+  into the Capture pipeline, a sender allowlist gates it; design in docs/DOMAIN_EMAIL.md
+  section 4. Blocked on the owner creating the invoices@ mailbox.
 - Price-check activity list and notification (grocery).
 
 OPEN (waiting on the owner):
-- The three 2026-07-10 voice notes ("most important"): only fragments decode ("deposit on
-  the device", domain email costs). Owner to type them or re-record in Suggestions.
+- Of the three 2026-07-10 voice notes ("most important"), the domain-email one is now
+  resolved: it was about the store's own domain email plan (docs/DOMAIN_EMAIL.md). Still
+  un-decoded: the 12:18 note ("deposit on the device"). Owner to type it or re-record in
+  Suggestions.
+- Domain panel actions (details and order in docs/DOMAIN_EMAIL.md): clear the three FULL
+  mailboxes (drygoods@, hardware@, info@ bounce vendor mail today); repoint or delete the
+  stories@ alias (it forwards store mail to the previous owners' personal hotmail);
+  archive then retire joanne@; create invoices@ (unblocks email intake); add the CNAME
+  for app.robinsonsgeneralstore.ca so the app lives on the store's own domain.
 - Departments&WorkFlow.xlsx (OneDrive), sheet Lakeside&DryGoodsPaymentRecordF: upload it so
   the payment-record fields can be checked column by column (everything visible so far
   already exists).
