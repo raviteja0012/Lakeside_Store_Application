@@ -44,6 +44,23 @@ export const WORK_TYPES: { value: string; label: string }[] = [
   { value: "upgrade", label: "Upgrade" }
 ];
 
+// Property Maintenance service categories (SCRUM-9). Others opens a free-text box, so the
+// column stays plain text and this list is the picker, not a constraint.
+export const SERVICE_CATEGORIES = [
+  "Electrical", "Plumbing", "HVAC", "Refrigeration", "Lawn", "Septic", "Roofing", "Snow Removal", "Others"
+];
+
+// How a vendor credit comes back to the store.
+export const CREDIT_TYPES: { value: string; label: string }[] = [
+  { value: "bank_account", label: "Refund to bank account" },
+  { value: "vendor_account", label: "Credit on vendor account" }
+];
+
+// Hardware invoices carry the purchase order number (SCRUM-9 AC 2).
+export function isHardwareDept(name: string | null | undefined): boolean {
+  return !!name && /hardware/i.test(name);
+}
+
 // True when a department (by name) is the Property Maintenance payout category. The
 // vendor's category decides which invoice fields the forms show.
 export function isPropertyDept(name: string | null | undefined): boolean {

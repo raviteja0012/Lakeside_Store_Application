@@ -15,6 +15,8 @@ Owner feedback round 3 (2026-07-26/27), all shipped this round:
 
 Owner actions for this round (in order, each safe to re-run): payments_v2.sql, credit_notes.sql, feedback.sql, then auth_setup.sql last if enforced login is on.
 
+Jira backlog round (2026-07-27, same day): the connected board (robinsonsgenerastore.atlassian.net, SCRUM project) was read ticket by ticket and its remaining gaps built: Property Maintenance service categories (SCRUM-9 AC 6) with Others free text, Hardware invoice PO numbers (AC 2), the tax modes exact / no-tax vendor / see-the-invoice (AC 5), credit type bank refund vs vendor account credit (AC 7), and the department drill-down report (SCRUM-8). Migration: payout_fields.sql. An hourly Routine now sweeps the board for new tickets and comments and works them.
+
 Owner decisions (2026-06-12, revised 2026-07-07):
 - 2026-06-12: finalize and ship what exists; build no new features for now.
 - 2026-07-07: the owner asked for a full production-readiness pass, superseding the ship-as-is call. Both previously deferred code-gates (signed document URLs, the hard low-confidence gate) are now built, and the whole app was audited against its invariants (see docs/VERIFICATION.md).

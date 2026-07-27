@@ -165,6 +165,37 @@ export default function Reports() {
   const hstTotal = hstByDept.reduce((s, r) => s + r.hst, 0);
   const maxHst = Math.max(1, ...hstByDept.map((r) => r.hst));
 
+  // Department drill-down (the board's SCRUM-8 ask): every department's money picture at a
+  // glance, opening into its vendors. Owed follows the app's rule: post-dated money has not
+  // left the account, so it still counts as owed until the date arrives.
+  const drilldown = useMemo(() => {
+    const invTotal = (i: Inv) => invAmount(i) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
+    const owedOf = (i: Inv): number => {
+      if (i.status === "paid") return 0;
+      if (i.status === "postdated") return invTotal(i);
+      return Math.max(0, invTotal(i) - (settlements.get(i.id)?.settled || 0));
+    };
+    return depts
+      .map((d) => {
+        const dv = vendors.filter((v) => v.department_id === d.id);
+        const rows = dv
+          .map((v) => {
+            const vinv = invoices.filter((i) => i.vendor_id === v.id);
+            const ordered = pos.filter((p) => p.vendor_id === v.id).reduce((s, p) => s + (Number(p.order_amount) || 0), 0);
+            const invoiced = vinv.reduce((s, i) => s + invTotal(i), 0);
+            const owed = vinv.reduce((s, i) => s + owedOf(i), 0);
+            const overdue = vinv.filter((i) => (i.status === "unpaid" || i.status === "partially_paid") && (daysOverdue(i.due_date) || 0) > 0).length;
+            return { id: v.id, name: v.name, ordered, invoiced, owed, paid: Math.max(0, invoiced - owed), overdue };
+          })
+          .filter((r) => r.ordered > 0 || r.invoiced > 0)
+          .sort((a, b) => b.owed - a.owed || b.invoiced - a.invoiced);
+        const sum = (k: "ordered" | "invoiced" | "owed" | "paid") => rows.reduce((s, r) => s + r[k], 0);
+        return { id: d.id, name: d.name, rows, ordered: sum("ordered"), invoiced: sum("invoiced"), paid: sum("paid"), owed: sum("owed"), overdue: rows.reduce((s, r) => s + r.overdue, 0) };
+      })
+      .filter((d) => d.rows.length > 0)
+      .sort((a, b) => b.owed - a.owed || b.invoiced - a.invoiced);
+  }, [depts, vendors, invoices, pos, settlements]);
+
   // Vendor scorecard: orders count, invoiced total, and discrepancy count (order vs invoiced differ).
   const scorecard = useMemo(() => {
     return vendors
@@ -235,6 +266,44 @@ export default function Reports() {
                 </div>
               )}
             </div>
+          </section>
+
+          <section>
+            <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Department drill-down</h2>
+            <div style={{ display: "grid", gap: 8 }}>
+              {drilldown.length === 0 && <div className="card" style={{ padding: 16 }}><p className="help" style={{ margin: 0 }}>No department activity yet.</p></div>}
+              {drilldown.map((d) => (
+                <details key={d.id} className="card" style={{ padding: 0 }}>
+                  <summary style={{ padding: "12px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", listStyle: "none" }}>
+                    <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <strong>{d.name}</strong>
+                      <span className="help">{d.rows.length} vendor{d.rows.length === 1 ? "" : "s"}</span>
+                      {d.overdue > 0 && <span className="chip chip-error">{d.overdue} overdue</span>}
+                    </span>
+                    <span className="help tabular">
+                      invoiced {formatCAD(d.invoiced)} . paid {formatCAD(d.paid)} . owed {formatCAD(d.owed)}
+                    </span>
+                  </summary>
+                  <div style={{ borderTop: "1px solid var(--border)", padding: "8px 16px 12px", display: "grid", gap: 4 }}>
+                    <div className="help" style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px", gap: 8, fontWeight: 600 }}>
+                      <span>Vendor</span><span style={{ textAlign: "right" }}>Invoiced</span><span style={{ textAlign: "right" }}>Paid</span><span style={{ textAlign: "right" }}>Owed</span>
+                    </div>
+                    {d.rows.map((r) => (
+                      <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px", gap: 8, fontSize: 13, alignItems: "center" }}>
+                        <span style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
+                          <a href={`/vendors/${r.id}`} style={{ textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</a>
+                          {r.overdue > 0 && <span className="chip chip-error" style={{ flexShrink: 0 }}>{r.overdue}</span>}
+                        </span>
+                        <span className="tabular" style={{ textAlign: "right" }}>{formatCAD(r.invoiced)}</span>
+                        <span className="tabular" style={{ textAlign: "right" }}>{formatCAD(r.paid)}</span>
+                        <span className="tabular" style={{ textAlign: "right", fontWeight: r.owed > 0 ? 600 : 400 }}>{formatCAD(r.owed)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+            <p className="help" style={{ margin: "8px 0 0" }}>Open a department to see its vendors; a vendor name opens the full ledger. Post-dated money counts as owed until its date arrives.</p>
           </section>
 
           <section>

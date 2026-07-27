@@ -23,9 +23,11 @@ Run in this order; skip nothing (each is safe to re-run):
    including "both", and the payout categories including the new Payrolls & Taxes.
 2. `credit_notes.sql` — the credit_note table (vendor credits for damage/returns).
 3. `feedback.sql` — the Suggestions table (owner notes, screenshots, voice recordings).
-4. `edit_delete.sql` — soft-delete columns and the inventory line notes (older databases
+4. `payout_fields.sql` — the SCRUM-9 field gaps: invoice.service_category and
+   invoice.po_number, credit_note.credit_type.
+5. `edit_delete.sql` — soft-delete columns and the inventory line notes (older databases
    only; harmless if already applied).
-5. `auth_setup.sql` — ONLY if enforced login is on. Always re-run it LAST after any script
+6. `auth_setup.sql` — ONLY if enforced login is on. Always re-run it LAST after any script
    above, because it (re)applies the per-store policies to every table including new ones.
 
 ## What each remaining file is

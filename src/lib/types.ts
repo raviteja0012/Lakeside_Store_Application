@@ -76,7 +76,9 @@ export type Invoice = {
   delivery_status?: string | null; // delivered | not_delivered
   estimate_number?: string | null; // Property Maintenance: preplanned work has an estimate #
   work_type?: string | null; // Property Maintenance: repair | upgrade
+  service_category?: string | null; // Property Maintenance: Electrical, Plumbing, ... or free text
   work_description?: string | null; // Property Maintenance: short description of the work
+  po_number?: string | null; // Hardware invoices carry the purchase order number
   terms: string | null;
   due_date: string | null;
   status: string;
@@ -225,6 +227,7 @@ export type CreditNote = {
   credit_amount: number;
   reason: string;
   comments: string | null;
+  credit_type?: "bank_account" | "vendor_account" | null;
   status: "pending" | "applied" | "disputed";
   created_by: string | null;
   created_at: string;
