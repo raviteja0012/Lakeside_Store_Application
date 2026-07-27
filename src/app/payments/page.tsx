@@ -21,6 +21,7 @@ import { chipClass, labelize } from "@/lib/status";
 import * as XLSX from "xlsx";
 import {
   PAYMENT_METHODS, CONFIRMATION_FILING, methodLabel, referenceLabel, invoiceTotal, isFutureDate,
+  referenceHelp,
   recordPaymentRpc, voidPaymentRpc, editPaymentRpc, reconcilePostdated, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
@@ -566,7 +567,9 @@ export default function Payments() {
           <div><label className="label">Paid date</label><input className="input" type="date" value={editPayForm.paid_date} onChange={(e) => setEditPayForm({ ...editPayForm, paid_date: e.target.value })} />
             {isFutureDate(editPayForm.paid_date) && <p className="help" style={{ margin: "4px 0 0" }}>Future date: becomes post-dated.</p>}
           </div>
-          <div><label className="label">{referenceLabel(editPayForm.method)}</label><input className="input" value={editPayForm.reference} onChange={(e) => setEditPayForm({ ...editPayForm, reference: e.target.value })} /></div>
+          <div><label className="label">{referenceLabel(editPayForm.method)}</label><input className="input" value={editPayForm.reference} onChange={(e) => setEditPayForm({ ...editPayForm, reference: e.target.value })} />
+            <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(editPayForm.method)}</p>
+          </div>
           <div><label className="label">Confirmation filed</label>
             <select className="input" value={editPayForm.filing} onChange={(e) => setEditPayForm({ ...editPayForm, filing: e.target.value })}>
               <option value="">Not said</option>
@@ -902,6 +905,7 @@ export default function Payments() {
                 <div>
                   <label className="label" htmlFor="pay-ref">{referenceLabel(method)}</label>
                   <input id="pay-ref" className="input" value={reference} onChange={(e) => setReference(e.target.value)} />
+                  <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(method)}</p>
                 </div>
                 <div>
                   <label className="label" htmlFor="pay-filing">Confirmation filed</label>

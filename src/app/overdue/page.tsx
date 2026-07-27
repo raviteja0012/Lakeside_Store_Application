@@ -8,7 +8,7 @@ import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
 import { canEdit } from "@/lib/edit";
 import {
-  PAYMENT_METHODS, CONFIRMATION_FILING, referenceLabel, invoiceTotal, isFutureDate,
+  PAYMENT_METHODS, CONFIRMATION_FILING, referenceLabel, referenceHelp, invoiceTotal, isFutureDate,
   recordPaymentRpc, reconcilePostdated, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
@@ -210,6 +210,7 @@ export default function Overdue() {
                   <div>
                     <label className="label" htmlFor={`pay-ref-${i.id}`}>{referenceLabel(payForm.method)}</label>
                     <input id={`pay-ref-${i.id}`} className="input" value={payForm.reference} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} />
+                    <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(payForm.method)}</p>
                   </div>
                   <div>
                     <label className="label" htmlFor={`pay-filing-${i.id}`}>Confirmation filed</label>

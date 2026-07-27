@@ -11,7 +11,7 @@ import { canEdit, voidRow } from "@/lib/edit";
 import {
   PAYMENT_METHODS, CONFIRMATION_FILING, DELIVERY_STATUS, WORK_TYPES, SERVICE_CATEGORIES, CREDIT_TYPES,
   isPropertyDept, isFinanceDept, isHardwareDept,
-  methodLabel, referenceLabel, invoiceTotal as invTotal, isFutureDate,
+  methodLabel, referenceLabel, referenceHelp, invoiceTotal as invTotal, isFutureDate,
   recordPaymentRpc, voidPaymentRpc, editPaymentRpc, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
@@ -836,7 +836,9 @@ export default function VendorDetail() {
                   </select>
                 </div>
                 <div><label className="label">Paid date</label><input className="input" type="date" value={invForm.pay_date} onChange={(e) => setInvForm({ ...invForm, pay_date: e.target.value })} /></div>
-                <div><label className="label">{referenceLabel(invForm.pay_method)}</label><input className="input" value={invForm.pay_reference} onChange={(e) => setInvForm({ ...invForm, pay_reference: e.target.value })} /></div>
+                <div><label className="label">{referenceLabel(invForm.pay_method)}</label><input className="input" value={invForm.pay_reference} onChange={(e) => setInvForm({ ...invForm, pay_reference: e.target.value })} />
+                  <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(invForm.pay_method)}</p>
+                </div>
                 <div><label className="label">Confirmation filed</label>
                   <select className="input" value={invForm.pay_filing} onChange={(e) => setInvForm({ ...invForm, pay_filing: e.target.value })}>
                     <option value="">Not said</option>
@@ -962,7 +964,9 @@ export default function VendorDetail() {
                       <div><label className="label">Paid date</label><input className="input" type="date" value={payForm.paid_date} onChange={(e) => setPayForm({ ...payForm, paid_date: e.target.value })} />
                         {isFutureDate(payForm.paid_date) && <p className="help" style={{ margin: "4px 0 0" }}>Future date: records as post-dated.</p>}
                       </div>
-                      <div><label className="label">{referenceLabel(payForm.method)}</label><input className="input" value={payForm.reference} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} /></div>
+                      <div><label className="label">{referenceLabel(payForm.method)}</label><input className="input" value={payForm.reference} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} />
+                        <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(payForm.method)}</p>
+                      </div>
                       <div><label className="label">Confirmation filed</label>
                         <select className="input" value={payForm.filing} onChange={(e) => setPayForm({ ...payForm, filing: e.target.value })}>
                           <option value="">Not said</option>
@@ -1149,7 +1153,9 @@ export default function VendorDetail() {
                         <div><label className="label">Paid date</label><input className="input" type="date" value={editPayForm.paid_date} onChange={(e) => setEditPayForm({ ...editPayForm, paid_date: e.target.value })} />
                           {isFutureDate(editPayForm.paid_date) && <p className="help" style={{ margin: "4px 0 0" }}>Future date: becomes post-dated.</p>}
                         </div>
-                        <div><label className="label">{referenceLabel(editPayForm.method)}</label><input className="input" value={editPayForm.reference} onChange={(e) => setEditPayForm({ ...editPayForm, reference: e.target.value })} /></div>
+                        <div><label className="label">{referenceLabel(editPayForm.method)}</label><input className="input" value={editPayForm.reference} onChange={(e) => setEditPayForm({ ...editPayForm, reference: e.target.value })} />
+                          <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(editPayForm.method)}</p>
+                        </div>
                         <div><label className="label">Confirmation filed</label>
                           <select className="input" value={editPayForm.filing} onChange={(e) => setEditPayForm({ ...editPayForm, filing: e.target.value })}>
                             <option value="">Not said</option>
