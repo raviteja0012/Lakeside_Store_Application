@@ -122,7 +122,7 @@ jobs:
                no markdown, no em dashes.
 
       - name: Tell the ticket
-        if: steps.gate.outputs.ready == 'true' && steps.find.outputs.found == 'true' && always()
+        if: always() && steps.gate.outputs.ready == 'true' && steps.find.outputs.found == 'true'
         env:
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
