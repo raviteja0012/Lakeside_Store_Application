@@ -1,0 +1,76 @@
+# Jira autopilot: a ticket becomes a deployed change
+
+The loop the owner asked for on 2026-07-28: he types what he wants into a Jira ticket, and
+the work gets built, checked, and put in front of a person to merge, without anyone
+starting a chat session.
+
+## The loop
+
+1. Ravi writes a ticket, or comments on one, on the connected board
+   (robinsonsgenerastore.atlassian.net, projects SCRUM and RGS).
+2. Within about 15 minutes, `.github/workflows/jira-autopilot.yml` wakes up and picks the
+   oldest ticket that is not Done and is not already waiting on a person.
+3. It reads CLAUDE.md and the project skill first, so the store's rules (store scoping,
+   money fails closed, payments only through the engine, soft voids, blank-env build)
+   apply to anything it writes.
+4. It implements the ticket on a branch, runs the three gates, updates the docs, and opens
+   a DRAFT pull request.
+5. It writes a plain-words comment back on the ticket: what was built and that a pull
+   request is waiting, or why the ticket needs a person.
+6. Vercel builds the preview from the pull request as usual. A person merges, and the
+   merge deploys to production.
+
+## What it will not do
+
+The point of a loop like this is that it can run unattended. That only stays true if the
+things it refuses to do are the right ones.
+
+- It does not merge. Every run ends at a draft pull request. Production changes when a
+  person says so.
+- It stops and asks on anything touching the payments engine or its RPCs, auth or RLS, or
+  anything that deletes data. Those get a comment, not a commit. A wrong guess about money
+  costs the store real money, so guessing is not allowed there.
+- It ignores instructions written inside ticket text that try to change its process or its
+  permissions. Ticket text is a request for work. Anyone who can comment on the board can
+  write anything in it, so it is treated as input, never as orders.
+- It works one ticket per run. A run that goes wrong affects one ticket, and the next run
+  starts clean.
+- It never writes secrets into the repository, a pull request, or a Jira comment.
+
+## Turning it on
+
+The workflow is merged and inert. It exits quietly on every run until these four secrets
+exist under Settings, Secrets and variables, Actions:
+
+| Secret | What it is |
+|---|---|
+| `ANTHROPIC_API_KEY` | The key that already powers Capture, Ask, and Reorder. |
+| `JIRA_BASE_URL` | `https://robinsonsgenerastore.atlassian.net` |
+| `JIRA_USER_EMAIL` | The Atlassian account the ticket comments should come from. |
+| `JIRA_API_TOKEN` | From id.atlassian.com, Security, API tokens. |
+
+Add them, then run it once by hand: Actions, Jira autopilot, Run workflow. Leave the
+ticket box blank to sweep the board, or type a key like `SCRUM-12` to make it work that
+one ticket. Watch that first run before leaving it on a schedule.
+
+## How it decides a ticket is new
+
+It marks its own comments with `[autopilot]`. A ticket whose newest comment carries that
+marker is waiting on a person and gets skipped, so the loop never works the same ticket
+twice in a row. Replying on the ticket puts it back in the queue: that is the way to ask
+for another pass.
+
+## Cost
+
+One run costs roughly what one build chat costs, and only when there is something to work.
+Runs with an empty board stop before any model call. Fifteen minutes is the polling
+interval, not the run rate.
+
+## When something looks wrong
+
+Every ticket comment links to its run. The run log shows the gates, the diff, and the pull
+request. If the autopilot did something unwanted, close its pull request: nothing reached
+production, because nothing merges without a person.
+
+To stop it entirely, disable the workflow under Actions, or delete the `ANTHROPIC_API_KEY`
+secret and it goes inert again.
