@@ -25,9 +25,15 @@ Run in this order; skip nothing (each is safe to re-run):
 3. `feedback.sql` — the Suggestions table (owner notes, screenshots, voice recordings).
 4. `payout_fields.sql` — the SCRUM-9 field gaps: invoice.service_category and
    invoice.po_number, credit_note.credit_type.
-5. `edit_delete.sql` — soft-delete columns and the inventory line notes (older databases
+5. `order_invoice_fields.sql` — the order and invoice fields the owner asked for on
+   2026-07-27: invoice.tax_mode (how the invoice states its tax), invoice.delivered_date,
+   invoice.delivery_comments, "partially delivered" as a delivery status,
+   purchase_order.order_filing, and "in progress" / "approved" as order statuses. It also
+   re-creates the status engine so a tax-included invoice is not charged its tax twice, and
+   backfills tax_mode on every existing invoice from the HST figure already on file.
+6. `edit_delete.sql` — soft-delete columns and the inventory line notes (older databases
    only; harmless if already applied).
-6. `auth_setup.sql` — ONLY if enforced login is on. Always re-run it LAST after any script
+7. `auth_setup.sql` — ONLY if enforced login is on. Always re-run it LAST after any script
    above, because it (re)applies the per-store policies to every table including new ones.
 
 ## What each remaining file is

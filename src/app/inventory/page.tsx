@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { todayISO } from "@/lib/format";
+import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
@@ -64,7 +65,7 @@ export default function Inventory() {
       const { data: it } = await iq;
       const dList = (ds as Department[]) || [];
       const usr = (us as AppUser[]) || [];
-      setDepartments(dList);
+      setDepartments(sortDepartments(dList));
       setUsers(usr);
       setItems((it as unknown as Item[]) || []);
       setDeptId(dList.find((d) => d.name === "Garden Center")?.id || dList[0]?.id || "");

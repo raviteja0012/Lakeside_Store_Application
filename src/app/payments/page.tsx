@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, dueBand, round2, todayISO } from "@/lib/format";
+import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
@@ -122,7 +123,7 @@ export default function Payments() {
     let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
     if (storeId) dq = dq.eq("store_id", storeId);
     const { data: deps } = await dq;
-    setDepartments((deps as DeptLite[]) || []);
+    setDepartments(sortDepartments((deps as DeptLite[]) || []));
 
     if (!REQUIRE_AUTH) {
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
@@ -146,7 +147,7 @@ export default function Payments() {
 
     let iq = supabase
       .from("invoice")
-      .select("id, vendor_id, invoice_number, amount, hst_amount, freight_charges, terms, due_date, status")
+      .select("id, vendor_id, invoice_number, amount, hst_amount, freight_charges, tax_mode, terms, due_date, status")
       .is("voided_at", null)
       .in("status", ["unpaid", "partially_paid", "postdated"])
       .order("due_date", { ascending: true });

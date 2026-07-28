@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { REQUIRE_AUTH_SERVER } from "@/lib/serverMember";
+import { invoiceTotal } from "@/lib/payments";
 
 export const runtime = "nodejs";
 
@@ -43,7 +44,7 @@ async function run(req: NextRequest) {
   const db = alertsClient();
   const { data, error } = await db
     .from("invoice")
-    .select("id, invoice_number, amount, hst_amount, freight_charges, due_date, vendor:vendor_id(name), store:store_id(name)")
+    .select("id, invoice_number, amount, hst_amount, freight_charges, tax_mode, due_date, vendor:vendor_id(name), store:store_id(name)")
     .in("status", ["unpaid", "partially_paid"])
     .is("voided_at", null)
     .not("due_date", "is", null)
@@ -77,7 +78,7 @@ async function run(req: NextRequest) {
   const dueSoon: any[] = [];
   for (const i of rows) {
     const days = Math.round((todayMs - ms(i.due_date)) / 86400000);
-    const total = (Number(i.amount) || 0) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
+    const total = invoiceTotal(i);
     const remaining = Math.max(0, total - (settled.get(i.id) || 0));
     if (remaining <= 0.005) continue;
     const row = { name: i.vendor?.name || "Vendor", number: i.invoice_number || "", due: i.due_date, total: remaining, days, store: i.store?.name || "" };

@@ -2,7 +2,7 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-07-27, on branch claude/great-johnson-CFSbi (latest: the domain and email integration round, docs/DOMAIN_EMAIL.md; before it the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3, all below).
+Last updated: 2026-07-28, on branch claude/great-johnson-CFSbi (latest: the Jira round from the owner's SCRUM-9 comments, below; before it the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
 
 Owner feedback round 3 (2026-07-26/27), all shipped this round:
 - Payment EDIT everywhere (vendor page and payments screen): date, method, reference, notes, filing through the new edit_payment RPC; touched invoice statuses re-derive in the same transaction; amount stays locked (void and re-record). Payment row action labels are Void.
@@ -29,6 +29,21 @@ counts; the vendors directory grouped by department with count chips; reference 
 self-explain per method; Ask the store gained the APP GUIDE (how-the-app-works answers)
 and deterministic issue logging into Suggestions ("log this issue: ..."). Migration for
 the round: payout_fields.sql.
+
+Jira round (2026-07-28, the owner's four SCRUM-9 comments of 2026-07-27 evening): the
+Vendors screen now opens on the department list and drills into one department at a time
+(counts on each card, search scoped to the department, All vendors, and Add vendor filing
+the new vendor under the department it was opened from). One department sequence
+(src/lib/departments.ts) now drives every department list and dropdown in the app. The
+add-vendor form lost its Department field and gained the owner's labels. Purchase orders
+and invoices were rebuilt to his field lists and order, which brought two new ideas into
+the model: an invoice can now say its tax is already inside the amount (recorded for the
+HST report, never added to what is owed, enforced identically in the app and in the
+database engine), and a delivery can be partially delivered with an arrival date and a
+comment for what was short or damaged. Reports gained "Arriving in the next 7 days", which
+closes the last open acceptance criterion on SCRUM-6. Migration for the round:
+order_invoice_fields.sql. Board state: SCRUM-5, 7, 8, 10, 11 moved to Done (their work had
+shipped earlier and was waiting on the Atlassian connector coming back).
 
 Domain and email round (2026-07-27, docs only): the owner's control-panel screenshots put
 the store's own domain on record: robinsonsgeneralstore.ca (registered 2006) with email

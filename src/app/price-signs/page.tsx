@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD } from "@/lib/format";
+import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, currentActorId, useCurrentRole, useMember } from "@/lib/auth";
 import { canEdit } from "@/lib/edit";
@@ -46,11 +47,11 @@ function MarginCalculator() {
         let fq = supabase.from("department").select("id, name").order("name");
         if (storeId) fq = fq.eq("store_id", storeId);
         const fb = await fq;
-        setDepts((((fb.data as any[]) || []).map((d) => ({ ...d, target_margin: null }))) as DeptMargin[]);
+        setDepts(sortDepartments((((fb.data as any[]) || []).map((d) => ({ ...d, target_margin: null }))) as DeptMargin[]));
         setCanSave(false);
         return;
       }
-      setDepts((data as DeptMargin[]) || []);
+      setDepts(sortDepartments((data as DeptMargin[]) || []));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, storeId]);

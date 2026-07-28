@@ -412,6 +412,56 @@ from the owner's phone) are queued for visual navigation tiles and knowledge-not
 attachments; website photos were ruled out (blocked network, third-party rights,
 pre-sale vintage).
 
+## Jira round, 2026-07-27 evening (SCRUM-9 comments from Ravi Kiran)
+
+Four comments on SCRUM-9 between 21:17 and 22:21, each with a screenshot of the live app.
+This is the first feedback that arrived as Jira comments rather than WhatsApp, which is the
+channel we wanted. All four are shipped; the deviations are noted against each.
+
+1. Vendors navigation (21:17): "When a user opens the Vendors tab, display the department
+   list first. After selecting a department, show only the vendors assigned to that
+   department. The user must also be able to add a vendor from within the department, with
+   the selected department automatically assigned. Include vendor counts, department-level
+   search, an All Vendors option, and a way to return to the department list." With the
+   department sequence: DryGoods&Lakeside, Hardware, Grocery, Property Maintenance, Bakery,
+   Meat, Produce, Payroll&Taxes, Others, and "We need the departments in the same sequence
+   in the dropdown."
+   SHIPPED as asked. The sequence is now one shared rule (src/lib/departments.ts) applied to
+   every department list and dropdown in the app, not just this screen. Departments outside
+   his nine (Chip Stand, Checkouts, and the Clothing / Gifts / Garden Center sections) still
+   work and sort after them: nothing disappears from a list because it was not on the list.
+
+2. Add-vendor form (21:43): rename Name to CompanyNameOrVendorName, drop the Department
+   field ("we dont need a Department(Optional) field. Since we are already specifying the
+   department in the first step itself"), rename Rep to RepName and Default Terms to
+   PaymentTerms, keep Phone / Email / Status / Products we carry / Notes, keep the sequence.
+   SHIPPED. The labels read as plain words rather than run-together field names, per the
+   house rule: "Company or vendor name", "Rep name", "Payment terms". The Department field
+   is gone inside a department and kept only in the All vendors view, where there is no
+   department to inherit.
+
+3. Purchase order (22:04): required fields and sequence: OrderStatus (In Progress,
+   Approved), OrderAmount, OrderConfirmationFillingMethod ("Open for short name
+   suggusions. Perpose of this field is to know where we saved the order confirmation
+   doc"), ShipDate, OrderComments.
+   SHIPPED in that order. The confirmation field is called "Order confirmation filed" and
+   offers Digital / Physical / Both, matching the payment confirmation field the owner
+   already uses. Season year is no longer a field: it follows the ship date, so the seasonal
+   reports keep working without anyone typing a year.
+
+4. Invoice recording (22:21): required fields and sequence: DeliveryStatus (Delivered,
+   Partially Delivered), Delivered Date, Invoice#, InvoiceSubTotal, Tax (Tax Entered
+   Separately, Tax Included in Invoice Amount, No Tax), HST, FreightCharge, Due Date,
+   PaymentStatus (Paid, Unpaid), DeliveryComments "(For any short-shipped or damaged
+   products)".
+   SHIPPED in that order, with three notes. "Tax included in the invoice amount" is new and
+   changes money: the HST is still recorded for the tax report but is no longer added on
+   top, so the app now stores HOW an invoice states its tax instead of guessing it from the
+   figure. A fourth option, "Refer to the actual invoice", stays because the imported
+   ledger has 130 invoices whose tax is unknown. Payment status stays Paid / Unpaid only on
+   entry: after that the status follows the payments, because a status typed by hand is how
+   an invoice ends up marked paid with no payment behind it.
+
 ## Domain and email round, 2026-07-27 (control-panel screenshots)
 
 Three screenshots of the store's domain control panel arrived, carrying Ravi's WhatsApp

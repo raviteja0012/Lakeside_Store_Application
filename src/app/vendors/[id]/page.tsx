@@ -10,8 +10,9 @@ import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
 import {
   PAYMENT_METHODS, CONFIRMATION_FILING, DELIVERY_STATUS, WORK_TYPES, SERVICE_CATEGORIES, CREDIT_TYPES,
+  TAX_MODES, ORDER_FILING, orderStatusOptions,
   isPropertyDept, isFinanceDept, isHardwareDept,
-  methodLabel, referenceLabel, referenceHelp, invoiceTotal as invTotal, isFutureDate,
+  methodLabel, referenceLabel, referenceHelp, invoiceTotal as invTotal, hstInside, isFutureDate,
   recordPaymentRpc, voidPaymentRpc, editPaymentRpc, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
@@ -24,6 +25,16 @@ const num = (s: string) => (s.trim() === "" ? null : Number(s));
 const hstFieldFor = (amount: string) => {
   const n = num(amount);
   return n == null || !isFinite(n) ? "" : String(hstOn(n));
+};
+// The HST for a given tax mode: added on top of the amount, or already inside it. Getting
+// this wrong overstates the input tax credit on the HST report, so the field recomputes
+// whenever the mode or the amount changes rather than keeping a stale figure.
+const hstFieldForMode = (mode: string, amount: string) => {
+  const n = num(amount);
+  if (n == null || !isFinite(n)) return "";
+  if (mode === "included") return String(hstInside(n));
+  if (mode === "separate") return String(hstOn(n));
+  return "";
 };
 
 export default function VendorDetail() {
@@ -42,17 +53,22 @@ export default function VendorDetail() {
   const [editVendor, setEditVendor] = useState(false);
   const [vForm, setVForm] = useState({ rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active", notes: "" });
   const [showPO, setShowPO] = useState(false);
-  const [poForm, setPoForm] = useState({ order_amount: "", ship_date: "", delivery_commit: "", status: "ordered", season_year: String(new Date().getFullYear()), notes: "" });
+  // The order fields the owner asked for, in his order: status, amount, where the
+  // confirmation is filed, ship date, comments. The season year is not asked for; it
+  // follows the ship date so the seasonal reports still line up.
+  const [poForm, setPoForm] = useState({ status: "in_progress", order_amount: "", order_filing: "", ship_date: "", notes: "" });
   const [showInv, setShowInv] = useState(false);
   // The workflow-sheet fields. status "paid" at entry also records the payment
   // (Ravi: an invoice arrives paid or unpaid). Property Maintenance vendors get the
   // estimate / work fields; merchandise vendors get delivery and freight.
   const emptyInvForm = {
     invoice_number: "", invoice_date: todayISO(), amount: "", hst_amount: "", freight_charges: "",
-    // tax_mode: exact = the HST figure typed here; none = a no-tax vendor (stores 0);
-    // invoice = "refer to the actual invoice for tax" (stores blank).
-    tax_mode: "exact", po_number: "",
-    delivery_status: "", terms: "", due_date: "", status: "unpaid",
+    // tax_mode: separate = the HST figure typed here is added on top; included = the HST is
+    // already inside the amount (recorded for the tax report, never added again); none = a
+    // no-tax vendor (stores 0); invoice = "refer to the actual invoice" (stores blank).
+    tax_mode: "separate", po_number: "",
+    delivery_status: "", delivered_date: "", delivery_comments: "",
+    terms: "", due_date: "", status: "unpaid",
     estimate_number: "", work_type: "", service_category: "", service_category_other: "", work_description: "",
     pay_method: "cheque", pay_date: todayISO(), pay_reference: "", pay_filing: ""
   };
@@ -68,12 +84,13 @@ export default function VendorDetail() {
   const [editInvId, setEditInvId] = useState<string | null>(null);
   const [editInvForm, setEditInvForm] = useState({
     invoice_number: "", invoice_date: "", amount: "", hst_amount: "", freight_charges: "",
-    tax_mode: "exact", po_number: "",
-    delivery_status: "", terms: "", due_date: "", status: "unpaid",
+    tax_mode: "separate", po_number: "",
+    delivery_status: "", delivered_date: "", delivery_comments: "",
+    terms: "", due_date: "", status: "unpaid",
     estimate_number: "", work_type: "", service_category: "", service_category_other: "", work_description: ""
   });
   const [editPoId, setEditPoId] = useState<string | null>(null);
-  const [editPoForm, setEditPoForm] = useState({ order_amount: "", ship_date: "", status: "ordered", notes: "" });
+  const [editPoForm, setEditPoForm] = useState({ status: "in_progress", order_amount: "", order_filing: "", ship_date: "", notes: "" });
 
   // Credits
   const [credits, setCredits] = useState<CreditNote[]>([]);
@@ -90,10 +107,20 @@ export default function VendorDetail() {
   // Hardware invoices carry the purchase order number.
   const isHardware = isHardwareDept(vendor?.department?.name);
 
-  // What the tax_mode select stores: exact keeps the typed figure, none is a no-tax vendor
-  // (0), and "refer to the actual invoice" stores blank so reports show it as unstated.
+  // What the tax select stores in hst_amount: "none" is a no-tax vendor (0), "refer to the
+  // actual invoice" stores blank so the report shows it as unstated, and both "separate"
+  // and "included" keep the typed figure. Included differs only in what is OWED, which
+  // invoiceTotal decides from tax_mode, never from the HST figure.
   const hstFromMode = (mode: string, hst: string): number | null =>
     mode === "none" ? 0 : mode === "invoice" ? null : num(hst) ?? 0;
+  // The total this form is asking the store to pay, by the same rule as every other screen.
+  const formTotal = (f: { amount: string; freight_charges: string; hst_amount: string; tax_mode: string }) =>
+    invTotal({
+      amount: num(f.amount),
+      freight_charges: num(f.freight_charges),
+      hst_amount: hstFromMode(f.tax_mode, f.hst_amount),
+      tax_mode: f.tax_mode
+    });
 
   async function load() {
     const { data: v, error: ve } = await supabase
@@ -107,9 +134,9 @@ export default function VendorDetail() {
       return;
     }
     setVendor((v as unknown as Vendor) || null);
-    const { data: po } = await supabase.from("purchase_order").select("id, vendor_id, order_amount, ship_date, delivery_commit, status, season_year, notes, department_id").eq("vendor_id", id).is("voided_at", null).order("ship_date", { ascending: false });
+    const { data: po } = await supabase.from("purchase_order").select("id, vendor_id, order_amount, ship_date, delivery_commit, status, order_filing, season_year, notes, department_id").eq("vendor_id", id).is("voided_at", null).order("ship_date", { ascending: false });
     setOrders((po as unknown as PurchaseOrder[]) || []);
-    const { data: inv } = await supabase.from("invoice").select("id, vendor_id, invoice_number, invoice_date, amount, hst_amount, freight_charges, po_number, delivery_status, estimate_number, work_type, service_category, work_description, terms, due_date, status").eq("vendor_id", id).is("voided_at", null).order("due_date", { ascending: true });
+    const { data: inv } = await supabase.from("invoice").select("id, vendor_id, invoice_number, invoice_date, amount, hst_amount, freight_charges, tax_mode, po_number, delivery_status, delivered_date, delivery_comments, estimate_number, work_type, service_category, work_description, terms, due_date, status").eq("vendor_id", id).is("voided_at", null).order("due_date", { ascending: true });
     const invList = (inv as unknown as Invoice[]) || [];
     setInvoices(invList);
     try {
@@ -129,7 +156,7 @@ export default function VendorDetail() {
     // Load credit notes for this vendor.
     const { data: creds } = await supabase
       .from("credit_note")
-      .select("id, store_id, vendor_id, invoice_id, invoice_number, credit_amount, reason, comments, credit_type, status, created_by, created_at, voided_at, invoice:invoice_id(invoice_number, amount, hst_amount)")
+      .select("id, store_id, vendor_id, invoice_id, invoice_number, credit_amount, reason, comments, credit_type, status, created_by, created_at, voided_at, invoice:invoice_id(invoice_number, amount, hst_amount, freight_charges, tax_mode)")
       .eq("vendor_id", id)
       .is("voided_at", null)
       .order("created_at", { ascending: false });
@@ -211,18 +238,20 @@ export default function VendorDetail() {
         store_id: vendor.store_id ?? null,
         vendor_id: vendor.id,
         department_id: vendor.department_id,
-        season_year: num(poForm.season_year),
+        // The season is the year the goods ship, so a January order for the April delivery
+        // still counts against that season.
+        season_year: Number((poForm.ship_date || todayISO()).slice(0, 4)),
         order_amount: num(poForm.order_amount),
         ship_date: poForm.ship_date || null,
-        delivery_commit: poForm.delivery_commit || null,
         status: poForm.status,
+        order_filing: poForm.order_filing || null,
         notes: poForm.notes || null,
         created_by: effectiveActorId
       }).select("id").single();
       if (r.error) throw new Error(r.error.message);
       await log("order_added", "purchase_order", r.data.id as string);
       setShowPO(false);
-      setPoForm({ order_amount: "", ship_date: "", delivery_commit: "", status: "ordered", season_year: String(new Date().getFullYear()), notes: "" });
+      setPoForm({ status: "in_progress", order_amount: "", order_filing: "", ship_date: "", notes: "" });
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -252,7 +281,7 @@ export default function VendorDetail() {
     // insert, and the RPC refuses a zero allocation. Validate BEFORE anything is written so
     // a bad form never leaves an orphan invoice behind.
     if (invForm.status === "paid") {
-      const payTotal = (num(invForm.amount) || 0) + (num(invForm.freight_charges) || 0) + (hstFromMode(invForm.tax_mode, invForm.hst_amount) || 0);
+      const payTotal = formTotal(invForm);
       if (payTotal <= 0) {
         setError("Enter the invoice amount before saving it as already paid.");
         return;
@@ -271,9 +300,12 @@ export default function VendorDetail() {
         invoice_date: invForm.invoice_date || null,
         amount: num(invForm.amount),
         hst_amount: hstFromMode(invForm.tax_mode, invForm.hst_amount),
+        tax_mode: invForm.tax_mode,
         freight_charges: num(invForm.freight_charges),
         po_number: isHardware ? invForm.po_number.trim() || null : null,
         delivery_status: invForm.delivery_status || null,
+        delivered_date: invForm.delivered_date || null,
+        delivery_comments: invForm.delivery_comments.trim() || null,
         estimate_number: isProperty ? invForm.estimate_number || null : null,
         work_type: isProperty ? invForm.work_type || null : null,
         service_category: isProperty ? svcCat || null : null,
@@ -285,7 +317,7 @@ export default function VendorDetail() {
       if (r.error) throw new Error(r.error.message);
       await log("invoice_added", "invoice", r.data.id as string);
       if (invForm.status === "paid") {
-        const total = (num(invForm.amount) || 0) + (num(invForm.freight_charges) || 0) + (hstFromMode(invForm.tax_mode, invForm.hst_amount) || 0);
+        const total = formTotal(invForm);
         try {
           await recordPaymentRpc({
             vendorId: vendor.id,
@@ -321,11 +353,14 @@ export default function VendorDetail() {
       invoice_date: i.invoice_date || "",
       amount: i.amount != null ? String(i.amount) : "",
       hst_amount: i.hst_amount != null && Number(i.hst_amount) !== 0 ? String(i.hst_amount) : "",
-      // Stored 0 means a no-tax vendor; stored blank means "refer to the actual invoice".
-      tax_mode: i.hst_amount == null ? "invoice" : Number(i.hst_amount) === 0 ? "none" : "exact",
+      // The mode is stored now. Invoices recorded before it existed carried it inside the
+      // HST figure: blank meant "refer to the actual invoice", zero meant a no-tax vendor.
+      tax_mode: i.tax_mode || (i.hst_amount == null ? "invoice" : Number(i.hst_amount) === 0 ? "none" : "separate"),
       freight_charges: i.freight_charges != null ? String(i.freight_charges) : "",
       po_number: i.po_number || "",
       delivery_status: i.delivery_status || "",
+      delivered_date: i.delivered_date || "",
+      delivery_comments: i.delivery_comments || "",
       estimate_number: i.estimate_number || "",
       work_type: i.work_type || "",
       service_category: i.service_category ? (knownCat ? i.service_category : "Others") : "",
@@ -348,9 +383,12 @@ export default function VendorDetail() {
         invoice_date: editInvForm.invoice_date || null,
         amount: num(editInvForm.amount),
         hst_amount: hstFromMode(editInvForm.tax_mode, editInvForm.hst_amount),
+        tax_mode: editInvForm.tax_mode,
         freight_charges: num(editInvForm.freight_charges),
         po_number: isHardware ? editInvForm.po_number.trim() || null : null,
         delivery_status: editInvForm.delivery_status || null,
+        delivered_date: editInvForm.delivered_date || null,
+        delivery_comments: editInvForm.delivery_comments.trim() || null,
         estimate_number: editInvForm.estimate_number || null,
         work_type: editInvForm.work_type || null,
         service_category: isProperty ? svcCat || null : null,
@@ -390,9 +428,10 @@ export default function VendorDetail() {
   function startEditPO(o: PurchaseOrder) {
     setEditPoId(o.id);
     setEditPoForm({
+      status: o.status || "in_progress",
       order_amount: o.order_amount != null ? String(o.order_amount) : "",
+      order_filing: o.order_filing || "",
       ship_date: o.ship_date || "",
-      status: o.status || "ordered",
       notes: o.notes || ""
     });
   }
@@ -406,6 +445,11 @@ export default function VendorDetail() {
         order_amount: num(editPoForm.order_amount),
         ship_date: editPoForm.ship_date || null,
         status: editPoForm.status,
+        order_filing: editPoForm.order_filing || null,
+        // The season follows the ship date, the same rule the add form uses. Only when a
+        // ship date is actually set: imported orders carry a season with no ship date, and
+        // stamping today's year over it would move them into the wrong season.
+        ...(editPoForm.ship_date ? { season_year: Number(editPoForm.ship_date.slice(0, 4)) } : {}),
         notes: editPoForm.notes || null
       }).eq("id", editPoId);
       if (r.error) throw new Error(r.error.message);
@@ -758,7 +802,7 @@ export default function VendorDetail() {
         {editVendor && (
           <div style={{ display: "grid", gap: 10, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div><label className="label">Rep</label><input className="input" value={vForm.rep_name} onChange={(e) => setVForm({ ...vForm, rep_name: e.target.value })} /></div>
+              <div><label className="label">Rep name</label><input className="input" value={vForm.rep_name} onChange={(e) => setVForm({ ...vForm, rep_name: e.target.value })} /></div>
               <div><label className="label">Phone</label><input className="input" value={vForm.phone} onChange={(e) => setVForm({ ...vForm, phone: e.target.value })} /></div>
               <div><label className="label">Email</label><input className="input" value={vForm.email} onChange={(e) => setVForm({ ...vForm, email: e.target.value })} /></div>
               <div><label className="label">Status</label>
@@ -766,7 +810,7 @@ export default function VendorDetail() {
                   {["active", "skip", "discontinue", "bankrupt"].map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
-              <div><label className="label">Default terms</label><input className="input" value={vForm.default_terms} onChange={(e) => setVForm({ ...vForm, default_terms: e.target.value })} /></div>
+              <div><label className="label">Payment terms</label><input className="input" value={vForm.default_terms} onChange={(e) => setVForm({ ...vForm, default_terms: e.target.value })} /></div>
               <div><label className="label">Products</label><input className="input" value={vForm.products_we_carry} onChange={(e) => setVForm({ ...vForm, products_we_carry: e.target.value })} /></div>
             </div>
             <div><label className="label">Notes and rules</label><textarea className="input" rows={2} value={vForm.notes} onChange={(e) => setVForm({ ...vForm, notes: e.target.value })} /></div>
@@ -786,36 +830,47 @@ export default function VendorDetail() {
         {showMoney && showInv && (
           <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+              {!isProperty && !isFinance && (
+                <>
+                  <div><label className="label">Delivery status</label>
+                    <select className="input" value={invForm.delivery_status} onChange={(e) => setInvForm({ ...invForm, delivery_status: e.target.value })}>
+                      <option value="">Not said</option>
+                      {DELIVERY_STATUS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                    </select>
+                  </div>
+                  <div><label className="label">Delivered date</label><input className="input" type="date" value={invForm.delivered_date} onChange={(e) => setInvForm({ ...invForm, delivered_date: e.target.value })} /></div>
+                </>
+              )}
               <div><label className="label">Invoice number</label><input className="input" value={invForm.invoice_number} onChange={(e) => setInvForm({ ...invForm, invoice_number: e.target.value })} /></div>
-              <div><label className="label">Invoice date</label><input className="input" type="date" value={invForm.invoice_date} onChange={(e) => setInvForm({ ...invForm, invoice_date: e.target.value })} /></div>
-              <div><label className="label">Amount (pre-tax)</label><input className="input tabular" type="number" step="0.01" value={invForm.amount} onChange={(e) => setInvForm({ ...invForm, amount: e.target.value, hst_amount: invForm.tax_mode === "exact" ? hstFieldFor(e.target.value) : invForm.hst_amount })} /></div>
+              <div><label className="label">Invoice subtotal</label><input className="input tabular" type="number" step="0.01" value={invForm.amount} onChange={(e) => setInvForm({ ...invForm, amount: e.target.value, hst_amount: hstFieldForMode(invForm.tax_mode, e.target.value) })} /></div>
               <div><label className="label">Tax</label>
-                <select className="input" value={invForm.tax_mode} onChange={(e) => setInvForm({ ...invForm, tax_mode: e.target.value, hst_amount: e.target.value === "exact" ? hstFieldFor(invForm.amount) : "" })}>
-                  <option value="exact">HST amount</option>
-                  <option value="none">No-tax vendor</option>
-                  <option value="invoice">See the invoice</option>
+                <select className="input" value={invForm.tax_mode} onChange={(e) => setInvForm({ ...invForm, tax_mode: e.target.value, hst_amount: hstFieldForMode(e.target.value, invForm.amount) })}>
+                  {TAX_MODES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
-              {invForm.tax_mode === "exact" && <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={invForm.hst_amount} onChange={(e) => setInvForm({ ...invForm, hst_amount: e.target.value })} /></div>}
-              {isHardware && <div><label className="label">PO number</label><input className="input" value={invForm.po_number} onChange={(e) => setInvForm({ ...invForm, po_number: e.target.value })} /></div>}
-              {!isFinance && <div><label className="label">Freight</label><input className="input tabular" type="number" step="0.01" value={invForm.freight_charges} onChange={(e) => setInvForm({ ...invForm, freight_charges: e.target.value })} /></div>}
-              {!isProperty && !isFinance && (
-                <div><label className="label">Delivery</label>
-                  <select className="input" value={invForm.delivery_status} onChange={(e) => setInvForm({ ...invForm, delivery_status: e.target.value })}>
-                    <option value="">Not said</option>
-                    {DELIVERY_STATUS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-                  </select>
+              {(invForm.tax_mode === "separate" || invForm.tax_mode === "included") && (
+                <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={invForm.hst_amount} onChange={(e) => setInvForm({ ...invForm, hst_amount: e.target.value })} />
+                  {invForm.tax_mode === "included" && <p className="help" style={{ margin: "4px 0 0" }}>Already inside the subtotal. Recorded for the tax report, not added again.</p>}
                 </div>
               )}
-              <div><label className="label">Terms</label><input className="input" value={invForm.terms} onChange={(e) => setInvForm({ ...invForm, terms: e.target.value })} /></div>
+              {!isFinance && <div><label className="label">Freight charge</label><input className="input tabular" type="number" step="0.01" value={invForm.freight_charges} onChange={(e) => setInvForm({ ...invForm, freight_charges: e.target.value })} /></div>}
               <div><label className="label">Due date</label><input className="input" type="date" value={invForm.due_date} onChange={(e) => setInvForm({ ...invForm, due_date: e.target.value })} /></div>
-              <div><label className="label">Arrived as</label>
+              <div><label className="label">Payment status</label>
                 <select className="input" value={invForm.status} onChange={(e) => setInvForm({ ...invForm, status: e.target.value })}>
-                  <option value="unpaid">unpaid (has a due date)</option>
-                  <option value="paid">already paid</option>
+                  <option value="unpaid">Unpaid (has a due date)</option>
+                  <option value="paid">Paid already</option>
                 </select>
               </div>
+              <div><label className="label">Invoice date</label><input className="input" type="date" value={invForm.invoice_date} onChange={(e) => setInvForm({ ...invForm, invoice_date: e.target.value })} /></div>
+              <div><label className="label">Terms</label><input className="input" value={invForm.terms} onChange={(e) => setInvForm({ ...invForm, terms: e.target.value })} /></div>
+              {isHardware && <div><label className="label">PO number</label><input className="input" value={invForm.po_number} onChange={(e) => setInvForm({ ...invForm, po_number: e.target.value })} /></div>}
             </div>
+            {!isProperty && !isFinance && (
+              <div><label className="label">Delivery comments</label><input className="input" placeholder="Anything short-shipped or damaged" value={invForm.delivery_comments} onChange={(e) => setInvForm({ ...invForm, delivery_comments: e.target.value })} /></div>
+            )}
+            {showMoney && formTotal(invForm) > 0 && (
+              <p className="help" style={{ margin: 0 }}>Total owed {formatCAD(round2(formTotal(invForm)))}</p>
+            )}
             {isProperty && (
               <div style={{ display: "grid", gap: 10, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
                 <div className="help">Property Maintenance work</div>
@@ -907,34 +962,44 @@ export default function VendorDetail() {
                 {canEdit(role) && editInvId === i.id && (
                   <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+                      {!isProperty && !isFinance && (
+                        <>
+                          <div><label className="label">Delivery status</label>
+                            <select className="input" value={editInvForm.delivery_status} onChange={(e) => setEditInvForm({ ...editInvForm, delivery_status: e.target.value })}>
+                              <option value="">Not said</option>
+                              {DELIVERY_STATUS.map((ds) => <option key={ds.value} value={ds.value}>{ds.label}</option>)}
+                            </select>
+                          </div>
+                          <div><label className="label">Delivered date</label><input className="input" type="date" value={editInvForm.delivered_date} onChange={(e) => setEditInvForm({ ...editInvForm, delivered_date: e.target.value })} /></div>
+                        </>
+                      )}
                       <div><label className="label">Invoice number</label><input className="input" value={editInvForm.invoice_number} onChange={(e) => setEditInvForm({ ...editInvForm, invoice_number: e.target.value })} /></div>
-                      <div><label className="label">Invoice date</label><input className="input" type="date" value={editInvForm.invoice_date} onChange={(e) => setEditInvForm({ ...editInvForm, invoice_date: e.target.value })} /></div>
-                      <div><label className="label">Amount (pre-tax)</label><input className="input tabular" type="number" step="0.01" value={editInvForm.amount} onChange={(e) => setEditInvForm({ ...editInvForm, amount: e.target.value, hst_amount: editInvForm.tax_mode === "exact" ? hstFieldFor(e.target.value) : editInvForm.hst_amount })} /></div>
+                      <div><label className="label">Invoice subtotal</label><input className="input tabular" type="number" step="0.01" value={editInvForm.amount} onChange={(e) => setEditInvForm({ ...editInvForm, amount: e.target.value, hst_amount: hstFieldForMode(editInvForm.tax_mode, e.target.value) })} /></div>
                       <div><label className="label">Tax</label>
-                        <select className="input" value={editInvForm.tax_mode} onChange={(e) => setEditInvForm({ ...editInvForm, tax_mode: e.target.value, hst_amount: e.target.value === "exact" ? hstFieldFor(editInvForm.amount) : "" })}>
-                          <option value="exact">HST amount</option>
-                          <option value="none">No-tax vendor</option>
-                          <option value="invoice">See the invoice</option>
+                        <select className="input" value={editInvForm.tax_mode} onChange={(e) => setEditInvForm({ ...editInvForm, tax_mode: e.target.value, hst_amount: hstFieldForMode(e.target.value, editInvForm.amount) })}>
+                          {TAX_MODES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                         </select>
                       </div>
-                      {editInvForm.tax_mode === "exact" && <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={editInvForm.hst_amount} onChange={(e) => setEditInvForm({ ...editInvForm, hst_amount: e.target.value })} /></div>}
-                      {isHardware && <div><label className="label">PO number</label><input className="input" value={editInvForm.po_number} onChange={(e) => setEditInvForm({ ...editInvForm, po_number: e.target.value })} /></div>}
-                      <div><label className="label">Freight</label><input className="input tabular" type="number" step="0.01" value={editInvForm.freight_charges} onChange={(e) => setEditInvForm({ ...editInvForm, freight_charges: e.target.value })} /></div>
-                      <div><label className="label">Delivery</label>
-                        <select className="input" value={editInvForm.delivery_status} onChange={(e) => setEditInvForm({ ...editInvForm, delivery_status: e.target.value })}>
-                          <option value="">Not said</option>
-                          {DELIVERY_STATUS.map((ds) => <option key={ds.value} value={ds.value}>{ds.label}</option>)}
-                        </select>
-                      </div>
-                      <div><label className="label">Terms</label><input className="input" value={editInvForm.terms} onChange={(e) => setEditInvForm({ ...editInvForm, terms: e.target.value })} /></div>
+                      {(editInvForm.tax_mode === "separate" || editInvForm.tax_mode === "included") && (
+                        <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={editInvForm.hst_amount} onChange={(e) => setEditInvForm({ ...editInvForm, hst_amount: e.target.value })} />
+                          {editInvForm.tax_mode === "included" && <p className="help" style={{ margin: "4px 0 0" }}>Already inside the subtotal.</p>}
+                        </div>
+                      )}
+                      {!isFinance && <div><label className="label">Freight charge</label><input className="input tabular" type="number" step="0.01" value={editInvForm.freight_charges} onChange={(e) => setEditInvForm({ ...editInvForm, freight_charges: e.target.value })} /></div>}
                       <div><label className="label">Due date</label><input className="input" type="date" value={editInvForm.due_date} onChange={(e) => setEditInvForm({ ...editInvForm, due_date: e.target.value })} /></div>
-                      <div><label className="label">Status</label>
+                      <div><label className="label">Payment status</label>
                         <div style={{ paddingTop: 6 }}>
                           <span className={`chip ${chipClass(editInvForm.status)}`}>{labelize(editInvForm.status)}</span>
                         </div>
                         <p className="help" style={{ margin: "4px 0 0" }}>Follows the payments: record one to mark paid, void one to undo.</p>
                       </div>
+                      <div><label className="label">Invoice date</label><input className="input" type="date" value={editInvForm.invoice_date} onChange={(e) => setEditInvForm({ ...editInvForm, invoice_date: e.target.value })} /></div>
+                      <div><label className="label">Terms</label><input className="input" value={editInvForm.terms} onChange={(e) => setEditInvForm({ ...editInvForm, terms: e.target.value })} /></div>
+                      {isHardware && <div><label className="label">PO number</label><input className="input" value={editInvForm.po_number} onChange={(e) => setEditInvForm({ ...editInvForm, po_number: e.target.value })} /></div>}
                     </div>
+                    {!isProperty && !isFinance && (
+                      <div><label className="label">Delivery comments</label><input className="input" placeholder="Anything short-shipped or damaged" value={editInvForm.delivery_comments} onChange={(e) => setEditInvForm({ ...editInvForm, delivery_comments: e.target.value })} /></div>
+                    )}
                     {isProperty && (
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
                         <div><label className="label">Estimate #</label><input className="input" value={editInvForm.estimate_number} onChange={(e) => setEditInvForm({ ...editInvForm, estimate_number: e.target.value })} /></div>
@@ -1009,17 +1074,22 @@ export default function VendorDetail() {
         {showMoney && showPO && (
           <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-              <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={poForm.order_amount} onChange={(e) => setPoForm({ ...poForm, order_amount: e.target.value })} /></div>
-              <div><label className="label">Season year</label><input className="input tabular" type="number" value={poForm.season_year} onChange={(e) => setPoForm({ ...poForm, season_year: e.target.value })} /></div>
-              <div><label className="label">Expected ship date</label><input className="input" type="date" min={todayISO()} value={poForm.ship_date} onChange={(e) => setPoForm({ ...poForm, ship_date: e.target.value })} /></div>
-              <div><label className="label">Delivery commit</label><input className="input" type="date" value={poForm.delivery_commit} onChange={(e) => setPoForm({ ...poForm, delivery_commit: e.target.value })} /></div>
-              <div><label className="label">Status</label>
+              <div><label className="label">Order status</label>
                 <select className="input" value={poForm.status} onChange={(e) => setPoForm({ ...poForm, status: e.target.value })}>
-                  {["draft", "ordered", "confirmed", "shipped", "received", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
+                  {orderStatusOptions(poForm.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </div>
+              <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={poForm.order_amount} onChange={(e) => setPoForm({ ...poForm, order_amount: e.target.value })} /></div>
+              <div><label className="label">Order confirmation filed</label>
+                <select className="input" value={poForm.order_filing} onChange={(e) => setPoForm({ ...poForm, order_filing: e.target.value })}>
+                  <option value="">Not said</option>
+                  {ORDER_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select>
+                <p className="help" style={{ margin: "4px 0 0" }}>Where the confirmation is kept. Optional.</p>
+              </div>
+              <div><label className="label">Ship date</label><input className="input" type="date" min={todayISO()} value={poForm.ship_date} onChange={(e) => setPoForm({ ...poForm, ship_date: e.target.value })} /></div>
             </div>
-            <div><label className="label">Notes</label><input className="input" value={poForm.notes} onChange={(e) => setPoForm({ ...poForm, notes: e.target.value })} /></div>
+            <div><label className="label">Order comments</label><input className="input" value={poForm.notes} onChange={(e) => setPoForm({ ...poForm, notes: e.target.value })} /></div>
             <div><button className="btn-primary" onClick={addPO} disabled={busy}>{busy ? "Saving." : "Save order"}</button></div>
           </div>
         )}
@@ -1032,7 +1102,7 @@ export default function VendorDetail() {
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <strong>{o.season_year || ""} order</strong>
                     <select className="input" style={{ width: "auto", padding: "2px 6px", fontSize: 12 }} value={o.status} onChange={(e) => updatePOStatus(o.id, e.target.value)} disabled={busy || !canEdit(role)} aria-label="order status">
-                      {["draft", "ordered", "confirmed", "shipped", "received", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
+                      {orderStatusOptions(o.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                     </select>
                   </div>
                   <div className="help" style={{ marginTop: 4 }}>{o.ship_date ? `ship ${o.ship_date}` : ""}{o.notes ? ` . ${o.notes}` : ""}</div>
@@ -1050,15 +1120,21 @@ export default function VendorDetail() {
               {canEdit(role) && editPoId === o.id && (
                 <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-                    <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={editPoForm.order_amount} onChange={(e) => setEditPoForm({ ...editPoForm, order_amount: e.target.value })} /></div>
-                    <div><label className="label">Expected ship date</label><input className="input" type="date" value={editPoForm.ship_date} onChange={(e) => setEditPoForm({ ...editPoForm, ship_date: e.target.value })} /></div>
-                    <div><label className="label">Status</label>
+                    <div><label className="label">Order status</label>
                       <select className="input" value={editPoForm.status} onChange={(e) => setEditPoForm({ ...editPoForm, status: e.target.value })}>
-                        {["draft", "ordered", "confirmed", "shipped", "received", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
+                        {orderStatusOptions(editPoForm.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                       </select>
                     </div>
+                    <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={editPoForm.order_amount} onChange={(e) => setEditPoForm({ ...editPoForm, order_amount: e.target.value })} /></div>
+                    <div><label className="label">Order confirmation filed</label>
+                      <select className="input" value={editPoForm.order_filing} onChange={(e) => setEditPoForm({ ...editPoForm, order_filing: e.target.value })}>
+                        <option value="">Not said</option>
+                        {ORDER_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                      </select>
+                    </div>
+                    <div><label className="label">Ship date</label><input className="input" type="date" value={editPoForm.ship_date} onChange={(e) => setEditPoForm({ ...editPoForm, ship_date: e.target.value })} /></div>
                   </div>
-                  <div><label className="label">Notes</label><input className="input" value={editPoForm.notes} onChange={(e) => setEditPoForm({ ...editPoForm, notes: e.target.value })} /></div>
+                  <div><label className="label">Order comments</label><input className="input" value={editPoForm.notes} onChange={(e) => setEditPoForm({ ...editPoForm, notes: e.target.value })} /></div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button className="btn-primary" onClick={savePO} disabled={busy}>{busy ? "Saving." : "Save order"}</button>
                     <button className="btn-ghost" onClick={() => setEditPoId(null)}>Cancel</button>
@@ -1268,7 +1344,7 @@ export default function VendorDetail() {
                   <div className="help" style={{ marginTop: 4 }}>
                     {c.reason}{c.comments ? ` . ${c.comments}` : ""}
                     {c.credit_type ? ` . ${CREDIT_TYPES.find((t) => t.value === c.credit_type)?.label || c.credit_type}` : ""}
-                    {c.invoice ? ` . invoice total ${formatCAD((Number(c.invoice.amount) || 0) + (Number(c.invoice.hst_amount) || 0))}, adjusted ${formatCAD((Number(c.invoice.amount) || 0) + (Number(c.invoice.hst_amount) || 0) - c.credit_amount)}` : ""}
+                    {c.invoice ? ` . invoice total ${formatCAD(invTotal(c.invoice))}, adjusted ${formatCAD(invTotal(c.invoice) - c.credit_amount)}` : ""}
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>

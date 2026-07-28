@@ -123,7 +123,13 @@ create table invoice (
   amount numeric,
   hst_amount numeric,
   freight_charges numeric,              -- freight as its own line; total owed = amount + freight + HST
-  delivery_status text check (delivery_status is null or delivery_status in ('delivered','not_delivered')),
+  -- How the invoice states its tax: separate = the HST figure is added on top; included =
+  -- the HST is already inside amount (recorded for the tax report, never added again);
+  -- none = a no-tax vendor; invoice = refer to the actual invoice. See invoice_owed_total.
+  tax_mode text check (tax_mode is null or tax_mode in ('separate','included','none','invoice')),
+  delivery_status text check (delivery_status is null or delivery_status in ('delivered','partially_delivered','not_delivered')),
+  delivered_date date,                  -- the day the goods actually arrived
+  delivery_comments text,               -- short-shipped or damaged, in the receiver's words
   -- Property Maintenance payouts only (null for merchandise invoices): estimate number when
   -- the work was preplanned, repair vs upgrade, service category, and a short description.
   estimate_number text,
@@ -219,6 +225,19 @@ create index feedback_status_idx on feedback(status);
 -- Payments engine: one atomic path every screen records through. Bodies reference tables
 -- created later in this file (activity_log); plpgsql resolves them at call time.
 
+-- One definition of what an invoice owes, mirroring invoiceTotal() in src/lib/payments.ts.
+-- Tax already inside the invoice amount (tax_mode 'included') is recorded for the HST
+-- report but never added on top, or the engine would demand more than the vendor billed.
+create or replace function public.invoice_owed_total(
+  p_amount numeric, p_freight numeric, p_hst numeric, p_tax_mode text
+) returns numeric
+language sql
+immutable
+as $$
+  select coalesce(p_amount, 0) + coalesce(p_freight, 0)
+       + case when p_tax_mode = 'included' then 0 else coalesce(p_hst, 0) end;
+$$;
+
 -- Derive one invoice's status from its allocations. paid_date in the future means the money
 -- has not left yet (post-dated cheque). A null paid_date counts as settled (legacy imports).
 create or replace function public.recompute_invoice_status(p_invoice_id uuid)
@@ -233,8 +252,9 @@ declare
 begin
   -- Total owed = goods + freight + HST, matching invoiceTotal() in src/lib/payments.ts.
   -- Freight was omitted here at first, which let a partial payment of goods+HST flip an
-  -- invoice to paid with the freight still owed.
-  select coalesce(amount, 0) + coalesce(freight_charges, 0) + coalesce(hst_amount, 0) into v_total
+  -- invoice to paid with the freight still owed. Tax already inside the amount is not
+  -- added again.
+  select public.invoice_owed_total(amount, freight_charges, hst_amount, tax_mode) into v_total
   from public.invoice where id = p_invoice_id;
   if not found then
     return;
@@ -480,7 +500,10 @@ create table purchase_order (
   order_amount numeric,
   ship_date date,
   delivery_commit date,
-  status text default 'draft' check (status in ('draft','ordered','confirmed','shipped','received','cancelled')),
+  -- The owner's two states are in_progress and approved; the rest are the older lifecycle
+  -- values that orders imported from the bookings ledger still carry.
+  status text default 'in_progress' check (status in ('in_progress','approved','draft','ordered','confirmed','shipped','received','cancelled')),
+  order_filing text check (order_filing is null or order_filing in ('digital','physical','both')),
   notes text,
   created_by uuid references app_user(id),
   created_at timestamptz default now()

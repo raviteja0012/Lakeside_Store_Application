@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveMember, memberSeesMoney } from "@/lib/serverMember";
 import { plainText } from "@/lib/aiText";
 import { APP_GUIDE } from "@/lib/appGuide";
+import { invoiceTotal } from "@/lib/payments";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     const scopeNote = db.from("knowledge_note").select("topic, body, tags, department:department_id(name)").is("voided_at", null);
     const scopeVendor = db.from("vendor").select("name, default_terms, status, notes, phone, department:department_id(name)").is("voided_at", null);
-    const scopeInvoice = db.from("invoice").select("amount, hst_amount, freight_charges, due_date, status, terms, vendor:vendor_id(name)").is("voided_at", null);
+    const scopeInvoice = db.from("invoice").select("amount, hst_amount, freight_charges, tax_mode, due_date, status, terms, vendor:vendor_id(name)").is("voided_at", null);
     const [notes, vendors, invoices] = await Promise.all([
       storeId ? scopeNote.eq("store_id", storeId) : scopeNote,
       storeId ? scopeVendor.eq("store_id", storeId) : scopeVendor,
@@ -57,9 +58,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (includeMoney) {
-      lines.push("\nINVOICES (amount owed = amount + freight + HST):");
+      lines.push("\nINVOICES (amount owed = amount + freight + HST, except where the tax is already inside the amount):");
       for (const i of (invoices.data as any[]) || []) {
-        const total = (Number(i.amount) || 0) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
+        const total = invoiceTotal(i);
         lines.push(`- ${i.vendor?.name || "unknown"}: $${total.toFixed(2)}, ${i.status}, due ${i.due_date || "n/a"}, terms ${i.terms || "n/a"}`);
       }
     } else {
