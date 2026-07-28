@@ -32,11 +32,59 @@ export const CONFIRMATION_FILING: { value: string; label: string }[] = [
   { value: "both", label: "Digital and Physical" }
 ];
 
-// Delivery state on an invoice entry.
+// Delivery state on an invoice entry. "Partially delivered" is the short-shipped case:
+// the invoice is for the whole order but only part of it arrived.
 export const DELIVERY_STATUS: { value: string; label: string }[] = [
   { value: "delivered", label: "Delivered" },
+  { value: "partially_delivered", label: "Partially delivered" },
   { value: "not_delivered", label: "Not delivered" }
 ];
+
+// How an invoice states its tax. The mode is stored, not guessed from the HST figure,
+// because "tax included" and "tax entered separately" can carry the identical HST number
+// and mean opposite things about what is owed.
+export const TAX_MODES: { value: string; label: string }[] = [
+  { value: "separate", label: "Tax entered separately" },
+  { value: "included", label: "Tax included in the invoice amount" },
+  { value: "none", label: "No tax" },
+  { value: "invoice", label: "Refer to the actual invoice" }
+];
+
+// Where an order confirmation is filed. Same three places as a payment confirmation.
+export const ORDER_FILING = CONFIRMATION_FILING;
+
+// The owner's two working states are In progress and Approved. Received and Cancelled are
+// the two ways an order CLOSES, and they have to stay selectable: the late-delivery lists
+// and the reorder screen clear an order only when it is received or cancelled, so without
+// them every order would count as late forever. Orders imported from the bookings ledger
+// carry older lifecycle values; those stay selectable on the rows that already have them so
+// editing an old order never silently rewrites its history.
+export const ORDER_STATUS: { value: string; label: string }[] = [
+  { value: "in_progress", label: "In progress" },
+  { value: "approved", label: "Approved" },
+  { value: "received", label: "Received" },
+  { value: "cancelled", label: "Cancelled" }
+];
+
+const LEGACY_ORDER_STATUS: { value: string; label: string }[] = [
+  { value: "draft", label: "Draft" },
+  { value: "ordered", label: "Ordered" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "shipped", label: "Shipped" }
+];
+
+// True when an order is still expected to arrive. One rule for the late-delivery lists, the
+// arriving-this-week list, and the open-orders tile, so they cannot drift apart.
+export function orderIsOpen(status: string | null | undefined): boolean {
+  return status !== "received" && status !== "cancelled";
+}
+
+// The options to show for one order: the current list, plus this row's own older value so
+// it stays readable and does not reset itself the moment someone opens the dropdown.
+export function orderStatusOptions(current?: string | null): { value: string; label: string }[] {
+  const legacy = LEGACY_ORDER_STATUS.filter((s) => s.value === current);
+  return [...ORDER_STATUS, ...legacy];
+}
 
 // Property Maintenance work types.
 export const WORK_TYPES: { value: string; label: string }[] = [
@@ -99,8 +147,40 @@ export function referenceHelp(method: string): string {
 }
 
 // Total owed on an invoice: goods + freight + HST.
-export function invoiceTotal(i: Pick<Invoice, "amount" | "hst_amount"> & { freight_charges?: number | null }): number {
-  return (Number(i.amount) || 0) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
+//
+// Exception: when the vendor's tax is already inside the invoice amount (tax_mode
+// "included") the HST figure is still recorded, because the HST-by-department report needs
+// it for the input tax credits, but adding it again would overstate the bill. Every screen
+// that shows or pays an amount goes through this function so the app, the alerts, and the
+// database engine agree to the cent. The same rule lives in SQL in
+// public.invoice_owed_total (supabase/payments_v2.sql).
+export function invoiceTotal(
+  i: Pick<Invoice, "amount" | "hst_amount"> & { freight_charges?: number | null; tax_mode?: string | null }
+): number {
+  const base = (Number(i.amount) || 0) + (Number(i.freight_charges) || 0);
+  if (i.tax_mode === "included") return base;
+  return base + (Number(i.hst_amount) || 0);
+}
+
+// The columns invoiceTotal needs. Every select that feeds a money figure must list these,
+// or a tax-included invoice silently reads back as tax-added.
+export const INVOICE_MONEY_COLUMNS = "amount, hst_amount, freight_charges, tax_mode";
+
+// The goods value alone, before tax and freight. Under every mode but "included" that is
+// simply the amount; when the tax is inside the amount, take it back out. Use this to
+// compare invoices against order amounts, never to work out what is owed.
+export function invoiceGoods(
+  i: Pick<Invoice, "amount" | "hst_amount"> & { tax_mode?: string | null }
+): number {
+  const amount = Number(i.amount) || 0;
+  if (i.tax_mode !== "included") return amount;
+  return Math.max(0, amount - (Number(i.hst_amount) || 0));
+}
+
+// The HST hiding inside a tax-inclusive figure, at the Ontario rate. Typing the total and
+// having the app work out the tax is the whole point of the tax-included mode.
+export function hstInside(taxInclusiveAmount: number): number {
+  return Math.round((taxInclusiveAmount - taxInclusiveAmount / 1.13) * 100) / 100;
 }
 
 // True when the date is after today: the payment is post-dated and has not settled yet.

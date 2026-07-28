@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
+import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, authHeader, useMember } from "@/lib/auth";
 import { formatCAD } from "@/lib/format";
@@ -68,7 +69,7 @@ export default function Import() {
       if (storeId) dq = dq.eq("store_id", storeId);
       const { data } = await dq;
       const ds = (data as Department[]) || [];
-      setDepartments(ds);
+      setDepartments(sortDepartments(ds));
       setDeptId(ds.find((d) => d.name === "Hardware")?.id || "");
       await loadArchive();
     })();

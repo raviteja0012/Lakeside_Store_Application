@@ -42,7 +42,7 @@ export default function Overdue() {
     if (mayEdit) await reconcilePostdated();
     let query = supabase
       .from("invoice")
-      .select("id, vendor_id, invoice_number, amount, hst_amount, freight_charges, terms, due_date, status, vendor:vendor_id(name)")
+      .select("id, vendor_id, invoice_number, amount, hst_amount, freight_charges, tax_mode, terms, due_date, status, vendor:vendor_id(name)")
       .is("voided_at", null)
       .in("status", ["unpaid", "partially_paid", "postdated"])
       .order("due_date", { ascending: true });

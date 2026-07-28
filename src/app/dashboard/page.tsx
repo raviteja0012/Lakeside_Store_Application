@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, daysOverdue } from "@/lib/format";
+import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, useCurrentRole } from "@/lib/auth";
-import { invoiceTotal, fetchSettlements, type InvoiceSettlement } from "@/lib/payments";
+import { invoiceTotal, invoiceGoods, orderIsOpen, fetchSettlements, type InvoiceSettlement } from "@/lib/payments";
 
-type Inv = { id: string; amount: number | null; hst_amount: number | null; freight_charges: number | null; due_date: string | null; status: string; vendor: { name: string; department_id: string | null } | null };
+type Inv = { id: string; amount: number | null; hst_amount: number | null; freight_charges: number | null; tax_mode: string | null; due_date: string | null; status: string; vendor: { name: string; department_id: string | null } | null };
 type PO = { order_amount: number | null; status: string; department_id: string | null };
 type Dept = { id: string; name: string; accent_color: string | null };
 type Vend = { id: string; department_id: string | null; status: string };
@@ -40,7 +41,7 @@ export default function Dashboard() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let invq = supabase.from("invoice").select("id, amount, hst_amount, freight_charges, due_date, status, vendor:vendor_id(name, department_id)").is("voided_at", null);
+      let invq = supabase.from("invoice").select("id, amount, hst_amount, freight_charges, tax_mode, due_date, status, vendor:vendor_id(name, department_id)").is("voided_at", null);
       if (storeId) invq = invq.eq("store_id", storeId);
       const inv = await invq;
       if (inv.error) {
@@ -62,7 +63,7 @@ export default function Dashboard() {
       let dq = supabase.from("department").select("id, name, accent_color").order("name");
       if (storeId) dq = dq.eq("store_id", storeId);
       const d = await dq;
-      setDepts((d.data as unknown as Dept[]) || []);
+      setDepts(sortDepartments((d.data as unknown as Dept[]) || []));
       let vq = supabase.from("vendor").select("id, department_id, status").is("voided_at", null);
       if (storeId) vq = vq.eq("store_id", storeId);
       const v = await vq;
@@ -92,8 +93,8 @@ export default function Dashboard() {
     }
     const paid = invoices.filter((i) => i.status === "paid").reduce((s, i) => s + total(i), 0);
     const ordered = pos.reduce((s, p) => s + (Number(p.order_amount) || 0), 0);
-    const invoiced = invoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    const awaiting = pos.filter((p) => p.status === "ordered").length;
+    const invoiced = invoices.reduce((s, i) => s + invoiceGoods(i), 0);
+    const awaiting = pos.filter((p) => orderIsOpen(p.status)).length;
     return { outstanding, overdueCount, overdueSum, dueSoonSum, paid, ordered, invoiced, awaiting };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoices, settlements, pos]);
@@ -102,7 +103,7 @@ export default function Dashboard() {
     return depts
       .map((d) => {
         const ordered = pos.filter((p) => p.department_id === d.id).reduce((s, p) => s + (Number(p.order_amount) || 0), 0);
-        const invoiced = invoices.filter((i) => i.vendor?.department_id === d.id).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+        const invoiced = invoices.filter((i) => i.vendor?.department_id === d.id).reduce((s, i) => s + invoiceGoods(i), 0);
         const vcount = vendors.filter((v) => v.department_id === d.id).length;
         return { id: d.id, name: d.name, color: d.accent_color, ordered, invoiced, vcount };
       })

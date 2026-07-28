@@ -62,6 +62,7 @@ export type PurchaseOrder = {
   ship_date: string | null;
   delivery_commit: string | null;
   status: string;
+  order_filing?: string | null; // where the order confirmation is filed: digital | physical | both
   notes: string | null;
 };
 
@@ -72,8 +73,11 @@ export type Invoice = {
   invoice_date?: string | null; // drives the HST-by-department financial-year report
   amount: number | null;
   hst_amount: number | null;
-  freight_charges?: number | null; // total owed = amount + freight + HST
-  delivery_status?: string | null; // delivered | not_delivered
+  freight_charges?: number | null; // total owed = amount + freight + HST, unless tax_mode is "included"
+  tax_mode?: string | null; // separate | included | none | invoice; see invoiceTotal()
+  delivery_status?: string | null; // delivered | partially_delivered | not_delivered
+  delivered_date?: string | null; // the day the goods actually arrived
+  delivery_comments?: string | null; // short-shipped or damaged, in the receiver's words
   estimate_number?: string | null; // Property Maintenance: preplanned work has an estimate #
   work_type?: string | null; // Property Maintenance: repair | upgrade
   service_category?: string | null; // Property Maintenance: Electrical, Plumbing, ... or free text
@@ -232,7 +236,13 @@ export type CreditNote = {
   created_by: string | null;
   created_at: string;
   voided_at?: string | null;
-  invoice?: { invoice_number: string | null; amount: number | null; hst_amount: number | null } | null;
+  invoice?: {
+    invoice_number: string | null;
+    amount: number | null;
+    hst_amount: number | null;
+    freight_charges?: number | null;
+    tax_mode?: string | null;
+  } | null;
 };
 
 // The owner suggestion box: a note with optional screenshot and voice recording.

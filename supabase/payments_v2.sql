@@ -71,6 +71,23 @@ where p.invoice_id is not null
 -- Derive one invoice's status from its allocations. paid_date in the future means the money
 -- has not left yet (post-dated cheque): the invoice shows postdated until the date arrives.
 -- A null paid_date counts as settled (legacy imports carry no date).
+-- tax_mode belongs to order_invoice_fields.sql, but the status engine below reads it, so
+-- make sure the column exists no matter which order these scripts are run in.
+alter table public.invoice add column if not exists tax_mode text;
+
+-- One definition of what an invoice owes, mirroring invoiceTotal() in src/lib/payments.ts.
+-- Tax already inside the invoice amount (tax_mode 'included') is recorded for the HST
+-- report but never added on top.
+create or replace function public.invoice_owed_total(
+  p_amount numeric, p_freight numeric, p_hst numeric, p_tax_mode text
+) returns numeric
+language sql
+immutable
+as $$
+  select coalesce(p_amount, 0) + coalesce(p_freight, 0)
+       + case when p_tax_mode = 'included' then 0 else coalesce(p_hst, 0) end;
+$$;
+
 create or replace function public.recompute_invoice_status(p_invoice_id uuid)
 returns void
 language plpgsql
@@ -83,8 +100,9 @@ declare
 begin
   -- Total owed = goods + freight + HST, matching invoiceTotal() in src/lib/payments.ts.
   -- Freight was omitted here at first, which let a partial payment of goods+HST flip an
-  -- invoice to paid with the freight still owed.
-  select coalesce(amount, 0) + coalesce(freight_charges, 0) + coalesce(hst_amount, 0) into v_total
+  -- invoice to paid with the freight still owed. Tax already inside the amount is not
+  -- added again.
+  select public.invoice_owed_total(amount, freight_charges, hst_amount, tax_mode) into v_total
   from public.invoice where id = p_invoice_id;
   if not found then
     return;
@@ -318,7 +336,7 @@ alter table public.invoice add column if not exists freight_charges numeric;
 alter table public.invoice add column if not exists delivery_status text;
 alter table public.invoice drop constraint if exists invoice_delivery_status_check;
 alter table public.invoice add constraint invoice_delivery_status_check check (
-  delivery_status is null or delivery_status in ('delivered','not_delivered')
+  delivery_status is null or delivery_status in ('delivered','partially_delivered','not_delivered')
 );
 
 -- Property Maintenance payouts: estimate number when the work was preplanned (else null),
@@ -347,7 +365,7 @@ alter table public.payment add constraint payment_confirmation_filing_check chec
 -- no allocations at all. The autoallocate trigger creates the allocation and recomputes.
 insert into public.payment (invoice_id, vendor_id, amount, method, paid_date, notes)
 select i.id, i.vendor_id,
-       coalesce(i.amount, 0) + coalesce(i.freight_charges, 0) + coalesce(i.hst_amount, 0),
+       public.invoice_owed_total(i.amount, i.freight_charges, i.hst_amount, i.tax_mode),
        'cheque',
        greatest(coalesce(i.due_date, (now() at time zone 'America/Toronto')::date + 1),
                 (now() at time zone 'America/Toronto')::date + 1),

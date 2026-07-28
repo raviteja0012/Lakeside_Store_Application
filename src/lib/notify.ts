@@ -6,6 +6,7 @@
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD, todayISO, daysOverdue } from "@/lib/format";
 import { canSeeMoney, type Role } from "@/lib/auth";
+import { invoiceTotal } from "@/lib/payments";
 
 export type Notification = {
   id: string;
@@ -15,7 +16,9 @@ export type Notification = {
   href: string;
 };
 
-type InvRow = { amount: number | null; due_date: string | null; status: string };
+// The bell quotes the same figure as every other money screen, so it needs the whole
+// invoice: goods, freight, and the tax mode that decides whether HST is added on top.
+type InvRow = { amount: number | null; hst_amount: number | null; freight_charges: number | null; tax_mode: string | null; due_date: string | null; status: string };
 type LicRow = { id: string; name: string; expiry_date: string | null };
 type PolRow = { id: string; name: string; renewal_date: string | null };
 type TaskRow = { id: string; due_date: string | null; status: string };
@@ -69,7 +72,7 @@ export async function loadNotifications(storeId: string, role?: Role | null): Pr
     // The five checks are independent; run them together so the bell costs one round trip
     // of latency, not five.
     const [inv, lic, pol, task, low] = await Promise.all([
-      supabase.from("invoice").select("amount, due_date, status").eq("store_id", storeId).is("voided_at", null).in("status", ["unpaid", "partially_paid"]),
+      supabase.from("invoice").select("amount, hst_amount, freight_charges, tax_mode, due_date, status").eq("store_id", storeId).is("voided_at", null).in("status", ["unpaid", "partially_paid"]),
       supabase.from("licence").select("id, name, expiry_date").eq("store_id", storeId).is("voided_at", null),
       supabase.from("insurance_policy").select("id, name, renewal_date").eq("store_id", storeId).is("voided_at", null),
       supabase.from("maintenance_task").select("id, due_date, status").eq("store_id", storeId).is("voided_at", null).neq("status", "done"),
@@ -85,7 +88,7 @@ export async function loadNotifications(storeId: string, role?: Role | null): Pr
         const d = daysOverdue(r.due_date);
         if (d != null && d > 0) {
           count++;
-          total += Number(r.amount) || 0;
+          total += invoiceTotal(r);
         }
       }
       if (count > 0) {

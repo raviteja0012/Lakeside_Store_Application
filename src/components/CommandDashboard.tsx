@@ -7,15 +7,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import KpiRow, { type KpiItem } from "@/components/KpiRow";
-import { invoiceTotal, fetchSettlements, type InvoiceSettlement } from "@/lib/payments";
+import { invoiceTotal, orderIsOpen, fetchSettlements, type InvoiceSettlement } from "@/lib/payments";
 import { supabase, SUPABASE_CONFIGURED } from "@/lib/supabaseClient";
 import { formatCAD, todayISO, daysOverdue } from "@/lib/format";
+import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, useCurrentRole } from "@/lib/auth";
 import { completedToday, dueToday, type TaskLite } from "@/lib/tasks";
 
 type Recv = { created_at: string; department_id: string | null };
-type Inv = { id: string; amount: number | null; hst_amount: number | null; freight_charges: number | null; due_date: string | null; status: string; vendor_id: string | null };
+type Inv = { id: string; amount: number | null; hst_amount: number | null; freight_charges: number | null; tax_mode: string | null; due_date: string | null; status: string; vendor_id: string | null };
 type PO = { vendor_id: string | null; ship_date: string | null; status: string; season_year: number | null };
 type Vend = { id: string; status: string };
 type Dept = { id: string; name: string };
@@ -56,7 +57,7 @@ export default function CommandDashboard() {
       const since = new Date(Date.now() - 2 * 86400000).toISOString();
       const [r, i, p, v, d, t] = await Promise.all([
         scoped(supabase.from("receiving_event").select("created_at, department_id").is("voided_at", null)),
-        scoped(supabase.from("invoice").select("id, amount, hst_amount, freight_charges, due_date, status, vendor_id").is("voided_at", null)),
+        scoped(supabase.from("invoice").select("id, amount, hst_amount, freight_charges, tax_mode, due_date, status, vendor_id").is("voided_at", null)),
         scoped(supabase.from("purchase_order").select("vendor_id, ship_date, status, season_year").is("voided_at", null)),
         scoped(supabase.from("vendor").select("id, status").is("voided_at", null)),
         scoped(supabase.from("department").select("id, name").order("name")),
@@ -79,7 +80,7 @@ export default function CommandDashboard() {
       }
       setPos((p.data as unknown as PO[]) || []);
       setVendors((v.data as unknown as Vend[]) || []);
-      setDepts((d.data as unknown as Dept[]) || []);
+      setDepts(sortDepartments((d.data as unknown as Dept[]) || []));
       setDuties((t.data as unknown as Duty[]) || []);
       setLoading(false);
     })();
@@ -110,7 +111,7 @@ export default function CommandDashboard() {
 
     // Late deliveries: orders past their ship date that have not been received or cancelled.
     const lateDeliveries = pos.filter((p) => {
-      if (p.status === "received" || p.status === "cancelled") return false;
+      if (!orderIsOpen(p.status)) return false;
       const d = daysOverdue(p.ship_date);
       return d != null && d > 0;
     }).length;

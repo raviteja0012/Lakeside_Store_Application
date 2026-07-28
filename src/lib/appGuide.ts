@@ -24,13 +24,16 @@ SCREENS AND WHAT THEY ARE FOR:
   first". Post-dated cheques are payments with a future date; they flip to paid on their
   own when the date arrives. Recent payments can be Edited (date, method, reference,
   notes, filing) or Voided; the amount is fixed, so void and re-record a wrong amount.
-- Vendors: the directory, grouped by department with search across names, products, and
-  reps. A vendor page holds contact info, orders, invoices, payments, credits, and a
-  Statement view (charges and payments in date order with a running balance, printable,
-  for checking a vendor's mailed statement line by line).
+- Vendors: opens on the department list, each card showing how many vendors it holds. Pick
+  a department to see just its vendors, with a search box across names, products, and reps;
+  All vendors shows everyone at once, and Add vendor inside a department files the new
+  vendor there automatically. A vendor page holds contact info, orders, invoices, payments,
+  credits, and a Statement view (charges and payments in date order with a running balance,
+  printable, for checking a vendor's mailed statement line by line).
 - Reports: spend by department, ordered vs invoiced, outstanding aging, payment status
-  mix, HST by department for a financial year, a vendor scorecard, and a Department
-  drill-down (invoiced, paid, owed per department, opening into vendors).
+  mix, HST by department for a financial year, a vendor scorecard, a Department drill-down
+  (invoiced, paid, owed per department, opening into vendors), deliveries arriving in the
+  next 7 days, and late deliveries.
 - Reorder: who likely needs an order this season, from the ledger and reorder notes,
   with an optional AI summary. A person always makes the final call.
 - Inventory: dated counts per department; counts load from category sheets on Import.
@@ -53,8 +56,14 @@ HOW COMMON THINGS ARE DONE:
 - Partially pay an invoice: record a payment for less than what is owed; the invoice
   shows partially paid with the remainder, and flips to paid when a later payment covers
   the rest. Nobody sets statuses by hand.
-- Mark an invoice that arrived already paid: Add invoice, set "arrived as already paid",
-  and the payment records with it in one step.
+- Mark an invoice that arrived already paid: Add invoice, set Payment status to "Paid
+  already", and the payment records with it in one step.
+- Record an invoice whose price already includes the tax: on Add invoice set Tax to "Tax
+  included in the invoice amount". The HST still gets recorded for the tax report, but it
+  is not added on top, so what the app says is owed is what the vendor billed.
+- Note a short shipment: set Delivery status to "Partially delivered", put the arrival day
+  in Delivered date, and describe what was missing or damaged in Delivery comments. A
+  credit note on the vendor page is what actually reduces the money owed.
 - See what a vendor still owes or is owed: the vendor page header (Outstanding, deposits
   on account, ordered-but-not-invoiced), or the Statement view for the full running
   balance.

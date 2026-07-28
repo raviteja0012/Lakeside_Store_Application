@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, DOCUMENTS_BUCKET } from "@/lib/supabaseClient";
 import { formatCAD, round2 } from "@/lib/format";
+import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, authHeader, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import type { AppUser, Department, Draft, LineItem } from "@/lib/types";
@@ -68,7 +69,7 @@ export default function Capture() {
       const { data: tr } = await supabase.from("tax_rules").select("rate").eq("region", "Ontario").limit(1).maybeSingle();
       const ds = (depts as Department[]) || [];
       const usr = (us as AppUser[]) || [];
-      setDepartments(ds);
+      setDepartments(sortDepartments(ds));
       setUsers(usr);
       setVendors((vs as VendorLite[]) || []);
       setPos((po as POLite[]) || []);

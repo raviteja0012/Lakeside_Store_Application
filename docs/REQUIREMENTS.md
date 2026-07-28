@@ -57,15 +57,28 @@ What the world knows about the store (researched 2026-07-27; sources: Discover M
 SHIPPED (see VERIFICATION.md for sign-off):
 - Capture: photo/PDF invoice extraction (Claude vision), discrepancy + low-confidence
   acknowledgements, manual entry path, feed posting.
-- Vendors: directory + detail; orders, invoices (property-work and finance variants),
-  credits; per-row edit and void.
+- Vendors: department-first directory (pick a department, then its vendors; counts,
+  department-scoped search, All vendors, add-vendor inherits the department) + detail;
+  orders, invoices (property-work and finance variants), credits; per-row edit and void.
+- One department sequence everywhere (src/lib/departments.ts): DryGoods & Lakeside,
+  Hardware, Grocery, Property Maintenance, Bakery, Meat, Produce, Payrolls & Taxes, Others.
+  Departments outside the list still appear, sorted after it.
+- Invoice tax modes: entered separately, included in the invoice amount (recorded for the
+  HST report, never added to what is owed), no tax, or refer to the actual invoice. The
+  mode is stored, and the app and the database engine share one definition of the total.
+- Delivery detail on invoices: delivered / partially delivered / not delivered, the day it
+  arrived, and delivery comments for short shipments and damage.
+- Purchase orders in the owner's field order: order status (in progress, approved), amount,
+  where the confirmation is filed, ship date, comments. The season year follows the ship
+  date rather than being typed.
 - Payments v2 engine: allocations across invoices, partial payments, deposits, post-dated
   cheques with auto-reconcile, derived invoice statuses, one atomic RPC per action,
   payment EDIT (date/method/reference/notes/filing) with status re-derive.
 - Payout categories incl. Property Maintenance and Payrolls & Taxes (payroll remittances,
   incorporation taxes) as departments.
 - Due and overdue with quick pay; Reports (aging incl. partial/freight/settlements, HST by
-  department); Today KPIs; Charts; Feed.
+  department, deliveries arriving in the next 7 days, late deliveries); Today KPIs; Charts;
+  Feed.
 - Inventory counts + importer; Price signs; Knowledge; Ask-the-store (grounded, role-aware);
   Reorder screen with grounded AI summary.
 - Imports: bookings ledger v1 (fixed layout) and v2 (header-driven, payments, credits,

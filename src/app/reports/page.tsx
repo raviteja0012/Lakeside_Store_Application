@@ -7,9 +7,9 @@ import { labelize } from "@/lib/status";
 import { paletteColor } from "@/lib/charts";
 import { useActiveStore } from "@/lib/store";
 import { canSeeMoney, useCurrentRole } from "@/lib/auth";
-import { fetchSettlements, type InvoiceSettlement } from "@/lib/payments";
+import { fetchSettlements, invoiceTotal, invoiceGoods, orderIsOpen, type InvoiceSettlement } from "@/lib/payments";
 
-type Inv = { id: string; amount: number | null; hst_amount: number | null; freight_charges: number | null; invoice_date: string | null; created_at: string | null; due_date: string | null; status: string; vendor_id: string | null; vendor: { name: string; department_id: string | null } | null };
+type Inv = { id: string; amount: number | null; hst_amount: number | null; freight_charges: number | null; tax_mode: string | null; invoice_date: string | null; created_at: string | null; due_date: string | null; status: string; vendor_id: string | null; vendor: { name: string; department_id: string | null } | null };
 type PO = { vendor_id: string | null; order_amount: number | null; department_id: string | null; ship_date: string | null; status: string | null };
 type Dept = { id: string; name: string; accent_color: string | null; parent_department_id: string | null };
 type Vend = { id: string; name: string; department_id: string | null };
@@ -44,7 +44,7 @@ export default function Reports() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let invq = supabase.from("invoice").select("id, amount, hst_amount, freight_charges, invoice_date, created_at, due_date, status, vendor_id, vendor:vendor_id(name, department_id)").is("voided_at", null);
+      let invq = supabase.from("invoice").select("id, amount, hst_amount, freight_charges, tax_mode, invoice_date, created_at, due_date, status, vendor_id, vendor:vendor_id(name, department_id)").is("voided_at", null);
       if (storeId) invq = invq.eq("store_id", storeId);
       const inv = await invq;
       if (inv.error) { setError(inv.error.message); setLoading(false); return; }
@@ -74,7 +74,9 @@ export default function Reports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, storeId]);
 
-  const invAmount = (i: Inv) => Number(i.amount) || 0;
+  // Goods only, before tax and freight, so the comparison against order amounts is like
+  // for like even when a vendor's invoice quotes a tax-inclusive price.
+  const invAmount = (i: Inv) => invoiceGoods(i);
 
   // Spend (ordered) and invoiced by department, with one Okabe-Ito color per department.
   const byDept = useMemo(() => {
@@ -98,7 +100,7 @@ export default function Reports() {
       if (i.status !== "unpaid" && i.status !== "partially_paid" && i.status !== "postdated") continue;
       // What is still owed: goods + freight + HST minus what has settled. A partially paid
       // invoice ages only its remainder, matching the overdue screen's owed figure.
-      const total = invAmount(i) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
+      const total = invoiceTotal(i);
       const owed = Math.max(0, total - (settlements.get(i.id)?.settled || 0));
       if (owed <= 0) continue;
       const d = daysOverdue(i.due_date);
@@ -174,10 +176,32 @@ export default function Reports() {
 
   // Late deliveries: the Today tile's number, itemized, so clicking it lands on the rows
   // to act on (same filter as the tile: past ship date, not received, not cancelled).
+  // What is arriving in the next seven days, so the week can be staffed for it. The April
+  // delivery wave is the case this exists for: a truck a day and nobody rostered to price
+  // and shelve it.
+  const arrivingSoon = useMemo(() => {
+    const names = new Map(vendors.map((v) => [v.id, v.name]));
+    return pos
+      .filter((p) => {
+        if (!p.ship_date || !orderIsOpen(p.status)) return false;
+        const d = daysOverdue(p.ship_date);
+        // daysOverdue counts down: 0 is today, -7 is a week out.
+        return d != null && d <= 0 && d >= -7;
+      })
+      .map((p) => ({
+        vendorId: p.vendor_id,
+        vendor: (p.vendor_id && names.get(p.vendor_id)) || "Vendor",
+        ship: p.ship_date as string,
+        inDays: -(daysOverdue(p.ship_date) || 0),
+        amount: Number(p.order_amount) || 0
+      }))
+      .sort((a, b) => a.inDays - b.inDays);
+  }, [pos, vendors]);
+
   const lateDeliveries = useMemo(() => {
     const names = new Map(vendors.map((v) => [v.id, v.name]));
     return pos
-      .filter((p) => p.ship_date && (daysOverdue(p.ship_date) || 0) > 0 && p.status !== "received" && p.status !== "cancelled")
+      .filter((p) => p.ship_date && (daysOverdue(p.ship_date) || 0) > 0 && orderIsOpen(p.status))
       .map((p) => ({
         vendorId: p.vendor_id,
         vendor: (p.vendor_id && names.get(p.vendor_id)) || "Vendor",
@@ -192,7 +216,7 @@ export default function Reports() {
   // glance, opening into its vendors. Owed follows the app's rule: post-dated money has not
   // left the account, so it still counts as owed until the date arrives.
   const drilldown = useMemo(() => {
-    const invTotal = (i: Inv) => invAmount(i) + (Number(i.freight_charges) || 0) + (Number(i.hst_amount) || 0);
+    const invTotal = (i: Inv) => invoiceTotal(i);
     const owedOf = (i: Inv): number => {
       if (i.status === "paid") return 0;
       // Post-dated still counts as owed (the money has not left), but any portion that
@@ -289,6 +313,23 @@ export default function Reports() {
                   <span><span style={{ display: "inline-block", width: 10, height: 10, background: paletteColor(1), borderRadius: 2, marginRight: 5 }} />Invoiced</span>
                 </div>
               )}
+            </div>
+          </section>
+
+          <section>
+            <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Arriving in the next 7 days</h2>
+            <div className="card" style={{ padding: 16, display: "grid", gap: 6 }}>
+              {arrivingSoon.length === 0 && <p className="help" style={{ margin: 0 }}>No deliveries are expected this week.</p>}
+              {arrivingSoon.map((a, idx) => (
+                <div key={idx} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", fontSize: 13, flexWrap: "wrap" }}>
+                  <span style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
+                    {a.vendorId ? <a href={`/vendors/${a.vendorId}`} style={{ textDecoration: "none", fontWeight: 600 }}>{a.vendor}</a> : <strong>{a.vendor}</strong>}
+                    <span className="chip chip-progress">{a.inDays === 0 ? "today" : `in ${a.inDays} day${a.inDays === 1 ? "" : "s"}`}</span>
+                  </span>
+                  <span className="help tabular">expected {a.ship}{a.amount ? ` . ${formatCAD(a.amount)}` : ""}</span>
+                </div>
+              ))}
+              {arrivingSoon.length > 0 && <p className="help" style={{ margin: "6px 0 0" }}>Staff the week around these: each one needs someone to check it against the invoice, price it, and shelve it.</p>}
             </div>
           </section>
 

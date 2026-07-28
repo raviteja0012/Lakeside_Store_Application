@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
@@ -56,7 +57,7 @@ export default function Knowledge() {
       if (storeId) dq = dq.eq("store_id", storeId);
       const { data: ds } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
-      setDepartments((ds as Department[]) || []);
+      setDepartments(sortDepartments((ds as Department[]) || []));
       setUsers((us as AppUser[]) || []);
       if (us && us.length) setUserId((us as AppUser[])[0].id);
       setLoading(false);

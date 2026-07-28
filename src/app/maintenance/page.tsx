@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { labelize } from "@/lib/status";
 import { daysOverdue, dueBand } from "@/lib/format";
 import { completeTask, completedToday } from "@/lib/tasks";
+import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
@@ -64,7 +65,7 @@ export default function Maintenance() {
       const { data: ds } = await dq;
       const { data: us } = await supabase.from("app_user").select("id, full_name, role").order("full_name");
       const usr = (us as AppUser[]) || [];
-      setDepartments((ds as Department[]) || []);
+      setDepartments(sortDepartments((ds as Department[]) || []));
       setUsers(usr);
       const saved = typeof window !== "undefined" ? localStorage.getItem(ACTOR_KEY) : null;
       setActorId(saved || usr[0]?.id || "");
