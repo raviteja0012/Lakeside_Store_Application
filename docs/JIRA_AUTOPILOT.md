@@ -66,6 +66,17 @@ One run costs roughly what one build chat costs, and only when there is somethin
 Runs with an empty board stop before any model call. Fifteen minutes is the polling
 interval, not the run rate.
 
+## A run that does nothing is not automatically a healthy run
+
+The first live run went green and did nothing, and the reason was in the log: Atlassian had
+removed the old search endpoint and was answering 410 Gone. An empty board and a broken
+setup looked identical from the outside.
+
+The script now fails the run on any bad response from Jira, so a configuration problem
+turns the run red instead of passing quietly. A network blip still exits cleanly, because
+turning red every fifteen minutes over a transient hiccup would train everyone to ignore
+it. If a run is green and says "Nothing new on the board", that sentence is now real.
+
 ## When something looks wrong
 
 Every ticket comment links to its run. The run log shows the gates, the diff, and the pull

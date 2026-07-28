@@ -37,11 +37,23 @@ function hash(s) {
   return h;
 }
 
-async function jira(path) {
-  const r = await fetch(`${BASE}/rest/api/3${path}`, {
-    headers: { Authorization: auth, Accept: "application/json" }
+// Search runs through /search/jql. The older GET /search was removed by Atlassian and now
+// answers 410 Gone, which looked exactly like "no work" until the log was read.
+async function searchJira(jql, fields, maxResults) {
+  const r = await fetch(`${BASE}/rest/api/3/search/jql`, {
+    method: "POST",
+    headers: { Authorization: auth, Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ jql, fields, maxResults })
   });
-  if (!r.ok) throw new Error(`Jira ${path} returned ${r.status}`);
+  if (!r.ok) {
+    const detail = (await r.text()).slice(0, 400);
+    // A bad status here means the setup is wrong (credentials, permissions, or the API
+    // moved again). Fail loudly: a run that quietly does nothing is indistinguishable from
+    // a healthy run with an empty board, which is how the 410 went unnoticed.
+    const err = new Error(`Jira search returned ${r.status}. ${detail}`);
+    err.fatal = true;
+    throw err;
+  }
   return r.json();
 }
 
@@ -60,39 +72,59 @@ const jql = ONE
   ? `key = ${ONE}`
   : `project in (${PROJECTS.join(",")}) AND statusCategory != Done ORDER BY updated ASC`;
 
-let data;
+// Comments come from their own endpoint rather than the search response: whether search
+// returns them depends on the API version, and a silently missing comment list would make
+// every already-worked ticket look new and get built twice.
+async function commentsFor(key) {
+  const r = await fetch(`${BASE}/rest/api/3/issue/${key}/comment?maxResults=50&orderBy=created`, {
+    headers: { Authorization: auth, Accept: "application/json" }
+  });
+  if (!r.ok) {
+    const err = new Error(`Reading comments on ${key} returned ${r.status}.`);
+    err.fatal = true;
+    throw err;
+  }
+  const j = await r.json();
+  return j.comments || [];
+}
+
+const FIELDS = ["summary", "description", "status", "updated", "issuetype"];
+
+let issues = [];
+let picked = null;
+let pickedComments = [];
 try {
-  data = await jira(`/search?jql=${encodeURIComponent(jql)}&maxResults=25&fields=summary,description,status,updated,comment,issuetype`);
+  const data = await searchJira(jql, FIELDS, 25);
+  issues = data.issues || [];
+
+  for (const i of issues) {
+    const comments = await commentsFor(i.key);
+    const last = comments[comments.length - 1];
+    const lastIsOurs = last && flatten(last.body).includes(MARKER);
+    // Already worked and nobody has replied since: leave it for the person.
+    if (lastIsOurs && !ONE) continue;
+    // Nothing to go on.
+    const hasBrief = !!i.fields?.description || comments.length > 0;
+    if (!hasBrief && !ONE) continue;
+    picked = i;
+    pickedComments = comments;
+    break;
+  }
 } catch (e) {
   console.log(`Could not read the board: ${e.message}`);
   out("found", "false");
-  process.exit(0);
-}
-
-const issues = data.issues || [];
-let picked = null;
-
-for (const i of issues) {
-  const comments = i.fields?.comment?.comments || [];
-  const last = comments[comments.length - 1];
-  const lastIsOurs = last && flatten(last.body).includes(MARKER);
-  // Already worked and nobody has replied since: leave it for the person.
-  if (lastIsOurs && !ONE) continue;
-  // Nothing to go on.
-  const hasBrief = !!i.fields?.description || comments.length > 0;
-  if (!hasBrief && !ONE) continue;
-  picked = i;
-  break;
+  // Configuration problems stop the run so somebody sees red; a network blip does not.
+  process.exit(e.fatal ? 1 : 0);
 }
 
 if (!picked) {
-  console.log("Nothing new on the board.");
+  console.log(`Nothing new on the board. Checked ${issues.length} open ${issues.length === 1 ? "ticket" : "tickets"}.`);
   out("found", "false");
   process.exit(0);
 }
 
 const f = picked.fields;
-const comments = (f.comment?.comments || [])
+const comments = pickedComments
   .map((c) => `--- comment by ${c.author?.displayName || "someone"} on ${c.created}:\n${flatten(c.body).trim()}`)
   .join("\n\n");
 
