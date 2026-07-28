@@ -30,6 +30,18 @@ self-explain per method; Ask the store gained the APP GUIDE (how-the-app-works a
 and deterministic issue logging into Suggestions ("log this issue: ..."). Migration for
 the round: payout_fields.sql.
 
+Loop round (2026-07-28): the automation became a closed loop rather than a one-way pipe.
+A request on the Jira board is built, checked, and shipped, and a bug we introduce is caught
+by the machine and put back on the board as work. Four parts: a mechanical tier classifier
+that decides how far a change may travel (words merge themselves, app changes wait for a
+person, money and access and the automation's own files never merge); /api/health, answered
+by the app, which proves the deployed app and the deployed database still agree on what an
+invoice owes and that no invoice shows a status its payments do not support; a post-deploy
+watchdog that reads it and raises a bug when it fails; and two read-only reviewer subagents
+(money-reviewer, invariant-auditor) plus a Stop hook that refuses to end a session with the
+TypeScript broken. The reasoning for every limit is in docs/LOOP_ENGINEERING.md. The rule
+that matters most: the automation cannot edit the automation.
+
 Jira round (2026-07-28, the owner's four SCRUM-9 comments of 2026-07-27 evening): the
 Vendors screen now opens on the department list and drills into one department at a time
 (counts on each card, search scoped to the department, All vendors, and Add vendor filing

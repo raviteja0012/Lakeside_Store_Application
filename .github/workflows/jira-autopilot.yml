@@ -115,11 +115,39 @@ jobs:
             4. Update docs/REQUIREMENTS.md, docs/STATUS.md and docs/VERIFICATION.md in the
                same change, as the project rules require.
             5. Commit, push the branch, and open a DRAFT pull request whose description says
-               what changed, how it was verified, and which ticket it came from. Do not merge.
+               what changed, how it was verified, and which ticket it came from. Do not merge:
+               whether this change merges itself is decided after you finish, by a script
+               reading your diff, and nothing you write can change that decision.
             6. Write the outcome to a file called autopilot-comment.txt in the repository
                root: two or three plain sentences for the owner saying what was built and
                that a pull request is waiting, or why the ticket needs a person. No jargon,
                no markdown, no em dashes.
+
+      # The model wrote the code; this decides how far it travels. Keeping the two apart is
+      # what makes unattended merging safe: a judgement the model makes about its own work
+      # is one it can talk itself into.
+      - name: Decide how far it can go
+        id: tier
+        if: steps.gate.outputs.ready == 'true' && steps.find.outputs.found == 'true'
+        run: |
+          git fetch origin main --quiet || true
+          node .github/scripts/classify-change.mjs origin/main
+
+      - name: Merge it when it is only words
+        if: steps.tier.outputs.tier == 'A'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_KEY: ${{ steps.find.outputs.issue_key }}
+        run: |
+          pr=$(gh pr list --head "claude/auto-${ISSUE_KEY}" --json number --jq '.[0].number')
+          if [ -z "$pr" ]; then echo "No pull request to merge."; exit 0; fi
+          echo "Waiting for the checks on PR #$pr."
+          # Merge only once every check has actually passed. --auto asks GitHub to hold the
+          # merge until then, so a red check means it never lands rather than landing first
+          # and being noticed later.
+          gh pr ready "$pr"
+          gh pr merge "$pr" --merge --auto --delete-branch
+          echo "PR #$pr will merge when its checks pass." >> autopilot-comment.txt
 
       - name: Tell the ticket
         if: always() && steps.gate.outputs.ready == 'true' && steps.find.outputs.found == 'true'
@@ -129,4 +157,6 @@ jobs:
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           ISSUE_KEY: ${{ steps.find.outputs.issue_key }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TIER: ${{ steps.tier.outputs.tier }}
+          TIER_REASON: ${{ steps.tier.outputs.reason }}
         run: node .github/scripts/jira-comment.mjs

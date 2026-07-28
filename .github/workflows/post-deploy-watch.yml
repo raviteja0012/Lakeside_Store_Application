@@ -1,0 +1,64 @@
+name: Post-deploy watch
+
+# Asks the live site whether it is still healthy, and raises a ticket when it is not.
+#
+# This is the half of the loop that makes the other half safe. Anything can be automated to
+# ship; what makes shipping unattended defensible is that a bad release is caught by the
+# machine within minutes instead of by the owner noticing a wrong figure next week.
+#
+# /api/health is answered by the app itself. It checks the things a build cannot: that the
+# deployed app and the deployed database still agree on what an invoice owes, that the
+# payments engine is installed, that the columns this release needs exist, and that no
+# invoice is showing a status its own payments do not support. That last one is the drift
+# detector: it is how a broken money change announces itself.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "23 */2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: post-deploy-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Give the deploy a moment to go live
+        if: github.event_name == 'workflow_run'
+        run: sleep 90
+
+      - name: Ask the site how it is
+        id: health
+        env:
+          SITE: ${{ vars.PRODUCTION_URL || 'https://robinsons-store.vercel.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: node .github/scripts/health-check.mjs
+
+      - name: Raise a ticket when it is not well
+        if: steps.health.outputs.healthy == 'false'
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          SUMMARY: ${{ steps.health.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node .github/scripts/raise-health-ticket.mjs
+
+      - name: Fail the run so it is visible
+        if: steps.health.outputs.healthy == 'false'
+        run: |
+          echo "The live site reported a problem:"
+          echo "${{ steps.health.outputs.summary }}"
+          exit 1

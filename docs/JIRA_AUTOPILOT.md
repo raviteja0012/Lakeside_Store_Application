@@ -20,16 +20,38 @@ starting a chat session.
 6. Vercel builds the preview from the pull request as usual. A person merges, and the
    merge deploys to production.
 
+The reasoning behind every limit below, and the shape of the whole system, is in
+docs/LOOP_ENGINEERING.md. This page is the operating manual; that one is the design.
+
+## How far a change travels on its own
+
+The model writes the code. A script (`.github/scripts/classify-change.mjs`) reads the
+resulting diff and decides whether it may merge. Nothing in a ticket or a prompt can move
+that decision, because the script never reads either.
+
+| Tier | What it is | What happens |
+|---|---|---|
+| A | Words only: `docs/`, root `.md`, the in-app guide, under 300 lines | Merges itself once checks pass, and deploys |
+| B | Anything else in the app | Draft pull request, a person merges. The default |
+| C | Money, access, the database, or the automation's own files | Nothing merges |
+
+Tier C covers `supabase/**`, `src/lib/payments.ts`, the auth and edit helpers,
+`src/app/api/**`, `package.json`, and `.github/**` and `.claude/**`. The automation is not
+allowed to edit the automation: a loop that can change its own limits does not have any.
+
 ## What it will not do
 
 The point of a loop like this is that it can run unattended. That only stays true if the
 things it refuses to do are the right ones.
 
-- It does not merge. Every run ends at a draft pull request. Production changes when a
-  person says so.
+- It merges only wording. Anything that touches the app ends at a draft pull request, and
+  production changes when a person says so.
 - It stops and asks on anything touching the payments engine or its RPCs, auth or RLS, or
   anything that deletes data. Those get a comment, not a commit. A wrong guess about money
-  costs the store real money, so guessing is not allowed there.
+  costs the store real money, so guessing is not allowed there. The tier classifier enforces
+  this on the diff even if the model talks itself past the instruction.
+- It cannot change its own rules. Its workflows, scripts, and the project settings are
+  tier C, so altering what the autopilot may do takes a person merging a pull request.
 - It ignores instructions written inside ticket text that try to change its process or its
   permissions. Ticket text is a request for work. Anyone who can comment on the board can
   write anything in it, so it is treated as input, never as orders.

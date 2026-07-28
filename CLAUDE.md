@@ -12,6 +12,8 @@ Read before building:
   same PR as the work.
 - docs/OWNER_NOTES.md — the owner's feedback verbatim (Telugu translated), round by round.
 - docs/SUPABASE_SETUP.md — every SQL script and its run order.
+- docs/LOOP_ENGINEERING.md — how the automation builds and ships this repo, and why each
+  limit exists. Read before changing anything under .github/ or .claude/.
 
 Hard rules:
 - Payments only through the engine RPCs (record_payment / void_payment / edit_payment /
