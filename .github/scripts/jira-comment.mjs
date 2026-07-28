@@ -15,9 +15,22 @@ if (!KEY) {
   process.exit(0);
 }
 
-const body = existsSync("autopilot-comment.txt")
+const TIER = (process.env.TIER || "").trim();
+const TIER_REASON = (process.env.TIER_REASON || "").trim();
+
+let body = existsSync("autopilot-comment.txt")
   ? readFileSync("autopilot-comment.txt", "utf8").trim()
   : "The automatic build did not finish this time. Nothing was changed. The run log has the detail.";
+
+// Say what happens next in the owner's terms, so the ticket is a complete account of the
+// run without anyone opening GitHub.
+if (TIER === "A") {
+  body += "\n\nThis one only changed wording, so it goes live on its own once the checks pass.";
+} else if (TIER === "B") {
+  body += `\n\nIt is waiting as a pull request for someone to merge, because it changes the app itself. ${TIER_REASON}`;
+} else if (TIER === "C") {
+  body += `\n\nNothing was merged: this touches something a person has to look at. ${TIER_REASON}`;
+}
 
 // [autopilot] marks the comment as ours so the next sweep knows this ticket is waiting on
 // a person rather than picking it up again.
