@@ -1,0 +1,23 @@
+# The order the migration scripts run in, and the only list that decides it.
+#
+# One source of truth: docs/SUPABASE_SETUP.md explains these for a person, and
+# .github/workflows/migrate.yml runs exactly this file for the machine. If those two ever
+# disagree, somebody edited a doc instead of the list.
+#
+# Every script here is idempotent, so the whole list runs on every merge to main and the
+# database converges. Blank lines and # comments are ignored.
+#
+# NOT in this list, on purpose:
+#   schema.sql   builds a database from nothing; its CREATE TABLE would fail on a live one.
+#   seed.sql     demo data; never run against real vendors.
+#   auth_setup.sql  replaces the open demo policies with locked per-role ones. Running it
+#                while enforced login is off would lock everyone out of a working store, so
+#                it stays a deliberate human step. See docs/SUPABASE_SETUP.md.
+
+payments_v2.sql
+credit_notes.sql
+feedback.sql
+payout_fields.sql
+order_invoice_fields.sql
+filing_locations.sql
+edit_delete.sql

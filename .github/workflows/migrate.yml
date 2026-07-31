@@ -1,0 +1,108 @@
+name: Apply database scripts
+
+# Runs the store's SQL scripts against the live database when a change lands on main, so a
+# merged migration is applied without anyone opening the Supabase editor. This is the last
+# manual step between a merge and a working deploy.
+#
+# WHAT IS AND IS NOT AUTOMATED HERE, because the distinction is the whole safety argument:
+#
+#   A schema change still needs a person. supabase/** is tier C in the autopilot's
+#   classifier, so no migration merges itself: a human reads the SQL and merges the pull
+#   request, exactly as before. What this workflow automates is only the APPLICATION of a
+#   migration that a person has already reviewed and merged. The judgement stays human; the
+#   typing does not.
+#
+# It runs only on push to main (post-merge), never from a feature branch, so an autopilot
+# branch cannot reach the database. The list of scripts comes from supabase/run-order.txt,
+# which deliberately excludes schema.sql, seed.sql, and auth_setup.sql.
+#
+# Setup (one time): add SUPABASE_DB_URL as a repository secret. In Supabase, Project
+# Settings, Database, Connection string, choose the SESSION pooler (port 5432) or the direct
+# connection, and copy the URI including the password. The transaction pooler on 6543 does
+# not run every DDL statement reliably, so do not use that one.
+#
+# Until that secret exists the workflow exits quietly and the scripts stay a manual step.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/**"
+      - ".github/workflows/migrate.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print what would run without touching the database"
+        type: boolean
+        default: false
+
+concurrency:
+  group: apply-database-scripts
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the connection secret is set
+        id: gate
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "No SUPABASE_DB_URL secret, so the scripts stay a manual step. See docs/SUPABASE_SETUP.md."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply the scripts in order
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          PGCONN: ${{ secrets.SUPABASE_DB_URL }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # The list is the contract. Anything not named here does not run, so adding a file
+          # to supabase/ cannot silently execute against the live database.
+          scripts=$(grep -vE '^\s*(#|$)' supabase/run-order.txt)
+          echo "Scripts to apply, in order:"
+          echo "$scripts" | sed 's/^/  /'
+
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            echo "Dry run: nothing was sent to the database."
+            exit 0
+          fi
+
+          for f in $scripts; do
+            path="supabase/$f"
+            if [ ! -f "$path" ]; then
+              echo "::error::$path is in run-order.txt but does not exist."
+              exit 1
+            fi
+            echo "--- applying $f"
+            # ON_ERROR_STOP makes a failing statement fail the run instead of carrying on
+            # and leaving the database half-migrated with a green tick.
+            psql "$PGCONN" --set ON_ERROR_STOP=1 --quiet --file "$path"
+          done
+          echo "All scripts applied."
+
+      - name: Ask the site whether it is still healthy
+        if: steps.gate.outputs.ready == 'true' && inputs.dry_run != true
+        env:
+          SITE: ${{ vars.PRODUCTION_URL || 'https://robinsons-store.vercel.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: node .github/scripts/health-check.mjs
+
+      - name: Say so when the database and the app disagree
+        if: failure()
+        run: |
+          echo "The scripts did not apply cleanly, or the site is unhealthy afterwards."
+          echo "The database may be part-migrated. Check the log above, fix the script, and"
+          echo "re-run: every script here is safe to run again."

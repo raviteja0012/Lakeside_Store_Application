@@ -122,7 +122,13 @@ tier classifier is the strong one, because it does not read the ticket.
 ## What is deliberately NOT automated
 
 - **Merging anything that touches money, access, or the schema.** Tier C.
-- **Running database migrations.** A script that alters live data runs when a person runs it.
+- **Deciding a database migration.** Writing or approving one is human work: `supabase/**`
+  is tier C and never auto-merges. Since 2026-07-31 the APPLYING is automated
+  (`.github/workflows/migrate.yml`, on push to main only, from the explicit list in
+  `supabase/run-order.txt`), which is a different thing. A person still reads the SQL and
+  merges it; the machine only stops them from having to paste it into a web editor
+  afterwards. `auth_setup.sql` is excluded, because running it while enforced login is off
+  would lock everyone out of a working store.
 - **Reverting automatically.** The watchdog raises a bug and fails the run; it does not roll
   production back on its own. An automatic revert during a real incident can undo the fix
   someone is mid-way through applying.
@@ -141,6 +147,35 @@ tier classifier is the strong one, because it does not read the ticket.
 
 Both have `tools: Read, Grep, Glob` and no write access at all. That is config, not
 instruction: they cannot edit even if asked to.
+
+## How these standards travel (and why they are not a plugin)
+
+The question came up on 2026-07-31: should the store's standards be packaged as a Claude
+Code plugin so other people get them?
+
+**For anyone working in this repo, they already do, and no plugin is involved.** Everything
+in `.claude/` is project-scoped and loads for whoever opens the repo: the skill, the two
+reviewer subagents, the permission deny rules, and the Stop hook. That is verified, not
+assumed: creating `.claude/agents/money-reviewer.md` made `money-reviewer` available as a
+subagent in the same session, with no install step and no restart.
+
+So a plugin would add nothing for the case that was actually asked about. What a plugin is
+for is the OTHER case: using these standards in a different repo.
+
+If that is ever wanted, the mechanism to use is a **skills-directory plugin**: a folder
+under a skills directory containing its own `.claude-plugin/plugin.json` loads as a plugin
+with no marketplace and no install, and can be copied into another project's `.claude/skills/`
+to travel. It needs the skill and the agents restructured into the plugin folder's own
+`skills/` and `agents/` subdirectories, and plugin-shipped agents may not use `hooks`,
+`mcpServers`, or `permissionMode`, so the Stop hook and the deny rules stay project-level
+either way.
+
+That restructure is deliberately NOT done here. It would move working, verified
+configuration to gain sharing that nobody has asked for yet, and it cannot be verified from
+the build sandbox: whether the manifest actually loads can only be seen in a real session.
+Breaking the thing that works today, to enable a thing nobody needs yet, on a change nobody
+can test, is a bad trade. When a second project genuinely wants these standards, do it then,
+and check it loads before trusting it.
 
 ## Costs
 
