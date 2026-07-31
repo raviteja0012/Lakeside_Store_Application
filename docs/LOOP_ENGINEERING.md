@@ -148,6 +148,35 @@ tier classifier is the strong one, because it does not read the ticket.
 Both have `tools: Read, Grep, Glob` and no write access at all. That is config, not
 instruction: they cannot edit even if asked to.
 
+## How these standards travel (and why they are not a plugin)
+
+The question came up on 2026-07-31: should the store's standards be packaged as a Claude
+Code plugin so other people get them?
+
+**For anyone working in this repo, they already do, and no plugin is involved.** Everything
+in `.claude/` is project-scoped and loads for whoever opens the repo: the skill, the two
+reviewer subagents, the permission deny rules, and the Stop hook. That is verified, not
+assumed: creating `.claude/agents/money-reviewer.md` made `money-reviewer` available as a
+subagent in the same session, with no install step and no restart.
+
+So a plugin would add nothing for the case that was actually asked about. What a plugin is
+for is the OTHER case: using these standards in a different repo.
+
+If that is ever wanted, the mechanism to use is a **skills-directory plugin**: a folder
+under a skills directory containing its own `.claude-plugin/plugin.json` loads as a plugin
+with no marketplace and no install, and can be copied into another project's `.claude/skills/`
+to travel. It needs the skill and the agents restructured into the plugin folder's own
+`skills/` and `agents/` subdirectories, and plugin-shipped agents may not use `hooks`,
+`mcpServers`, or `permissionMode`, so the Stop hook and the deny rules stay project-level
+either way.
+
+That restructure is deliberately NOT done here. It would move working, verified
+configuration to gain sharing that nobody has asked for yet, and it cannot be verified from
+the build sandbox: whether the manifest actually loads can only be seen in a real session.
+Breaking the thing that works today, to enable a thing nobody needs yet, on a change nobody
+can test, is a bad trade. When a second project genuinely wants these standards, do it then,
+and check it loads before trusting it.
+
 ## Costs
 
 A run with an empty board stops before any model call. A real ticket costs roughly what one
