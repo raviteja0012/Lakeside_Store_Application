@@ -11,7 +11,7 @@ A capture-first operations app for a Canadian brick-and-mortar general store wit
 Store facts:
 - Robinsons General Store, the general store Ravikiran acquired, in Dorset, Ontario, P0A 1E0 per the pesticide licence at 1062 Main Street. Lakeside Dry Goods and L_S and Dry goods are a section inside it, not the store name. Confirm the operating address, an earlier note mentioned Atikokan. Tax is unaffected, both are Ontario at 13 percent HST.
 - Owner is Ravi Kiran. Expert in Hardware, only high-level knowledge of the other departments, which is the reason tribal-knowledge capture matters.
-- Departments: Grocery, Bakery, Clothing, Hardware, Gifts, Produce, Meat, Chip Stand, with Garden Center under Hardware.
+- Departments, in the owner's required sequence (src/lib/departments.ts, applied to EVERY department list and dropdown): DryGoods & Lakeside, Hardware, Grocery, Property Maintenance, Bakery, Meat, Produce, Payrolls & Taxes, Others. Clothing and Gifts are sections inside DryGoods & Lakeside; Garden Center sits under Hardware. Chip Stand and Checkouts exist from earlier rounds and sort after the nine; do not delete them without asking.
 - Sells regulated pesticides under an Ontario vendor licence with a tracked expiry.
 - The 2026 bookings spreadsheet is the schema and the seed data. About 120 vendors with order amount, ship date, delivery status, invoiced amount, terms, due date, payment status.
 
@@ -127,8 +127,10 @@ Breaking any of these is a regression even if the build passes.
 6. New table, two places: a new table added to schema.sql is covered by the dev_all loop automatically, but under enforced auth it has RLS on and NO policy, which denies everyone. You MUST add it to auth_setup.sql (the store-scoped array, or a child-table policy that scopes through its parent) or production breaks silently. This is the most common way a new feature regresses auth.
 7. Build-safe: code must build with blank env. Auth and data helpers degrade to null rather than throwing; never require Supabase env or auth.users to exist at build time.
 8. Payments only through the engine RPCs in src/lib/payments.ts: record_payment (record), edit_payment (fix date/method/reference/notes/filing; re-derives touched invoice statuses), void_payment (undo; invoices go back to owing), reconcile_postdated (editors only, on load). Never update or delete payment rows directly, never hand-set a derived invoice status without a payment behind it (the vendor page auto-opens Record payment when an edit marks an invoice paid with nothing recorded). Post-dated is a future paid_date on a cheque, never a method value.
-9. AI text answers are plain text: prompts forbid markdown, routes strip it with plainText() from src/lib/aiText.ts, temperature stays low (0 extraction, 0.2 grounded answers), default model claude-sonnet-5 with ANTHROPIC_MODEL as the override.
-10. Owner feedback lives in the feedback table (Suggestions page): note + screenshot + voice recording, screenshot auto-read into ai_summary via /api/feedback-triage, statuses new/planned/done/declined, soft-voided like everything else. New rounds of WhatsApp feedback still get recorded verbatim in docs/OWNER_NOTES.md and triaged into docs/REQUIREMENTS.md.
+9. AI text answers are plain text: prompts forbid markdown, routes strip it with plainText() from src/lib/aiText.ts, default model claude-sonnet-5 with ANTHROPIC_MODEL as the override. DO NOT send a temperature parameter: claude-sonnet-5 rejects non-default sampling and every AI route 400s. This was caught in review once already; do not re-add it.
+10. One rule for what an invoice OWES, in two places that must agree to the cent: invoiceTotal() in src/lib/payments.ts and public.invoice_owed_total in SQL. Amount plus freight, plus HST UNLESS tax_mode is "included", where the tax is already inside the amount and adding it again overstates the bill. Any select feeding a money figure must fetch tax_mode, or a tax-included invoice silently reads back as tax-added. invoiceGoods() is the pre-tax figure for comparing against order amounts, never what is owed.
+11. Comments are required on invoices, orders, and payments, with "N/A" as the accepted answer. A blank box and a deliberate nothing-to-note must not look alike months later. Filing asks WHERE as well as how: Digital or Physical/Digital requires a digital_file_location.
+12. Owner feedback lives in the feedback table (Suggestions page): note + screenshot + voice recording, screenshot auto-read into ai_summary via /api/feedback-triage, statuses new/planned/done/declined, soft-voided like everything else. New rounds of WhatsApp feedback still get recorded verbatim in docs/OWNER_NOTES.md and triaged into docs/REQUIREMENTS.md.
 
 ## AI agents (all shipped)
 1. Document extraction (/api/extract). Sends the image or PDF to Claude vision with a strict JSON-only contract (vendor, invoice_date, notes, line_items each with description, qty, unit_cost, retail_price_note, confidence), validates it, and shows a confirm screen that flags low-confidence fields and an order-vs-invoiced warning a human acknowledges. Never auto-post low-confidence amounts.
@@ -145,6 +147,33 @@ Exact color tokens, the one-meaning-per-hue status mapping, and the form and acc
 - Province rates for seeding tax_rules are in the build spec section 13.
 - PIPEDA governs the HR and employee data: consent, access, security. Quebec Law 25 only triggers if Quebec-resident personal data is processed, unlikely for an Ontario store, treat as a precaution and a reason to favor Canadian regions.
 - Currency CAD, currency input masks.
+
+## How this repo ships itself (read before touching .github or .claude)
+
+Since 2026-07-28 the repo builds and ships from the Jira board without a chat session. The
+full design and the reasoning for every limit is docs/LOOP_ENGINEERING.md; the short version
+you must not break:
+
+- A ticket or a comment on the board becomes a build. A closed ticket counts too when
+  somebody comments on it after it was closed.
+- How far a change travels is decided by a SCRIPT reading the diff
+  (.github/scripts/classify-change.mjs), never by the model's own judgement. Words only
+  merge themselves; app changes wait for a person; money, access, the database, and the
+  automation's own files never merge.
+- **`.github/**` and `.claude/**` are tier C.** The automation cannot edit the automation. A
+  loop that can change its own limits does not have limits, and one that can change its own
+  reviewer has no reviewer. Changing what the autopilot may do takes a human merging it.
+- The app checks itself after every deploy at /api/health: that the deployed app and the
+  deployed database still agree on what an invoice owes, and that no invoice shows a status
+  its own payments do not support. A failure raises a bug on the board, which the intake
+  loop then picks up.
+- Merged database scripts apply themselves on push to main, in the order given by
+  supabase/run-order.txt. Deciding a migration is still human; only the typing is automated.
+  auth_setup.sql is excluded on purpose.
+- Two read-only reviewers live in .claude/agents: money-reviewer (knows the specific ways
+  this codebase has broken: a select missing tax_mode, an inline total bypassing
+  invoiceTotal, SQL and TypeScript changed on one side only) and invariant-auditor. Use them
+  on any diff that touches money or adds a query.
 
 ## Operational reality (how this repo is actually run)
 - The build and review work happens in an isolated cloud container with no network route to the owner's Supabase or Vercel. Do not try to connect to the database or the live site. Deliver database changes as SQL the owner runs in the Supabase SQL editor, and deploys happen by pushing to the branch (Vercel auto-deploys main).
