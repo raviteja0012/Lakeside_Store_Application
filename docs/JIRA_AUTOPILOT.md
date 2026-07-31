@@ -82,6 +82,22 @@ marker is waiting on a person and gets skipped, so the loop never works the same
 twice in a row. Replying on the ticket puts it back in the queue: that is the way to ask
 for another pass.
 
+**Closed tickets count too, and this was learned the hard way.** The first version asked
+Jira only for tickets that were not Done, which quietly broke the promise in the paragraph
+above: the owner left five follow-up comments on a story that had just been closed, and
+thirty-one green sweeps went straight past them over two days. A closed ticket somebody is
+still talking on is open work, whatever its status says.
+
+So a closed ticket is picked up when the newest comment landed more than a minute after the
+ticket was closed. The minute matters: the ordinary way a ticket gets closed is a note
+saying what was done, then the transition a moment later, and on this board that gap has
+been as little as nine seconds. Without the window, whether a finished ticket reopened
+itself would depend on which of those two clicks landed first. A genuine follow-up arrives
+hours or days later, so a minute costs nothing.
+
+That rule is tested against the board's real timestamps in
+`.github/scripts/jira-find-work.test.mjs`, which CI runs on every push.
+
 ## Cost
 
 One run costs roughly what one build chat costs, and only when there is something to work.

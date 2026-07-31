@@ -7,6 +7,7 @@
 // Writes three outputs: found, issue_key, ticket (the text handed to the build step).
 
 import { appendFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 const BASE = (process.env.JIRA_BASE_URL || "").replace(/\/+$/, "");
 const EMAIL = process.env.JIRA_USER_EMAIL || "";
@@ -68,9 +69,18 @@ function flatten(node) {
   return ["paragraph", "heading", "listItem", "codeBlock"].includes(node.type) ? inner + "\n" : inner;
 }
 
+// Open tickets, PLUS recently closed ones that have been commented on since.
+//
+// The first version asked only for tickets that were not Done, which quietly broke the
+// thing the docs promised: replying to a closed ticket is how you ask for a follow-up, and
+// the owner did exactly that five times on a closed story while thirty-one green runs swept
+// past it. A closed ticket someone is still talking on is open work, whatever its status
+// says. The comment marker below is what stops this from re-working every old ticket: a
+// closed ticket is only picked up when the last word on it is not the autopilot's.
+const RECENT_DAYS = 30;
 const jql = ONE
   ? `key = ${ONE}`
-  : `project in (${PROJECTS.join(",")}) AND statusCategory != Done ORDER BY updated ASC`;
+  : `project in (${PROJECTS.join(",")}) AND (statusCategory != Done OR updated >= -${RECENT_DAYS}d) ORDER BY updated ASC`;
 
 // Comments come from their own endpoint rather than the search response: whether search
 // returns them depends on the API version, and a silently missing comment list would make
@@ -88,8 +98,34 @@ async function commentsFor(key) {
   return j.comments || [];
 }
 
-const FIELDS = ["summary", "description", "status", "updated", "issuetype"];
+const FIELDS = ["summary", "description", "status", "updated", "issuetype", "statuscategorychangedate"];
 
+const isDone = (i) => i.fields?.status?.statusCategory?.key === "done";
+
+// Somebody spoke on a closed ticket AFTER it was closed, so it is work again.
+//
+// The grace window covers the ordinary way a ticket gets closed: a note explaining what was
+// done, then the transition a moment later. Without it, whether a finished ticket reopens
+// itself depends on which of those two clicks landed first, and on this board the gap has
+// been as small as nine seconds. A genuine follow-up arrives hours or days later, so a
+// minute costs nothing.
+export const CLOSE_GRACE_MS = 60000;
+export function reopenedByComment(closedAtISO, lastCommentISO) {
+  const closedAt = Date.parse(closedAtISO || "");
+  const lastAt = Date.parse(lastCommentISO || "");
+  if (!Number.isFinite(closedAt) || !Number.isFinite(lastAt)) return false;
+  return lastAt > closedAt + CLOSE_GRACE_MS;
+}
+
+// Only sweep the board when run directly. Imported (by the test beside this file) the
+// module exposes its rules and does nothing.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (!isMain) {
+  // eslint-disable-next-line no-undef
+  process.exitCode = 0;
+}
+
+if (isMain) {
 let issues = [];
 let picked = null;
 let pickedComments = [];
@@ -103,6 +139,15 @@ try {
     const lastIsOurs = last && flatten(last.body).includes(MARKER);
     // Already worked and nobody has replied since: leave it for the person.
     if (lastIsOurs && !ONE) continue;
+
+    // A closed ticket counts as work ONLY when somebody has spoken on it since it was
+    // closed. Without this the sweep would re-open every ticket finished in the last month,
+    // because the closing note is itself the newest comment on all of them.
+    if (isDone(i) && !ONE) {
+      if (!reopenedByComment(i.fields?.statuscategorychangedate, last?.created)) continue;
+      console.log(`${i.key} is closed but was commented on after closing; treating it as work.`);
+    }
+
     // Nothing to go on.
     const hasBrief = !!i.fields?.description || comments.length > 0;
     if (!hasBrief && !ONE) continue;
@@ -145,3 +190,4 @@ console.log(`Working ${picked.key}: ${f.summary}`);
 out("found", "true");
 out("issue_key", picked.key);
 out("ticket", ticket);
+}

@@ -2,7 +2,7 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-07-28, on branch claude/great-johnson-CFSbi (latest: the Jira round from the owner's SCRUM-9 comments, below; before it the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-07-31, on branch claude/great-johnson-CFSbi (latest: owner round 5, below; before it the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
 
 Owner feedback round 3 (2026-07-26/27), all shipped this round:
 - Payment EDIT everywhere (vendor page and payments screen): date, method, reference, notes, filing through the new edit_payment RPC; touched invoice statuses re-derive in the same transaction; amount stays locked (void and re-record). Payment row action labels are Void.
@@ -29,6 +29,22 @@ counts; the vendors directory grouped by department with count chips; reference 
 self-explain per method; Ask the store gained the APP GUIDE (how-the-app-works answers)
 and deterministic issue logging into Suggestions ("log this issue: ..."). Migration for
 the round: payout_fields.sql.
+
+Owner round 5 (2026-07-31, five SCRUM-9 comments of 30 and 31 July): the HST box now shows
+its working, because the owner asked where 172.57 came from when a 1,500 subtotal shows 195
+under the other tax mode (both figures were right; nothing on screen said why). Comments are
+required on invoices, orders and payments, with N/A as the honest answer, so a blank box and
+a deliberate nothing-to-note stop looking alike. Every confirmation now records WHERE it is
+filed as well as how: choosing Digital or Physical/Digital asks for the file location, so
+"digital" stops meaning a file nobody can find again. Payment fields carry the owner's names
+(Payment method, Payment confirmation filed, Payment comments), the filing choices read
+Physical / Digital / Physical/Digital, and the vendor page sections follow his order: Vendor,
+Purchase orders, Invoices, Statement, Payments, Credits. Migration: filing_locations.sql.
+
+That round also exposed a hole in the automation: the sweep asked Jira only for tickets that
+were not Done, so five follow-up comments on a closed story sat unseen through thirty-one
+green runs. A closed ticket somebody is still talking on is open work, and it is picked up
+now, with the rule tested against the board's real timestamps in CI.
 
 Loop round (2026-07-28): the automation became a closed loop rather than a one-way pipe.
 A request on the Jira board is built, checked, and shipped, and a bug we introduce is caught

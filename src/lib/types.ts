@@ -63,6 +63,7 @@ export type PurchaseOrder = {
   delivery_commit: string | null;
   status: string;
   order_filing?: string | null; // where the order confirmation is filed: digital | physical | both
+  digital_file_location?: string | null; // the link or path, when any of it is digital
   notes: string | null;
 };
 
@@ -78,6 +79,8 @@ export type Invoice = {
   delivery_status?: string | null; // delivered | partially_delivered | not_delivered
   delivered_date?: string | null; // the day the goods actually arrived
   delivery_comments?: string | null; // short-shipped or damaged, in the receiver's words
+  invoice_filing?: string | null; // where the final invoice is filed: physical | digital | both
+  digital_file_location?: string | null; // the link or path, when any of it is digital
   estimate_number?: string | null; // Property Maintenance: preplanned work has an estimate #
   work_type?: string | null; // Property Maintenance: repair | upgrade
   service_category?: string | null; // Property Maintenance: Electrical, Plumbing, ... or free text
@@ -98,7 +101,8 @@ export type Payment = {
   paid_date: string | null; // a future date means post-dated, not settled yet
   reference?: string | null;
   notes?: string | null;
-  confirmation_filing?: string | null; // digital | physical
+  confirmation_filing?: string | null; // physical | digital | both
+  digital_file_location?: string | null; // the link or path, when any of it is digital
   created_at?: string;
   vendor?: { name: string } | null;
   payment_allocation?: {

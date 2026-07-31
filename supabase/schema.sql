@@ -130,6 +130,9 @@ create table invoice (
   delivery_status text check (delivery_status is null or delivery_status in ('delivered','partially_delivered','not_delivered')),
   delivered_date date,                  -- the day the goods actually arrived
   delivery_comments text,               -- short-shipped or damaged, in the receiver's words
+  -- Where the final invoice itself is filed, and the link or path when any of it is digital.
+  invoice_filing text check (invoice_filing is null or invoice_filing in ('physical','digital','both')),
+  digital_file_location text,
   -- Property Maintenance payouts only (null for merchandise invoices): estimate number when
   -- the work was preplanned, repair vs upgrade, service category, and a short description.
   estimate_number text,
@@ -162,6 +165,7 @@ create table payment (
   reference text,                           -- cheque number, e-transfer ref, card confirmation
   notes text,                               -- required by the UI when method = other
   confirmation_filing text check (confirmation_filing is null or confirmation_filing in ('digital','physical','both')),
+  digital_file_location text,               -- where the payment confirmation lives, when it is digital
   confirmation_file_path text,
   created_by uuid references app_user(id),
   created_at timestamptz default now()
@@ -504,6 +508,7 @@ create table purchase_order (
   -- values that orders imported from the bookings ledger still carry.
   status text default 'in_progress' check (status in ('in_progress','approved','draft','ordered','confirmed','shipped','received','cancelled')),
   order_filing text check (order_filing is null or order_filing in ('digital','physical','both')),
+  digital_file_location text,           -- where the order confirmation lives, when it is digital
   notes text,
   created_by uuid references app_user(id),
   created_at timestamptz default now()

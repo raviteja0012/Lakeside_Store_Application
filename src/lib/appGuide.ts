@@ -64,6 +64,16 @@ HOW COMMON THINGS ARE DONE:
 - Note a short shipment: set Delivery status to "Partially delivered", put the arrival day
   in Delivered date, and describe what was missing or damaged in Delivery comments. A
   credit note on the vendor page is what actually reduces the money owed.
+- Comments are required on invoices, orders and payments. If there is genuinely nothing to
+  say, type N/A: a blank box and a deliberate "nothing to note" look the same later, and
+  N/A says somebody checked.
+- Say where a confirmation is filed: Physical, Digital, or Physical/Digital. Choosing
+  Digital or Physical/Digital asks for the Digital file location, the link or folder path
+  where the file actually lives, so it can be found again months later.
+- Understand the HST that fills itself in: the line under the box shows the working. With
+  tax entered separately it is 13 percent added on top; with tax included in the amount it
+  is the tax already inside what the vendor billed, so 1,500.00 holds 172.57 of tax on
+  1,327.43 of goods.
 - See what a vendor still owes or is owed: the vendor page header (Outstanding, deposits
   on account, ordered-but-not-invoiced), or the Statement view for the full running
   balance.

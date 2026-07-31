@@ -22,7 +22,7 @@ import { chipClass, labelize } from "@/lib/status";
 import * as XLSX from "xlsx";
 import {
   PAYMENT_METHODS, CONFIRMATION_FILING, methodLabel, referenceLabel, invoiceTotal, isFutureDate,
-  referenceHelp,
+  referenceHelp, needsDigitalLocation,
   recordPaymentRpc, voidPaymentRpc, editPaymentRpc, reconcilePostdated, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
@@ -84,7 +84,8 @@ export default function Payments() {
   const [paidDate, setPaidDate] = useState(todayISO());
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
-  const [filing, setFiling] = useState(""); // digital | physical | "" (not said)
+  const [filing, setFiling] = useState(""); // physical | digital | both | "" (not said)
+  const [digitalLocation, setDigitalLocation] = useState(""); // where the file lives, when filed digitally
 
   // Quick-add vendor, so entering a category never dead-ends when the vendor is new.
   // products and notes are optional color: what the vendor supplies ("Mugs, wallets") and
@@ -95,7 +96,7 @@ export default function Payments() {
   // Editing a recorded payment: the facts (date, method, reference, notes, filing) are
   // correctable in place; a wrong amount means void and re-record.
   const [editPayId, setEditPayId] = useState<string | null>(null);
-  const [editPayForm, setEditPayForm] = useState({ method: "cheque", paid_date: "", reference: "", notes: "", filing: "" });
+  const [editPayForm, setEditPayForm] = useState({ method: "cheque", paid_date: "", reference: "", notes: "", filing: "", digital_file_location: "" });
 
   // Demo mode identity, fixable on this screen (the guard error otherwise sends people
   // away and the filled form is lost).
@@ -112,7 +113,7 @@ export default function Payments() {
   const [spreadAmount, setSpreadAmount] = useState("");
 
   const PAY_SELECT =
-    "id, vendor_id, invoice_id, amount, method, paid_date, reference, notes, confirmation_filing, created_at, " +
+    "id, vendor_id, invoice_id, amount, method, paid_date, reference, notes, confirmation_filing, digital_file_location, created_at, " +
     "vendor:vendor_id(name), payment_allocation(invoice_id, amount, invoice:invoice_id(invoice_number))";
 
   async function load() {
@@ -282,6 +283,7 @@ export default function Payments() {
     setReference("");
     setNotes("");
     setFiling("");
+    setDigitalLocation("");
     setShowNewVendor(false);
     setNvForm({ name: "", department_id: "", rep_name: "", phone: "", email: "", default_terms: "", products: "", notes: "" });
   }
@@ -440,8 +442,16 @@ export default function Payments() {
       setError("Pick the paid date.");
       return;
     }
+    if (!notes.trim()) {
+      setError("Payment comments are required. Type N/A if there is nothing to note.");
+      return;
+    }
+    if (needsDigitalLocation(filing) && !digitalLocation.trim()) {
+      setError("Add the digital file location, so the confirmation can be found again.");
+      return;
+    }
     if (method === "other" && !notes.trim()) {
-      setError("Method is Other: say what it was in the notes.");
+      setError("Payment method is Other: say what it was in the comments.");
       return;
     }
     const allocations = noInvoice
@@ -515,7 +525,7 @@ export default function Payments() {
         }
       }
 
-      await recordPaymentRpc({
+      const paymentId = await recordPaymentRpc({
         vendorId,
         method,
         paidDate,
@@ -526,6 +536,16 @@ export default function Payments() {
         allocations,
         amount: noInvoice ? Number(amount) : undefined
       });
+      // Written after the engine commits: the RPC owns the money, this is a file path, and
+      // a failure here must cost a path rather than look like a lost payment.
+      const loc = digitalLocation.trim();
+      if (paymentId && loc) {
+        try {
+          await supabase.from("payment").update({ digital_file_location: loc }).eq("id", paymentId);
+        } catch {
+          /* the payment stands; the location can be added by editing it */
+        }
+      }
       const postdated = isFutureDate(paidDate);
       setOkMsg(
         postdated
@@ -566,7 +586,8 @@ export default function Payments() {
       paid_date: p.paid_date || todayISO(),
       reference: p.reference || "",
       notes: p.notes || "",
-      filing: p.confirmation_filing || ""
+      filing: p.confirmation_filing || "",
+      digital_file_location: p.digital_file_location || ""
     });
   }
 
@@ -594,6 +615,14 @@ export default function Payments() {
         confirmationFiling: editPayForm.filing,
         actorId: currentActorId(member)
       });
+      const loc = editPayForm.digital_file_location.trim();
+      if (loc) {
+        try {
+          await supabase.from("payment").update({ digital_file_location: loc }).eq("id", editPayId);
+        } catch {
+          /* the edit stands; the location can be added again */
+        }
+      }
       setEditPayId(null);
       await load();
     } catch (e: any) {
@@ -609,7 +638,7 @@ export default function Payments() {
     return (
       <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-          <div><label className="label">Method</label>
+          <div><label className="label">Payment method</label>
             <select className="input" value={editPayForm.method} onChange={(e) => setEditPayForm({ ...editPayForm, method: e.target.value })}>
               {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
@@ -620,13 +649,16 @@ export default function Payments() {
           <div><label className="label">{referenceLabel(editPayForm.method)}</label><input className="input" value={editPayForm.reference} onChange={(e) => setEditPayForm({ ...editPayForm, reference: e.target.value })} />
             <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(editPayForm.method)}</p>
           </div>
-          <div><label className="label">Confirmation filed</label>
+          <div><label className="label">Payment confirmation filed</label>
             <select className="input" value={editPayForm.filing} onChange={(e) => setEditPayForm({ ...editPayForm, filing: e.target.value })}>
               <option value="">Not said</option>
               {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
           </div>
-          <div><label className="label">Notes{editPayForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" value={editPayForm.notes} onChange={(e) => setEditPayForm({ ...editPayForm, notes: e.target.value })} /></div>
+          {needsDigitalLocation(editPayForm.filing) && (
+            <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={editPayForm.digital_file_location} onChange={(e) => setEditPayForm({ ...editPayForm, digital_file_location: e.target.value })} /></div>
+          )}
+          <div><label className="label">Payment comments{editPayForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" placeholder="Anything worth noting, or N/A" value={editPayForm.notes} onChange={(e) => setEditPayForm({ ...editPayForm, notes: e.target.value })} /></div>
         </div>
         <p className="help" style={{ margin: 0 }}>The amount stays {formatCAD(p.amount)}. Wrong amount? Void this payment and record it again.</p>
         <div style={{ display: "flex", gap: 8 }}>
@@ -954,7 +986,7 @@ export default function Payments() {
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
                 <div>
-                  <label className="label" htmlFor="pay-method">Method</label>
+                  <label className="label" htmlFor="pay-method">Payment method</label>
                   <select id="pay-method" className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
                     {PAYMENT_METHODS.map((m) => (
                       <option key={m.value} value={m.value}>{m.label}</option>
@@ -972,16 +1004,24 @@ export default function Payments() {
                   <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(method)}</p>
                 </div>
                 <div>
-                  <label className="label" htmlFor="pay-filing">Confirmation filed</label>
+                  <label className="label" htmlFor="pay-filing">Payment confirmation filed</label>
                   <select id="pay-filing" className="input" value={filing} onChange={(e) => setFiling(e.target.value)}>
                     <option value="">Not said</option>
                     {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                   </select>
                 </div>
               </div>
+              {needsDigitalLocation(filing) && (
+                <div>
+                  <label className="label" htmlFor="pay-loc">Digital file location</label>
+                  <input id="pay-loc" className="input" placeholder="Link or folder path" value={digitalLocation} onChange={(e) => setDigitalLocation(e.target.value)} />
+                  <p className="help" style={{ margin: "4px 0 0" }}>Required. Where the confirmation is saved, so it can be found again.</p>
+                </div>
+              )}
               <div>
-                <label className="label" htmlFor="pay-notes">Notes{method === "other" ? " (say what the method was)" : ""}</label>
-                <input id="pay-notes" className="input" value={notes} onChange={(e) => setNotes(e.target.value)} />
+                <label className="label" htmlFor="pay-notes">Payment comments{method === "other" ? " (say what the method was)" : ""}</label>
+                <input id="pay-notes" className="input" placeholder="Anything worth noting, or N/A" value={notes} onChange={(e) => setNotes(e.target.value)} />
+                <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
               </div>
 
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
