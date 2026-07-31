@@ -22,3 +22,13 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ""
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ""
+      # The automation's own rules, checked like any other code. These are the two
+      # decisions nothing else can catch: which changes may merge themselves, and when a
+      # closed ticket counts as work again.
+      - name: Automation rules
+        run: |
+          node .github/scripts/jira-find-work.test.mjs
+          node --check .github/scripts/classify-change.mjs
+          node --check .github/scripts/jira-comment.mjs
+          node --check .github/scripts/health-check.mjs
+          node --check .github/scripts/raise-health-ticket.mjs

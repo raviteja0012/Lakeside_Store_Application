@@ -31,9 +31,13 @@ Run in this order; skip nothing (each is safe to re-run):
    purchase_order.order_filing, and "in progress" / "approved" as order statuses. It also
    re-creates the status engine so a tax-included invoice is not charged its tax twice, and
    backfills tax_mode on every existing invoice from the HST figure already on file.
-6. `edit_delete.sql` — soft-delete columns and the inventory line notes (older databases
+6. `filing_locations.sql` — where each confirmation is filed and, when it is digital, the
+   link or path: invoice.invoice_filing, invoice.digital_file_location,
+   purchase_order.digital_file_location, payment.digital_file_location. Asked for on
+   2026-07-31 so "digital" stops meaning a file nobody can find again.
+7. `edit_delete.sql` — soft-delete columns and the inventory line notes (older databases
    only; harmless if already applied).
-7. `auth_setup.sql` — ONLY if enforced login is on. Always re-run it LAST after any script
+8. `auth_setup.sql` — ONLY if enforced login is on. Always re-run it LAST after any script
    above, because it (re)applies the per-store policies to every table including new ones.
 
 ## What each remaining file is

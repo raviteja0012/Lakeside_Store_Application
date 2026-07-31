@@ -4,7 +4,7 @@ A living document. Every feature idea, note, or document the owner shares gets r
 refined into something buildable, and checked against what the app already does, so nothing is
 lost and nothing is built twice. Edit freely; append new notes at the bottom with a date.
 
-Last updated: 2026-07-27.
+Last updated: 2026-07-31.
 
 ## Sources on file
 
@@ -411,6 +411,41 @@ words into Suggestions when signed in. Department walkthrough photos (one per de
 from the owner's phone) are queued for visual navigation tiles and knowledge-note
 attachments; website photos were ruled out (blocked network, third-party rights,
 pre-sale vintage).
+
+## Jira round, 2026-07-30 and 31 (five more SCRUM-9 comments from Ravi Kiran)
+
+These arrived on a ticket that had already been closed, which is how we found that the
+automation only ever looked at open tickets. Fixed in the same round.
+
+1. A question, not a bug (30 July, 23:24): "When we select the Tax entered separatly drop
+   down option for the Tax field in Vendors and Record Invoice, its poped up with the number
+   195 in the HST field... however when we choose the option 'Tax included in the imvoice'
+   the HST field populated with number 172.57. Where its come from and how to caluculated to
+   popup 172.57."
+   BOTH FIGURES WERE CORRECT. On a 1,500 subtotal: 195 is 13 percent added on top; 172.57 is
+   the tax already inside 1,500, because 1,327.43 of goods plus 13 percent comes to exactly
+   1,500. The failure was that nothing on screen said so. The HST box now prints its own
+   working underneath, in both invoice forms. Worth remembering as a pattern: he was not
+   wrong about the number, he was right that the app never explained itself.
+
+2. Invoice recording (30 July, 23:28): make Delivery Comments mandatory, with "N/A" when
+   there is nothing to say; add a "Final Invoice Filing" dropdown (Physical, Digital,
+   Physical/Digital) and, when either digital option is chosen, a required "Digital File
+   Location" for the URL or path.
+
+3. Purchase orders (31 July, 00:04): the same digital file location rule on the order
+   confirmation, and Order Comments mandatory with the same N/A convention.
+
+4. Vendor page section order (31 July, 00:12): Vendor, Purchase orders, Invoices, Statement,
+   Payments, Credits. Only Purchase orders and Invoices were out of order.
+
+5. Record payment (31 July, 00:20): rename Method to PaymentMethod, Confirmation field to
+   Payment Confirmation field, Notes to Payment Comments; add the digital file location on
+   the same rule; make Payment Comments mandatory with N/A.
+
+All five shipped. The N/A convention is the interesting one: he is not asking for a required
+field for its own sake, he is asking that "nobody wrote anything" and "somebody checked and
+there was nothing" stop looking identical in a report months later.
 
 ## Jira round, 2026-07-27 evening (SCRUM-9 comments from Ravi Kiran)
 

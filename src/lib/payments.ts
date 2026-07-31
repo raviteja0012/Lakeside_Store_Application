@@ -4,7 +4,7 @@
 // See supabase/payments_v2.sql for the engine.
 
 import { supabase } from "@/lib/supabaseClient";
-import { daysOverdue } from "@/lib/format";
+import { daysOverdue, hstOn } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
 
 // The owner's locked list. Post-dated is not a method: it is a cheque with a future
@@ -24,13 +24,42 @@ export const PAYMENT_METHODS: { value: string; label: string }[] = [
 // Rows recorded before the card split. Valid in the database, not offered in the UI.
 const LEGACY_LABELS: Record<string, string> = { cc: "Credit card" };
 
-// Where the payment confirmation is filed, per the workflow sheet. "Both" is the owner's
-// real third case: an emailed receipt that also goes in the paper binder.
+// Where a confirmation is filed, per the workflow sheet. "Both" is the owner's real third
+// case: an emailed receipt that also goes in the paper binder. Order and wording are his.
 export const CONFIRMATION_FILING: { value: string; label: string }[] = [
-  { value: "digital", label: "Digital" },
   { value: "physical", label: "Physical" },
-  { value: "both", label: "Digital and Physical" }
+  { value: "digital", label: "Digital" },
+  { value: "both", label: "Physical/Digital" }
 ];
+
+// Anything filed digitally needs an address, or "digital" means a file nobody can find
+// again. One rule, so the invoice, the order, and the payment all ask the same question.
+export function needsDigitalLocation(filing: string | null | undefined): boolean {
+  return filing === "digital" || filing === "both";
+}
+
+// The plain sentence under a filled-in HST box, showing where the figure came from. The
+// owner asked exactly this: a subtotal of 1500 shows 195 under one tax mode and 172.57
+// under the other, and nothing on screen said why.
+export function taxWorking(mode: string, subtotal: number | null, hst: number | null): string | null {
+  const amount = Number(subtotal) || 0;
+  const tax = Number(hst) || 0;
+  if (!amount) return null;
+  if (mode === "separate") {
+    // The HST box is deliberately editable, so this cannot simply claim 13 percent: an
+    // exempt line typed as 0 would produce a sentence saying tax was added on top of a
+    // total that plainly has none. Say what the figure IS, and say when it is not the
+    // standard rate, which is worth noticing on its own.
+    const standard = Math.abs(tax - hstOn(amount)) < 0.005;
+    return standard
+      ? `13 percent of ${amount.toFixed(2)}, added on top. Goods and tax come to ${(amount + tax).toFixed(2)}.`
+      : `${tax.toFixed(2)} added on top of ${amount.toFixed(2)}, which is not the usual 13 percent (${hstOn(amount).toFixed(2)}). Goods and tax come to ${(amount + tax).toFixed(2)}.`;
+  }
+  if (mode === "included") return `Already inside the ${amount.toFixed(2)}: goods ${(amount - tax).toFixed(2)} plus ${tax.toFixed(2)} tax. Nothing is added on top.`;
+  if (mode === "none") return "This vendor does not charge tax.";
+  if (mode === "invoice") return "The tax is on the paper invoice. The tax report will show this one as unstated.";
+  return null;
+}
 
 // Delivery state on an invoice entry. "Partially delivered" is the short-shipped case:
 // the invoice is for the whole order but only part of it arrived.

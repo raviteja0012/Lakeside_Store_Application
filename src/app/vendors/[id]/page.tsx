@@ -10,7 +10,7 @@ import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
 import {
   PAYMENT_METHODS, CONFIRMATION_FILING, DELIVERY_STATUS, WORK_TYPES, SERVICE_CATEGORIES, CREDIT_TYPES,
-  TAX_MODES, ORDER_FILING, orderStatusOptions,
+  TAX_MODES, ORDER_FILING, orderStatusOptions, needsDigitalLocation, taxWorking,
   isPropertyDept, isFinanceDept, isHardwareDept,
   methodLabel, referenceLabel, referenceHelp, invoiceTotal as invTotal, hstInside, isFutureDate,
   recordPaymentRpc, voidPaymentRpc, editPaymentRpc, fetchSettlements,
@@ -56,7 +56,7 @@ export default function VendorDetail() {
   // The order fields the owner asked for, in his order: status, amount, where the
   // confirmation is filed, ship date, comments. The season year is not asked for; it
   // follows the ship date so the seasonal reports still line up.
-  const [poForm, setPoForm] = useState({ status: "in_progress", order_amount: "", order_filing: "", ship_date: "", notes: "" });
+  const [poForm, setPoForm] = useState({ status: "in_progress", order_amount: "", order_filing: "", digital_file_location: "", ship_date: "", notes: "" });
   const [showInv, setShowInv] = useState(false);
   // The workflow-sheet fields. status "paid" at entry also records the payment
   // (Ravi: an invoice arrives paid or unpaid). Property Maintenance vendors get the
@@ -68,29 +68,31 @@ export default function VendorDetail() {
     // no-tax vendor (stores 0); invoice = "refer to the actual invoice" (stores blank).
     tax_mode: "separate", po_number: "",
     delivery_status: "", delivered_date: "", delivery_comments: "",
+    invoice_filing: "", digital_file_location: "",
     terms: "", due_date: "", status: "unpaid",
     estimate_number: "", work_type: "", service_category: "", service_category_other: "", work_description: "",
     pay_method: "cheque", pay_date: todayISO(), pay_reference: "", pay_filing: ""
   };
   const [invForm, setInvForm] = useState({ ...emptyInvForm });
   const [payFor, setPayFor] = useState<string | null>(null);
-  const [payForm, setPayForm] = useState({ amount: "", method: "cheque", paid_date: todayISO(), reference: "", notes: "", filing: "" });
+  const [payForm, setPayForm] = useState({ amount: "", method: "cheque", paid_date: todayISO(), reference: "", notes: "", filing: "", digital_file_location: "" });
   const [settlements, setSettlements] = useState<Map<string, InvoiceSettlement>>(new Map());
   // Editing a recorded payment (Ravi typed a wrong date once and was stuck): date, method,
   // reference, notes, and filing are correctable; the amount means void and re-record.
   const [editPayId, setEditPayId] = useState<string | null>(null);
-  const [editPayForm, setEditPayForm] = useState({ method: "cheque", paid_date: "", reference: "", notes: "", filing: "" });
+  const [editPayForm, setEditPayForm] = useState({ method: "cheque", paid_date: "", reference: "", notes: "", filing: "", digital_file_location: "" });
 
   const [editInvId, setEditInvId] = useState<string | null>(null);
   const [editInvForm, setEditInvForm] = useState({
     invoice_number: "", invoice_date: "", amount: "", hst_amount: "", freight_charges: "",
     tax_mode: "separate", po_number: "",
     delivery_status: "", delivered_date: "", delivery_comments: "",
+    invoice_filing: "", digital_file_location: "",
     terms: "", due_date: "", status: "unpaid",
     estimate_number: "", work_type: "", service_category: "", service_category_other: "", work_description: ""
   });
   const [editPoId, setEditPoId] = useState<string | null>(null);
-  const [editPoForm, setEditPoForm] = useState({ status: "in_progress", order_amount: "", order_filing: "", ship_date: "", notes: "" });
+  const [editPoForm, setEditPoForm] = useState({ status: "in_progress", order_amount: "", order_filing: "", digital_file_location: "", ship_date: "", notes: "" });
 
   // Credits
   const [credits, setCredits] = useState<CreditNote[]>([]);
@@ -134,9 +136,9 @@ export default function VendorDetail() {
       return;
     }
     setVendor((v as unknown as Vendor) || null);
-    const { data: po } = await supabase.from("purchase_order").select("id, vendor_id, order_amount, ship_date, delivery_commit, status, order_filing, season_year, notes, department_id").eq("vendor_id", id).is("voided_at", null).order("ship_date", { ascending: false });
+    const { data: po } = await supabase.from("purchase_order").select("id, vendor_id, order_amount, ship_date, delivery_commit, status, order_filing, digital_file_location, season_year, notes, department_id").eq("vendor_id", id).is("voided_at", null).order("ship_date", { ascending: false });
     setOrders((po as unknown as PurchaseOrder[]) || []);
-    const { data: inv } = await supabase.from("invoice").select("id, vendor_id, invoice_number, invoice_date, amount, hst_amount, freight_charges, tax_mode, po_number, delivery_status, delivered_date, delivery_comments, estimate_number, work_type, service_category, work_description, terms, due_date, status").eq("vendor_id", id).is("voided_at", null).order("due_date", { ascending: true });
+    const { data: inv } = await supabase.from("invoice").select("id, vendor_id, invoice_number, invoice_date, amount, hst_amount, freight_charges, tax_mode, po_number, delivery_status, delivered_date, delivery_comments, invoice_filing, digital_file_location, estimate_number, work_type, service_category, work_description, terms, due_date, status").eq("vendor_id", id).is("voided_at", null).order("due_date", { ascending: true });
     const invList = (inv as unknown as Invoice[]) || [];
     setInvoices(invList);
     try {
@@ -147,7 +149,7 @@ export default function VendorDetail() {
     // Payments belong to the vendor now (the migration backfills vendor_id on legacy rows).
     const { data: pay } = await supabase
       .from("payment")
-      .select("id, invoice_id, vendor_id, amount, method, paid_date, reference, notes, confirmation_filing, payment_allocation(invoice_id, amount, invoice:invoice_id(invoice_number))")
+      .select("id, invoice_id, vendor_id, amount, method, paid_date, reference, notes, confirmation_filing, digital_file_location, payment_allocation(invoice_id, amount, invoice:invoice_id(invoice_number))")
       .eq("vendor_id", id)
       .is("voided_at", null)
       .order("paid_date", { ascending: false });
@@ -231,6 +233,17 @@ export default function VendorDetail() {
       setError("The expected ship date cannot be before today.");
       return;
     }
+    // The owner wants these answered on every order, with N/A as the honest answer when
+    // there is nothing to say. A blank field and a deliberate "nothing to note" look the
+    // same in a report; N/A does not.
+    if (!poForm.notes.trim()) {
+      setError("Order comments are required. Type N/A if there is nothing to note.");
+      return;
+    }
+    if (needsDigitalLocation(poForm.order_filing) && !poForm.digital_file_location.trim()) {
+      setError("Add the digital file location, so the confirmation can be found again.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -245,13 +258,14 @@ export default function VendorDetail() {
         ship_date: poForm.ship_date || null,
         status: poForm.status,
         order_filing: poForm.order_filing || null,
+        digital_file_location: poForm.digital_file_location.trim() || null,
         notes: poForm.notes || null,
         created_by: effectiveActorId
       }).select("id").single();
       if (r.error) throw new Error(r.error.message);
       await log("order_added", "purchase_order", r.data.id as string);
       setShowPO(false);
-      setPoForm({ status: "in_progress", order_amount: "", order_filing: "", ship_date: "", notes: "" });
+      setPoForm({ status: "in_progress", order_amount: "", order_filing: "", digital_file_location: "", ship_date: "", notes: "" });
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -277,6 +291,16 @@ export default function VendorDetail() {
 
   async function addInvoice() {
     if (!vendor) return;
+    // Delivery notes matter most on the invoices nobody re-reads: a short shipment recorded
+    // as blank is indistinguishable from a delivery nobody checked.
+    if (!isProperty && !isFinance && !invForm.delivery_comments.trim()) {
+      setError("Delivery comments are required. Type N/A if nothing was short or damaged.");
+      return;
+    }
+    if (needsDigitalLocation(invForm.invoice_filing) && !invForm.digital_file_location.trim()) {
+      setError("Add the digital file location, so the invoice can be found again.");
+      return;
+    }
     // The "arrived already paid" flow records a payment for the full total right after the
     // insert, and the RPC refuses a zero allocation. Validate BEFORE anything is written so
     // a bad form never leaves an orphan invoice behind.
@@ -306,6 +330,8 @@ export default function VendorDetail() {
         delivery_status: invForm.delivery_status || null,
         delivered_date: invForm.delivered_date || null,
         delivery_comments: invForm.delivery_comments.trim() || null,
+        invoice_filing: invForm.invoice_filing || null,
+        digital_file_location: invForm.digital_file_location.trim() || null,
         estimate_number: isProperty ? invForm.estimate_number || null : null,
         work_type: isProperty ? invForm.work_type || null : null,
         service_category: isProperty ? svcCat || null : null,
@@ -361,6 +387,8 @@ export default function VendorDetail() {
       delivery_status: i.delivery_status || "",
       delivered_date: i.delivered_date || "",
       delivery_comments: i.delivery_comments || "",
+      invoice_filing: i.invoice_filing || "",
+      digital_file_location: i.digital_file_location || "",
       estimate_number: i.estimate_number || "",
       work_type: i.work_type || "",
       service_category: i.service_category ? (knownCat ? i.service_category : "Others") : "",
@@ -374,6 +402,14 @@ export default function VendorDetail() {
 
   async function saveInvoice() {
     if (!editInvId) return;
+    if (!isProperty && !isFinance && !editInvForm.delivery_comments.trim()) {
+      setError("Delivery comments are required. Type N/A if nothing was short or damaged.");
+      return;
+    }
+    if (needsDigitalLocation(editInvForm.invoice_filing) && !editInvForm.digital_file_location.trim()) {
+      setError("Add the digital file location, so the invoice can be found again.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -389,6 +425,8 @@ export default function VendorDetail() {
         delivery_status: editInvForm.delivery_status || null,
         delivered_date: editInvForm.delivered_date || null,
         delivery_comments: editInvForm.delivery_comments.trim() || null,
+        invoice_filing: editInvForm.invoice_filing || null,
+        digital_file_location: editInvForm.digital_file_location.trim() || null,
         estimate_number: editInvForm.estimate_number || null,
         work_type: editInvForm.work_type || null,
         service_category: isProperty ? svcCat || null : null,
@@ -431,6 +469,7 @@ export default function VendorDetail() {
       status: o.status || "in_progress",
       order_amount: o.order_amount != null ? String(o.order_amount) : "",
       order_filing: o.order_filing || "",
+      digital_file_location: o.digital_file_location || "",
       ship_date: o.ship_date || "",
       notes: o.notes || ""
     });
@@ -438,6 +477,14 @@ export default function VendorDetail() {
 
   async function savePO() {
     if (!editPoId) return;
+    if (!editPoForm.notes.trim()) {
+      setError("Order comments are required. Type N/A if there is nothing to note.");
+      return;
+    }
+    if (needsDigitalLocation(editPoForm.order_filing) && !editPoForm.digital_file_location.trim()) {
+      setError("Add the digital file location, so the confirmation can be found again.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -446,6 +493,7 @@ export default function VendorDetail() {
         ship_date: editPoForm.ship_date || null,
         status: editPoForm.status,
         order_filing: editPoForm.order_filing || null,
+        digital_file_location: editPoForm.digital_file_location.trim() || null,
         // The season follows the ship date, the same rule the add form uses. Only when a
         // ship date is actually set: imported orders carry a season with no ship date, and
         // stamping today's year over it would move them into the wrong season.
@@ -485,7 +533,8 @@ export default function VendorDetail() {
       paid_date: p.paid_date || todayISO(),
       reference: p.reference || "",
       notes: p.notes || "",
-      filing: p.confirmation_filing || ""
+      filing: p.confirmation_filing || "",
+      digital_file_location: p.digital_file_location || ""
     });
   }
 
@@ -513,6 +562,7 @@ export default function VendorDetail() {
         confirmationFiling: editPayForm.filing,
         actorId: effectiveActorId
       });
+      await saveDigitalLocation(editPayId, editPayForm.digital_file_location);
       setEditPayId(null);
       await load();
     } catch (e: any) {
@@ -608,7 +658,19 @@ export default function VendorDetail() {
     // Prefill what is left to allocate: partial payments and post-dated cheques already
     // covering their share reduce it.
     const left = round2(remainingToAllocate(invTotal(i), settlements.get(i.id)));
-    setPayForm({ amount: left > 0 ? String(left) : "", method: "cheque", paid_date: todayISO(), reference: "", notes: "", filing: "" });
+    setPayForm({ amount: left > 0 ? String(left) : "", method: "cheque", paid_date: todayISO(), reference: "", notes: "", filing: "", digital_file_location: "" });
+  }
+
+  // Stamp the file location onto a payment the engine has already written. Non-fatal: the
+  // payment is real either way, and losing a path must never look like losing money.
+  async function saveDigitalLocation(paymentId: string | null | undefined, location: string) {
+    const value = (location || "").trim();
+    if (!paymentId || !value) return;
+    try {
+      await supabase.from("payment").update({ digital_file_location: value }).eq("id", paymentId);
+    } catch {
+      /* the payment stands; the location can be added by editing it */
+    }
   }
 
   async function recordPayment() {
@@ -619,7 +681,15 @@ export default function VendorDetail() {
       return;
     }
     if (payForm.method === "other" && !payForm.notes.trim()) {
-      setError("Method is Other: say what it was in the notes.");
+      setError("Payment method is Other: say what it was in the comments.");
+      return;
+    }
+    if (!payForm.notes.trim()) {
+      setError("Payment comments are required. Type N/A if there is nothing to note.");
+      return;
+    }
+    if (needsDigitalLocation(payForm.filing) && !payForm.digital_file_location.trim()) {
+      setError("Add the digital file location, so the confirmation can be found again.");
       return;
     }
     setBusy(true);
@@ -627,7 +697,7 @@ export default function VendorDetail() {
     try {
       // One atomic call: payment + allocation + invoice status + audit. A partial amount
       // leaves the invoice partially paid; a future date records it as post-dated.
-      await recordPaymentRpc({
+      const paymentId = await recordPaymentRpc({
         vendorId: vendor.id,
         method: payForm.method,
         paidDate: payForm.paid_date || todayISO(),
@@ -637,6 +707,10 @@ export default function VendorDetail() {
         actorId: effectiveActorId,
         allocations: [{ invoice_id: payFor, amount }]
       });
+      // Where the confirmation is filed is written after the engine commits, on purpose.
+      // The RPC owns the money; this is a file path, and a failure here costs a path, not a
+      // dollar. Widening the money function's signature to carry it would risk more.
+      await saveDigitalLocation(paymentId, payForm.digital_file_location);
       setPayFor(null);
       await load();
     } catch (e: any) {
@@ -824,6 +898,96 @@ export default function VendorDetail() {
 
       <section>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <h2 style={{ fontSize: 16, margin: 0 }}>Purchase orders</h2>
+          {showMoney && <button className="btn-ghost" onClick={() => setShowPO((s) => !s)}>{showPO ? "Close" : "+ Add order"}</button>}
+        </div>
+        {showMoney && showPO && (
+          <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+              <div><label className="label">Order status</label>
+                <select className="input" value={poForm.status} onChange={(e) => setPoForm({ ...poForm, status: e.target.value })}>
+                  {orderStatusOptions(poForm.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+              <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={poForm.order_amount} onChange={(e) => setPoForm({ ...poForm, order_amount: e.target.value })} /></div>
+              <div><label className="label">Order confirmation filed</label>
+                <select className="input" value={poForm.order_filing} onChange={(e) => setPoForm({ ...poForm, order_filing: e.target.value })}>
+                  <option value="">Not said</option>
+                  {ORDER_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select>
+                <p className="help" style={{ margin: "4px 0 0" }}>Where the confirmation is kept.</p>
+              </div>
+              {needsDigitalLocation(poForm.order_filing) && (
+                <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={poForm.digital_file_location} onChange={(e) => setPoForm({ ...poForm, digital_file_location: e.target.value })} />
+                  <p className="help" style={{ margin: "4px 0 0" }}>Required. Where the confirmation is saved.</p>
+                </div>
+              )}
+              <div><label className="label">Ship date</label><input className="input" type="date" min={todayISO()} value={poForm.ship_date} onChange={(e) => setPoForm({ ...poForm, ship_date: e.target.value })} /></div>
+            </div>
+            <div><label className="label">Order comments</label><input className="input" placeholder="Anything worth noting, or N/A" value={poForm.notes} onChange={(e) => setPoForm({ ...poForm, notes: e.target.value })} />
+              <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
+            </div>
+            <div><button className="btn-primary" onClick={addPO} disabled={busy}>{busy ? "Saving." : "Save order"}</button></div>
+          </div>
+        )}
+        {orders.length === 0 && <p className="help">No orders on file.</p>}
+        <div style={{ display: "grid", gap: 8 }}>
+          {orders.map((o) => (
+            <div key={o.id} className="card" style={{ padding: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <strong>{o.season_year || ""} order</strong>
+                    <select className="input" style={{ width: "auto", padding: "2px 6px", fontSize: 12 }} value={o.status} onChange={(e) => updatePOStatus(o.id, e.target.value)} disabled={busy || !canEdit(role)} aria-label="order status">
+                      {orderStatusOptions(o.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="help" style={{ marginTop: 4 }}>{o.ship_date ? `ship ${o.ship_date}` : ""}{o.notes ? ` . ${o.notes}` : ""}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  {showMoney && <div className="tabular" style={{ fontWeight: 600 }}>{o.order_amount != null ? formatCAD(o.order_amount) : "n/a"}</div>}
+                  {canEdit(role) && (
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4, flexWrap: "wrap" }}>
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditPO(o)} disabled={busy}>Edit</button>
+                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePO(o)} disabled={busy}>Delete</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {canEdit(role) && editPoId === o.id && (
+                <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+                    <div><label className="label">Order status</label>
+                      <select className="input" value={editPoForm.status} onChange={(e) => setEditPoForm({ ...editPoForm, status: e.target.value })}>
+                        {orderStatusOptions(editPoForm.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                    </div>
+                    <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={editPoForm.order_amount} onChange={(e) => setEditPoForm({ ...editPoForm, order_amount: e.target.value })} /></div>
+                    <div><label className="label">Order confirmation filed</label>
+                      <select className="input" value={editPoForm.order_filing} onChange={(e) => setEditPoForm({ ...editPoForm, order_filing: e.target.value })}>
+                        <option value="">Not said</option>
+                        {ORDER_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                      </select>
+                    </div>
+                    {needsDigitalLocation(editPoForm.order_filing) && (
+                      <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={editPoForm.digital_file_location} onChange={(e) => setEditPoForm({ ...editPoForm, digital_file_location: e.target.value })} /></div>
+                    )}
+                    <div><label className="label">Ship date</label><input className="input" type="date" value={editPoForm.ship_date} onChange={(e) => setEditPoForm({ ...editPoForm, ship_date: e.target.value })} /></div>
+                  </div>
+                  <div><label className="label">Order comments</label><input className="input" placeholder="Anything worth noting, or N/A" value={editPoForm.notes} onChange={(e) => setEditPoForm({ ...editPoForm, notes: e.target.value })} /></div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn-primary" onClick={savePO} disabled={busy}>{busy ? "Saving." : "Save order"}</button>
+                    <button className="btn-ghost" onClick={() => setEditPoId(null)}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <h2 style={{ fontSize: 16, margin: 0 }}>Invoices</h2>
           {showMoney && <button className="btn-ghost" onClick={() => setShowInv((s) => !s)}>{showInv ? "Close" : "+ Add invoice"}</button>}
         </div>
@@ -850,7 +1014,9 @@ export default function VendorDetail() {
               </div>
               {(invForm.tax_mode === "separate" || invForm.tax_mode === "included") && (
                 <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={invForm.hst_amount} onChange={(e) => setInvForm({ ...invForm, hst_amount: e.target.value })} />
-                  {invForm.tax_mode === "included" && <p className="help" style={{ margin: "4px 0 0" }}>Already inside the subtotal. Recorded for the tax report, not added again.</p>}
+                  {taxWorking(invForm.tax_mode, num(invForm.amount), num(invForm.hst_amount)) && (
+                    <p className="help" style={{ margin: "4px 0 0" }}>{taxWorking(invForm.tax_mode, num(invForm.amount), num(invForm.hst_amount))}</p>
+                  )}
                 </div>
               )}
               {!isFinance && <div><label className="label">Freight charge</label><input className="input tabular" type="number" step="0.01" value={invForm.freight_charges} onChange={(e) => setInvForm({ ...invForm, freight_charges: e.target.value })} /></div>}
@@ -866,8 +1032,23 @@ export default function VendorDetail() {
               {isHardware && <div><label className="label">PO number</label><input className="input" value={invForm.po_number} onChange={(e) => setInvForm({ ...invForm, po_number: e.target.value })} /></div>}
             </div>
             {!isProperty && !isFinance && (
-              <div><label className="label">Delivery comments</label><input className="input" placeholder="Anything short-shipped or damaged" value={invForm.delivery_comments} onChange={(e) => setInvForm({ ...invForm, delivery_comments: e.target.value })} /></div>
+              <div><label className="label">Delivery comments</label><input className="input" placeholder="Anything short-shipped or damaged, or N/A" value={invForm.delivery_comments} onChange={(e) => setInvForm({ ...invForm, delivery_comments: e.target.value })} />
+                <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
+              </div>
             )}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+              <div><label className="label">Final invoice filing</label>
+                <select className="input" value={invForm.invoice_filing} onChange={(e) => setInvForm({ ...invForm, invoice_filing: e.target.value })}>
+                  <option value="">Not said</option>
+                  {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select>
+              </div>
+              {needsDigitalLocation(invForm.invoice_filing) && (
+                <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={invForm.digital_file_location} onChange={(e) => setInvForm({ ...invForm, digital_file_location: e.target.value })} />
+                  <p className="help" style={{ margin: "4px 0 0" }}>Required. Where the file is saved, so it can be found again.</p>
+                </div>
+              )}
+            </div>
             {showMoney && formTotal(invForm) > 0 && (
               <p className="help" style={{ margin: 0 }}>Total owed {formatCAD(round2(formTotal(invForm)))}</p>
             )}
@@ -899,7 +1080,7 @@ export default function VendorDetail() {
             )}
             {invForm.status === "paid" && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
-                <div><label className="label">Method</label>
+                <div><label className="label">Payment method</label>
                   <select className="input" value={invForm.pay_method} onChange={(e) => setInvForm({ ...invForm, pay_method: e.target.value })}>
                     {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
@@ -908,7 +1089,7 @@ export default function VendorDetail() {
                 <div><label className="label">{referenceLabel(invForm.pay_method)}</label><input className="input" value={invForm.pay_reference} onChange={(e) => setInvForm({ ...invForm, pay_reference: e.target.value })} />
                   <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(invForm.pay_method)}</p>
                 </div>
-                <div><label className="label">Confirmation filed</label>
+                <div><label className="label">Payment confirmation filed</label>
                   <select className="input" value={invForm.pay_filing} onChange={(e) => setInvForm({ ...invForm, pay_filing: e.target.value })}>
                     <option value="">Not said</option>
                     {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
@@ -982,7 +1163,9 @@ export default function VendorDetail() {
                       </div>
                       {(editInvForm.tax_mode === "separate" || editInvForm.tax_mode === "included") && (
                         <div><label className="label">HST</label><input className="input tabular" type="number" step="0.01" value={editInvForm.hst_amount} onChange={(e) => setEditInvForm({ ...editInvForm, hst_amount: e.target.value })} />
-                          {editInvForm.tax_mode === "included" && <p className="help" style={{ margin: "4px 0 0" }}>Already inside the subtotal.</p>}
+                          {taxWorking(editInvForm.tax_mode, num(editInvForm.amount), num(editInvForm.hst_amount)) && (
+                            <p className="help" style={{ margin: "4px 0 0" }}>{taxWorking(editInvForm.tax_mode, num(editInvForm.amount), num(editInvForm.hst_amount))}</p>
+                          )}
                         </div>
                       )}
                       {!isFinance && <div><label className="label">Freight charge</label><input className="input tabular" type="number" step="0.01" value={editInvForm.freight_charges} onChange={(e) => setEditInvForm({ ...editInvForm, freight_charges: e.target.value })} /></div>}
@@ -998,8 +1181,21 @@ export default function VendorDetail() {
                       {isHardware && <div><label className="label">PO number</label><input className="input" value={editInvForm.po_number} onChange={(e) => setEditInvForm({ ...editInvForm, po_number: e.target.value })} /></div>}
                     </div>
                     {!isProperty && !isFinance && (
-                      <div><label className="label">Delivery comments</label><input className="input" placeholder="Anything short-shipped or damaged" value={editInvForm.delivery_comments} onChange={(e) => setEditInvForm({ ...editInvForm, delivery_comments: e.target.value })} /></div>
+                      <div><label className="label">Delivery comments</label><input className="input" placeholder="Anything short-shipped or damaged, or N/A" value={editInvForm.delivery_comments} onChange={(e) => setEditInvForm({ ...editInvForm, delivery_comments: e.target.value })} />
+                        <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
+                      </div>
                     )}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                      <div><label className="label">Final invoice filing</label>
+                        <select className="input" value={editInvForm.invoice_filing} onChange={(e) => setEditInvForm({ ...editInvForm, invoice_filing: e.target.value })}>
+                          <option value="">Not said</option>
+                          {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                        </select>
+                      </div>
+                      {needsDigitalLocation(editInvForm.invoice_filing) && (
+                        <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={editInvForm.digital_file_location} onChange={(e) => setEditInvForm({ ...editInvForm, digital_file_location: e.target.value })} /></div>
+                      )}
+                    </div>
                     {isProperty && (
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
                         <div><label className="label">Estimate #</label><input className="input" value={editInvForm.estimate_number} onChange={(e) => setEditInvForm({ ...editInvForm, estimate_number: e.target.value })} /></div>
@@ -1035,7 +1231,7 @@ export default function VendorDetail() {
                       <div><label className="label">Amount</label><input className="input tabular" type="number" step="0.01" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
                         <p className="help" style={{ margin: "4px 0 0" }}>A smaller amount records a partial payment.</p>
                       </div>
-                      <div><label className="label">Method</label>
+                      <div><label className="label">Payment method</label>
                         <select className="input" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
                           {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                         </select>
@@ -1046,13 +1242,18 @@ export default function VendorDetail() {
                       <div><label className="label">{referenceLabel(payForm.method)}</label><input className="input" value={payForm.reference} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} />
                         <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(payForm.method)}</p>
                       </div>
-                      <div><label className="label">Confirmation filed</label>
+                      <div><label className="label">Payment confirmation filed</label>
                         <select className="input" value={payForm.filing} onChange={(e) => setPayForm({ ...payForm, filing: e.target.value })}>
                           <option value="">Not said</option>
                           {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                         </select>
                       </div>
-                      <div><label className="label">Notes{payForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} /></div>
+                      {needsDigitalLocation(payForm.filing) && (
+                        <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={payForm.digital_file_location} onChange={(e) => setPayForm({ ...payForm, digital_file_location: e.target.value })} /></div>
+                      )}
+                      <div><label className="label">Payment comments{payForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" placeholder="Anything worth noting, or N/A" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
+                        <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
+                      </div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button className="btn-primary" onClick={recordPayment} disabled={busy}>{busy ? "Saving." : "Record payment"}</button>
@@ -1063,86 +1264,6 @@ export default function VendorDetail() {
               </div>
             );
           })}
-        </div>
-      </section>
-
-      <section>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <h2 style={{ fontSize: 16, margin: 0 }}>Purchase orders</h2>
-          {showMoney && <button className="btn-ghost" onClick={() => setShowPO((s) => !s)}>{showPO ? "Close" : "+ Add order"}</button>}
-        </div>
-        {showMoney && showPO && (
-          <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-              <div><label className="label">Order status</label>
-                <select className="input" value={poForm.status} onChange={(e) => setPoForm({ ...poForm, status: e.target.value })}>
-                  {orderStatusOptions(poForm.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
-              </div>
-              <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={poForm.order_amount} onChange={(e) => setPoForm({ ...poForm, order_amount: e.target.value })} /></div>
-              <div><label className="label">Order confirmation filed</label>
-                <select className="input" value={poForm.order_filing} onChange={(e) => setPoForm({ ...poForm, order_filing: e.target.value })}>
-                  <option value="">Not said</option>
-                  {ORDER_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-                </select>
-                <p className="help" style={{ margin: "4px 0 0" }}>Where the confirmation is kept. Optional.</p>
-              </div>
-              <div><label className="label">Ship date</label><input className="input" type="date" min={todayISO()} value={poForm.ship_date} onChange={(e) => setPoForm({ ...poForm, ship_date: e.target.value })} /></div>
-            </div>
-            <div><label className="label">Order comments</label><input className="input" value={poForm.notes} onChange={(e) => setPoForm({ ...poForm, notes: e.target.value })} /></div>
-            <div><button className="btn-primary" onClick={addPO} disabled={busy}>{busy ? "Saving." : "Save order"}</button></div>
-          </div>
-        )}
-        {orders.length === 0 && <p className="help">No orders on file.</p>}
-        <div style={{ display: "grid", gap: 8 }}>
-          {orders.map((o) => (
-            <div key={o.id} className="card" style={{ padding: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                <div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <strong>{o.season_year || ""} order</strong>
-                    <select className="input" style={{ width: "auto", padding: "2px 6px", fontSize: 12 }} value={o.status} onChange={(e) => updatePOStatus(o.id, e.target.value)} disabled={busy || !canEdit(role)} aria-label="order status">
-                      {orderStatusOptions(o.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                  </div>
-                  <div className="help" style={{ marginTop: 4 }}>{o.ship_date ? `ship ${o.ship_date}` : ""}{o.notes ? ` . ${o.notes}` : ""}</div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  {showMoney && <div className="tabular" style={{ fontWeight: 600 }}>{o.order_amount != null ? formatCAD(o.order_amount) : "n/a"}</div>}
-                  {canEdit(role) && (
-                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4, flexWrap: "wrap" }}>
-                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => startEditPO(o)} disabled={busy}>Edit</button>
-                      <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => removePO(o)} disabled={busy}>Delete</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {canEdit(role) && editPoId === o.id && (
-                <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-                    <div><label className="label">Order status</label>
-                      <select className="input" value={editPoForm.status} onChange={(e) => setEditPoForm({ ...editPoForm, status: e.target.value })}>
-                        {orderStatusOptions(editPoForm.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                      </select>
-                    </div>
-                    <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={editPoForm.order_amount} onChange={(e) => setEditPoForm({ ...editPoForm, order_amount: e.target.value })} /></div>
-                    <div><label className="label">Order confirmation filed</label>
-                      <select className="input" value={editPoForm.order_filing} onChange={(e) => setEditPoForm({ ...editPoForm, order_filing: e.target.value })}>
-                        <option value="">Not said</option>
-                        {ORDER_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-                      </select>
-                    </div>
-                    <div><label className="label">Ship date</label><input className="input" type="date" value={editPoForm.ship_date} onChange={(e) => setEditPoForm({ ...editPoForm, ship_date: e.target.value })} /></div>
-                  </div>
-                  <div><label className="label">Order comments</label><input className="input" value={editPoForm.notes} onChange={(e) => setEditPoForm({ ...editPoForm, notes: e.target.value })} /></div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn-primary" onClick={savePO} disabled={busy}>{busy ? "Saving." : "Save order"}</button>
-                    <button className="btn-ghost" onClick={() => setEditPoId(null)}>Cancel</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
         </div>
       </section>
 
@@ -1237,7 +1358,7 @@ export default function VendorDetail() {
                   {canEdit(role) && editPayId === p.id && (
                     <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-                        <div><label className="label">Method</label>
+                        <div><label className="label">Payment method</label>
                           <select className="input" value={editPayForm.method} onChange={(e) => setEditPayForm({ ...editPayForm, method: e.target.value })}>
                             {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                           </select>
@@ -1248,13 +1369,16 @@ export default function VendorDetail() {
                         <div><label className="label">{referenceLabel(editPayForm.method)}</label><input className="input" value={editPayForm.reference} onChange={(e) => setEditPayForm({ ...editPayForm, reference: e.target.value })} />
                           <p className="help" style={{ margin: "4px 0 0" }}>{referenceHelp(editPayForm.method)}</p>
                         </div>
-                        <div><label className="label">Confirmation filed</label>
+                        <div><label className="label">Payment confirmation filed</label>
                           <select className="input" value={editPayForm.filing} onChange={(e) => setEditPayForm({ ...editPayForm, filing: e.target.value })}>
                             <option value="">Not said</option>
                             {CONFIRMATION_FILING.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                           </select>
                         </div>
-                        <div><label className="label">Notes{editPayForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" value={editPayForm.notes} onChange={(e) => setEditPayForm({ ...editPayForm, notes: e.target.value })} /></div>
+                        {needsDigitalLocation(editPayForm.filing) && (
+                          <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={editPayForm.digital_file_location} onChange={(e) => setEditPayForm({ ...editPayForm, digital_file_location: e.target.value })} /></div>
+                        )}
+                        <div><label className="label">Payment comments{editPayForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" placeholder="Anything worth noting, or N/A" value={editPayForm.notes} onChange={(e) => setEditPayForm({ ...editPayForm, notes: e.target.value })} /></div>
                       </div>
                       <p className="help" style={{ margin: 0 }}>The amount stays {formatCAD(p.amount)}. Wrong amount? Void this payment and record it again.</p>
                       <div style={{ display: "flex", gap: 8 }}>
