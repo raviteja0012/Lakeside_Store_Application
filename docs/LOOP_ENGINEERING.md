@@ -122,7 +122,13 @@ tier classifier is the strong one, because it does not read the ticket.
 ## What is deliberately NOT automated
 
 - **Merging anything that touches money, access, or the schema.** Tier C.
-- **Running database migrations.** A script that alters live data runs when a person runs it.
+- **Deciding a database migration.** Writing or approving one is human work: `supabase/**`
+  is tier C and never auto-merges. Since 2026-07-31 the APPLYING is automated
+  (`.github/workflows/migrate.yml`, on push to main only, from the explicit list in
+  `supabase/run-order.txt`), which is a different thing. A person still reads the SQL and
+  merges it; the machine only stops them from having to paste it into a web editor
+  afterwards. `auth_setup.sql` is excluded, because running it while enforced login is off
+  would lock everyone out of a working store.
 - **Reverting automatically.** The watchdog raises a bug and fails the run; it does not roll
   production back on its own. An automatic revert during a real incident can undo the fix
   someone is mid-way through applying.

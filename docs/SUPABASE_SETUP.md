@@ -14,6 +14,27 @@ Run in the SQL editor, in this order:
    (NEXT_PUBLIC_REQUIRE_AUTH=true): replaces the open policies with per-store, per-role
    policies and links Supabase Auth accounts to app_user rows by email.
 
+## These run themselves now
+
+Since 2026-07-31 a merge to main applies these scripts automatically
+(`.github/workflows/migrate.yml`), so a merged migration no longer waits on somebody
+opening the SQL editor. The order comes from `supabase/run-order.txt`, which is the single
+list both this page and the workflow follow.
+
+What is automated is only the APPLYING. A schema change still needs a person: `supabase/**`
+never auto-merges, so a human reads the SQL and merges the pull request exactly as before.
+The judgement stays human; the typing does not.
+
+To switch it on, add a `SUPABASE_DB_URL` repository secret: Supabase, Project Settings,
+Database, Connection string, the SESSION pooler (port 5432) or the direct connection,
+including the password. Not the transaction pooler on 6543, which does not run every DDL
+statement reliably. Without the secret the workflow exits quietly and the list below stays
+a manual job.
+
+`auth_setup.sql` is deliberately NOT automated. It swaps the open demo policies for locked
+per-role ones, and running it while enforced login is off would lock everyone out of a
+working store. That one stays a deliberate step, described at the end of this page.
+
 ## Existing database: bring it current (2026-07 round)
 
 Run in this order; skip nothing (each is safe to re-run):
