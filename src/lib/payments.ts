@@ -4,7 +4,7 @@
 // See supabase/payments_v2.sql for the engine.
 
 import { supabase } from "@/lib/supabaseClient";
-import { daysOverdue } from "@/lib/format";
+import { daysOverdue, hstOn } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
 
 // The owner's locked list. Post-dated is not a method: it is a cheque with a future
@@ -45,7 +45,16 @@ export function taxWorking(mode: string, subtotal: number | null, hst: number | 
   const amount = Number(subtotal) || 0;
   const tax = Number(hst) || 0;
   if (!amount) return null;
-  if (mode === "separate") return `13 percent of ${amount.toFixed(2)}, added on top. Goods and tax come to ${(amount + tax).toFixed(2)}.`;
+  if (mode === "separate") {
+    // The HST box is deliberately editable, so this cannot simply claim 13 percent: an
+    // exempt line typed as 0 would produce a sentence saying tax was added on top of a
+    // total that plainly has none. Say what the figure IS, and say when it is not the
+    // standard rate, which is worth noticing on its own.
+    const standard = Math.abs(tax - hstOn(amount)) < 0.005;
+    return standard
+      ? `13 percent of ${amount.toFixed(2)}, added on top. Goods and tax come to ${(amount + tax).toFixed(2)}.`
+      : `${tax.toFixed(2)} added on top of ${amount.toFixed(2)}, which is not the usual 13 percent (${hstOn(amount).toFixed(2)}). Goods and tax come to ${(amount + tax).toFixed(2)}.`;
+  }
   if (mode === "included") return `Already inside the ${amount.toFixed(2)}: goods ${(amount - tax).toFixed(2)} plus ${tax.toFixed(2)} tax. Nothing is added on top.`;
   if (mode === "none") return "This vendor does not charge tax.";
   if (mode === "invoice") return "The tax is on the paper invoice. The tax report will show this one as unstated.";
