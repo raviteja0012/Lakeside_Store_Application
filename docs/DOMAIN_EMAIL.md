@@ -4,51 +4,137 @@ Recorded 2026-07-27 from the owner's screenshots of the domain control panel (me
 2026-07-21). This resolves the July 10 voice notes: they were about the store's own domain
 and its email costs.
 
-## What the store owns
+## Where this stands (2026-07-31)
 
-- Domain: robinsonsgeneralstore.ca, DOMAIN.CA registration, active since 2006-10-17.
-- Email plan: HST-EMAIL-1, up to 10 mailboxes, about $10 per month, active since 2024-09-17.
-- Mailboxes (5 of 10 used, all configured by the PREVIOUS owners, unused by the current
-  ownership):
-  - drygoods@robinsonsgeneralstore.ca (Drygoods Giftshop) . 249.99MB / 250MB, FULL
-  - hardware@robinsonsgeneralstore.ca (Hardware Department) . 250MB / 250MB, FULL
-  - info@robinsonsgeneralstore.ca (Robinson's General Store) . 250MB / 250MB, FULL
-  - joanne@robinsonsgeneralstore.ca (Joanne Robinson, previous owner) . 0.05MB
-  - redonion@robinsonsgeneralstore.ca (The Red Onion boutique) . 78.76MB
-- Alias: stories@robinsonsgeneralstore.ca forwards to robinsonsstories@hotmail.com.
+| Thing | State |
+|---|---|
+| Domain robinsonsgeneralstore.ca | Owned. Auto-renew CONFIRMED ON by the owner. Expires 2026-10-16 |
+| app.robinsonsgeneralstore.ca | Added in Vercel, showing "Invalid Configuration". Waiting on one DNS record |
+| That DNS record | BLOCKED: Vianet has no self-serve zone editor, so it must be requested from Vianet hosting |
+| robinsons-store.vercel.app | Live and working. Keeps working after the custom domain lands |
+| Mailboxes | 5 of 10 used, none full (1000MB each), plan decided below |
+| stories@ alias | STILL forwarding store mail to the previous owners' personal Hotmail |
+| invoices@ | Not created yet. This is what blocks the email-intake feature |
+| Slack | Workspace being set up as robinsonsgeneralstore.slack.com, Vercel integration to a #deploys channel |
 
-## Two problems to fix first (owner actions, urgent)
+**Vianet login: https://myaccount.vianet.ca/**
+**Vianet hosting support: 1-800-788-0363 ext 5214, Mon-Fri 8:30am to 5:00pm**
 
-1. THREE MAILBOXES ARE FULL and rejecting new mail: drygoods@, hardware@, info@. Any
-   vendor emailing an invoice or order confirmation to those addresses gets a bounce.
-   Fix in the panel: open each mailbox, archive or delete old mail (or raise the quota),
-   until usage is well under the cap.
-2. THE stories@ ALIAS FORWARDS TO THE PREVIOUS OWNERS' PERSONAL HOTMAIL. Store mail is
-   leaving the business. Unless this is deliberate, Edit the alias to point at info@ (once
-   cleared) or delete it. Review joanne@ the same way: it is the previous owner's personal
-   box; archive anything needed, then delete or repurpose the slot.
+## Who hosts what
+
+The domain, the mailboxes, and the store's internet are all **Vianet**
+(myaccount.vianet.ca). "DOMAIN.CA" is the name of the registration plan, not the company;
+an earlier version of this page had that wrong.
+
+Account: **1000476363 ONTARIO INC.**, customer ID 616900, balance $0.00.
+Service address: **1061 Main St, Dorset, ON P0A 1E0.** (This also settles an old open
+question in the project skill, which carried 1062 Main St from the pesticide licence and a
+note querying Atikokan. It is 1061.)
+
+Two internet lines at the same address:
+- `robinson2` STORE, business fibre to the node up to 16Mbps, active since 2004-06-24
+- `via192055` 1061 MAIN ST 2ND FLOOR, residential DSL 15, active since 2021-04-23
+
+Two ISP mailboxes separate from the domain ones: robinson2@vianet.ca (22.32MB of 250MB) and
+via192055@vianet.ca (0.02MB of 1000MB).
+
+## The domain
+
+- **robinsonsgeneralstore.ca**, registered **2002-10-16**, plan DOMAIN.CA active since
+  2006-10-17.
+- **Expires 2026-10-16.**
+- Email plan HST-EMAIL-1, max 10 mailboxes, about $10 per month, active since 2024-09-17.
+
+## The one urgent thing: the domain expires 2026-10-16
+
+That is roughly eleven weeks away. If it lapses, all of this goes at once: the website, the
+five mailboxes, and app.robinsonsgeneralstore.ca once the app is on it. Renewing a .ca after
+expiry is possible but there is a redemption window and a fee, and the mail stops in the
+meantime.
+
+Confirm auto-renew is on, or renew it manually. This is the single highest-value
+five-minute job on the whole list.
+
+## Mailboxes: 5 of 10 used
+
+Read from the Vianet panel on 2026-07-31. **The quota is 1000MB per box, not 250MB.**
+
+| Address | Named as | Used |
+|---|---|---|
+| drygoods@ | Drygoods Giftshop | 249.99MB / 1000MB (25%) |
+| hardware@ | Hardware Department | 250.33MB / 1000MB (25%) |
+| info@ | ROBINSON'S GENERAL STORE | 258.46MB / 1000MB (26%) |
+| joanne@ | JOANNE ROBINSON (previous owner) | 0.05MB / 1000MB |
+| redonion@ | Red Onion at Robinson's General Store | 78.85MB / 1000MB (8%) |
+
+Alias: **stories@** forwards to robinsonsstories@hotmail.com.
+
+### Correction: the mailboxes are not full
+
+An earlier version of this page recorded three boxes as at quota and bouncing vendor mail,
+and that was reported to the owner as urgent, twice, including on the Jira ticket. It was
+wrong. The quota is 1000MB and the fullest box is at 26 percent. Nothing is bouncing and
+nothing needs clearing.
+
+What remains true is the **stories@** alias, which sends store mail to the previous owners'
+personal Hotmail. Repoint it at info@ or delete it, unless that is deliberate.
 
 ## Integration plan (in order)
 
-### 1. The app on the store's own domain
-Point app.robinsonsgeneralstore.ca at the Vercel app:
-- In Vercel: project robinsons-store, Settings, Domains, Add: app.robinsonsgeneralstore.ca.
-- At the domain host (the panel in the screenshots): add a CNAME record
-  app -> cname.vercel-dns.com.
-- Vercel provisions TLS automatically; robinsons-store.vercel.app keeps working.
-No code change needed. Staff then log in at app.robinsonsgeneralstore.ca, which reads as
-the store, not as a hosting provider.
+### 1. The app on the store's own domain (blocked on Vianet)
+Target: **app.robinsonsgeneralstore.ca** pointing at the Vercel app.
 
-### 2. Mailbox plan for the 10 slots (the department mapping)
-Keep the useful legacy boxes, claim the free slots deliberately:
-- KEEP: info@ (front door), drygoods@, hardware@, redonion@ (they match departments;
-  vendors already know them from years of use), stories@ only as a repointed alias.
-- ADD (5 free slots, suggested): grocery@, invoices@ (every vendor invoice lands here;
-  this is the future email-intake feed for Capture), owner@ (Ravi), payments@ or ap@
-  (remittance confirmations), maintenance@ (contractors: Muskoka Wiring, Bacher).
-- RETIRE: joanne@ after archiving.
-The invoices@ convention matters most: one address to give every vendor, one feed for the
-app to ingest later.
+- In Vercel: project robinsons-store, Settings, Domains, Add Existing,
+  app.robinsonsgeneralstore.ca. DONE on 2026-07-31; it sits at "Invalid Configuration"
+  until the DNS record exists, which is expected.
+- The DNS record needed is a CNAME: `app` -> `cname.vercel-dns.com`.
+
+**The blocker:** Vianet's self-serve panel has no DNS or zone editor. Domain management
+there offers mailboxes and aliases only, and the page itself says to phone the hosting
+department for anything else:
+
+> **Vianet hosting: 1-800-788-0363 ext 5214, Monday to Friday 8:30am to 5:00pm**
+
+So this record is a phone call, not a form. Ask them to add a CNAME for the host `app`
+pointing to `cname.vercel-dns.com`, and say explicitly that nothing else in the zone should
+change, because the MX records for the five mailboxes live there.
+
+The alternative, if they will not add single records, is to move DNS to a provider with a
+zone editor (Cloudflare's free tier is the usual choice) and recreate the MX records there.
+That is a bigger job with real risk to the mail, and it is not worth it for one CNAME.
+Only consider it if the store wants a public website on the apex later.
+
+robinsons-store.vercel.app keeps working either way. No code change is needed for any of it.
+
+### 2. Mailbox plan for the 10 slots
+Decided 2026-07-31 with the owner's admin access confirmed. Five in use, five free, and one
+more freed if joanne@ is retired.
+
+**Keep all four working boxes.** They are not junk: vendors have had drygoods@, hardware@,
+info@ and redonion@ for over a decade, those addresses are on old invoices and in vendor
+address books, and deleting one silently loses mail from anyone who still uses it. Storage
+is not a reason to remove any of them at 25 percent of quota.
+
+| Address | Decision |
+|---|---|
+| info@ | KEEP. The front door. |
+| drygoods@ | KEEP. Vendors know it. |
+| hardware@ | KEEP. Vendors know it. |
+| redonion@ | KEEP. The boutique still trades. |
+| joanne@ | RETIRE, after archiving. Previous owner, 0.05MB, effectively empty. |
+| stories@ (alias) | REPOINT at info@, or delete. It currently sends store mail to the previous owners' personal Hotmail. |
+
+**Add, in priority order:**
+
+1. **invoices@** Every vendor invoice goes here. This is the feed the email-intake feature
+   reads, and it is the only new address that unlocks a build. Create this one first.
+2. **owner@** Ravi. Better than a personal Gmail on anything the business sends.
+3. **grocery@** Completes the department set alongside drygoods@ and hardware@.
+4. **payments@** Remittance confirmations, so they are not scattered through info@.
+5. **maintenance@** Contractors (Muskoka Wiring, Bacher and the like).
+
+That fills the plan exactly at ten, with joanne@ retired giving one spare. If more are ever
+needed the plan would have to move up a tier.
 
 ### 3. App email FROM the domain (daily alerts)
 The daily due-date email (/api/alerts, Resend) can send as the store instead of a generic
