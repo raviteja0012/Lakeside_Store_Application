@@ -19,6 +19,26 @@ export const dynamic = "force-dynamic";
 
 type Check = { name: string; ok: boolean; detail?: string; count?: number };
 
+// Every column the deployed app expects to exist, per table. A missing one means a
+// migration has not been run, and the screens that read it render blank.
+//
+// KEEP THIS CURRENT. When a change adds a column to any select in the app, add it here in
+// the same change. The cost of forgetting is a watchdog that says the site is fine while a
+// screen is empty, which is what happened on 2026-07-31.
+const REQUIRED_COLUMNS: Record<string, string[]> = {
+  invoice: [
+    "tax_mode", "delivered_date", "delivery_comments",   // order_invoice_fields.sql
+    "invoice_filing", "digital_file_location"            // filing_locations.sql
+  ],
+  purchase_order: [
+    "order_filing",                                      // order_invoice_fields.sql
+    "digital_file_location"                              // filing_locations.sql
+  ],
+  payment: [
+    "digital_file_location"                              // filing_locations.sql
+  ]
+};
+
 function healthClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -128,17 +148,26 @@ export async function GET(req: NextRequest) {
 
   // 5. The columns the current release needs actually exist. A missing migration is the
   // most common way a good deploy still breaks the forms.
-  try {
-    const { error } = await db.from("invoice").select("tax_mode, delivered_date, delivery_comments").limit(1);
-    checks.push({ name: "invoice columns present", ok: !error, detail: error?.message });
-  } catch (e: any) {
-    checks.push({ name: "invoice columns present", ok: false, detail: e?.message });
-  }
-  try {
-    const { error } = await db.from("purchase_order").select("order_filing").limit(1);
-    checks.push({ name: "order columns present", ok: !error, detail: error?.message });
-  } catch (e: any) {
-    checks.push({ name: "order columns present", ok: false, detail: e?.message });
+  // The columns this release needs. This list is the check, and it went wrong once in
+  // exactly the way a hardcoded list does: a release added invoice_filing and
+  // digital_file_location, nobody updated the check, and the watchdog reported the site
+  // healthy while the payouts screen was blank because those columns did not exist yet.
+  //
+  // So the list now lives beside the queries that need it, and the rule for changing it is
+  // in the comment above each entry: if you add a column to a select anywhere in the app,
+  // add it here in the same change. It is still a list a person maintains, but it is one
+  // list rather than one per screen, and it fails loudly instead of quietly.
+  for (const [table, columns] of Object.entries(REQUIRED_COLUMNS)) {
+    try {
+      const { error } = await db.from(table).select(columns.join(", ")).limit(1);
+      checks.push({
+        name: `${table} columns present`,
+        ok: !error,
+        detail: error ? `${error.message}. Expected: ${columns.join(", ")}` : undefined
+      });
+    } catch (e: any) {
+      checks.push({ name: `${table} columns present`, ok: false, detail: e?.message });
+    }
   }
 
   const ok = checks.every((c) => c.ok);
