@@ -4,6 +4,22 @@ Recorded 2026-07-27 from the owner's screenshots of the domain control panel (me
 2026-07-21). This resolves the July 10 voice notes: they were about the store's own domain
 and its email costs.
 
+## Where this stands (2026-07-31)
+
+| Thing | State |
+|---|---|
+| Domain robinsonsgeneralstore.ca | Owned. Auto-renew CONFIRMED ON by the owner. Expires 2026-10-16 |
+| app.robinsonsgeneralstore.ca | Added in Vercel, showing "Invalid Configuration". Waiting on one DNS record |
+| That DNS record | BLOCKED: Vianet has no self-serve zone editor, so it must be requested from Vianet hosting |
+| robinsons-store.vercel.app | Live and working. Keeps working after the custom domain lands |
+| Mailboxes | 5 of 10 used, none full (1000MB each), plan decided below |
+| stories@ alias | STILL forwarding store mail to the previous owners' personal Hotmail |
+| invoices@ | Not created yet. This is what blocks the email-intake feature |
+| Slack | Workspace being set up as robinsonsgeneralstore.slack.com, Vercel integration to a #deploys channel |
+
+**Vianet login: https://myaccount.vianet.ca/**
+**Vianet hosting support: 1-800-788-0363 ext 5214, Mon-Fri 8:30am to 5:00pm**
+
 ## Who hosts what
 
 The domain, the mailboxes, and the store's internet are all **Vianet**
