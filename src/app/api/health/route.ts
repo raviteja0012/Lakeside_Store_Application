@@ -26,6 +26,11 @@ type Check = { name: string; ok: boolean; detail?: string; count?: number };
 // the same change. The cost of forgetting is a watchdog that says the site is fine while a
 // screen is empty, which is what happened on 2026-07-31.
 const REQUIRED_COLUMNS: Record<string, string[]> = {
+  vendor: [
+    "minimum_order_amount", "no_minimum_order", "summer_order_timeline",
+    "order_location", "order_location_other", "reorder_status", "reorder_comments"
+                                                         // vendor_ordering_fields.sql
+  ],
   invoice: [
     "tax_mode", "delivered_date", "delivery_comments",   // order_invoice_fields.sql
     "invoice_filing", "digital_file_location"            // filing_locations.sql

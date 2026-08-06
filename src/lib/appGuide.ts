@@ -29,7 +29,11 @@ SCREENS AND WHAT THEY ARE FOR:
   All vendors shows everyone at once, and Add vendor inside a department files the new
   vendor there automatically. A vendor page holds contact info, orders, invoices, payments,
   credits, and a Statement view (charges and payments in date order with a running balance,
-  printable, for checking a vendor's mailed statement line by line).
+  printable, for checking a vendor's mailed statement line by line). Each vendor also
+  carries an ordering profile: the minimum order (an amount, or "No minimum order"), the
+  summer order timeline in plain words, where orders get placed (gift show, email, in
+  person, rep show, phone, vendor website, other), and whether anything was reordered this
+  year with a note saying when and how much.
 - Reports: spend by department, ordered vs invoiced, outstanding aging, payment status
   mix, HST by department for a financial year, a vendor scorecard, a Department drill-down
   (invoiced, paid, owed per department, opening into vendors), deliveries arriving in the
@@ -67,6 +71,16 @@ HOW COMMON THINGS ARE DONE:
 - Comments are required on invoices, orders and payments. If there is genuinely nothing to
   say, type N/A: a blank box and a deliberate "nothing to note" look the same later, and
   N/A says somebody checked.
+- When something required is missing, the message appears under that field in red, not in
+  a card at the top of the page. Fix the box the message is sitting under.
+- Record what a vendor will not go below: edit the vendor and fill in Minimum order amount,
+  or tick "No minimum order". One or the other, never both. It then shows on the vendor
+  page, on the Add order form, and on the Reorder list, so it is in front of you while you
+  are deciding what to order.
+- Note that something sold well: edit the vendor, set Reorder status to Reordered, and say
+  in Reorder comments when it was reordered and how much. Reordered vendors are flagged on
+  the Reorder screen next season. Changing the status later never wipes the note on its
+  own; there is a "Clear it" button when you actually mean to.
 - Say where a confirmation is filed: Physical, Digital, or Physical/Digital. Choosing
   Digital or Physical/Digital asks for the Digital file location, the link or folder path
   where the file actually lives, so it can be found again months later.

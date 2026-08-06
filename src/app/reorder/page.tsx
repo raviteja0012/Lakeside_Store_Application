@@ -4,13 +4,21 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD } from "@/lib/format";
+import { minimumOrderLabel } from "@/lib/vendorOrdering";
 import { useActiveStore } from "@/lib/store";
 import { authHeader, canSeeMoney, useCurrentRole } from "@/lib/auth";
 
 const CURRENT_SEASON = new Date().getFullYear();
 const LOW_STOCK = 3; // a latest count at or below this flags the item for a restock look
 
-type Vend = { id: string; name: string; status: string; default_terms: string | null; notes: string | null; department: { name: string } | null };
+type Vend = {
+  id: string; name: string; status: string; default_terms: string | null; notes: string | null;
+  // The ordering profile, so the reorder list can say what the vendor will not go below and
+  // when their order has to be placed. The owner asked for the minimum here specifically.
+  minimum_order_amount: number | null; no_minimum_order: boolean | null;
+  summer_order_timeline: string | null; reorder_status: string | null; reorder_comments: string | null;
+  department: { name: string } | null;
+};
 type PO = { vendor_id: string | null; order_amount: number | null; ship_date: string | null; season_year: number | null; status: string };
 type Note = { topic: string | null; body: string | null; tags: string[] | null };
 type ItemRow = { id: string; name: string; vendor_id: string | null };
@@ -37,7 +45,7 @@ export default function Reorder() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let vq = supabase.from("vendor").select("id, name, status, default_terms, notes, department:department_id(name)").is("voided_at", null).order("name");
+      let vq = supabase.from("vendor").select("id, name, status, default_terms, notes, minimum_order_amount, no_minimum_order, summer_order_timeline, reorder_status, reorder_comments, department:department_id(name)").is("voided_at", null).order("name");
       if (storeId) vq = vq.eq("store_id", storeId);
       const v = await vq;
       if (v.error) { setError(v.error.message); setLoading(false); return; }
@@ -108,6 +116,9 @@ export default function Reorder() {
         const reasons: string[] = [];
         if (v.status === "active" && !hasCurrent) reasons.push(`No ${CURRENT_SEASON} order yet`);
         if (flagged) reasons.push("Flagged to reorder in notes");
+        // Recorded on the vendor rather than inferred: the owner's point is that a line
+        // which had to be reordered is a line that sold, and worth ordering deeper next year.
+        if (v.reorder_status === "reordered") reasons.push("Reordered this year");
         if (lowItems.length) reasons.push(`${lowItems.length} item${lowItems.length === 1 ? "" : "s"} low on the last count`);
 
         return {
@@ -116,6 +127,9 @@ export default function Reorder() {
           status: v.status,
           dept: v.department?.name || "",
           terms: v.default_terms,
+          minimum: minimumOrderLabel(v),
+          summerTimeline: v.summer_order_timeline,
+          reorderNote: v.reorder_status === "reordered" ? v.reorder_comments : null,
           lastAmount: last?.order_amount ?? null,
           lastDate: last?.ship_date ?? null,
           hasCurrent,
@@ -203,6 +217,18 @@ export default function Reorder() {
                       {r.lowItems.length > 0 && (
                         <div className="help" style={{ marginTop: 6 }}>Low: {r.lowItems.map((i) => `${i.name} (${i.count?.qty})`).join(", ")}</div>
                       )}
+                      {/* What the buyer needs before picking up the phone, on the screen that
+                          tells them to pick up the phone. */}
+                      {/* The minimum is a dollar figure and follows the money gate; the
+                          timeline is not and does not. */}
+                      {((showMoney && r.minimum) || r.summerTimeline) && (
+                        <div className="help" style={{ marginTop: 6 }}>
+                          {showMoney ? r.minimum : ""}
+                          {showMoney && r.minimum && r.summerTimeline ? " . " : ""}
+                          {r.summerTimeline ? `Summer order: ${r.summerTimeline}` : ""}
+                        </div>
+                      )}
+                      {r.reorderNote && <div className="help" style={{ marginTop: 2 }}>{r.reorderNote}</div>}
                     </div>
                     <div style={{ textAlign: "right" }}>
                       {showMoney && <div className="tabular" style={{ fontWeight: 600 }}>{r.lastAmount != null ? formatCAD(r.lastAmount) : "No prior order"}</div>}

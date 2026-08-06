@@ -20,4 +20,5 @@ feedback.sql
 payout_fields.sql
 order_invoice_fields.sql
 filing_locations.sql
+vendor_ordering_fields.sql
 edit_delete.sql

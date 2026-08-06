@@ -6,8 +6,11 @@ import { supabase } from "@/lib/supabaseClient";
 import { chipClass, labelize } from "@/lib/status";
 import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
-import { REQUIRE_AUTH, useEffectiveActor } from "@/lib/auth";
+import { REQUIRE_AUTH, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import { canEdit, voidRow } from "@/lib/edit";
+import { FieldError, fieldInputClass, type FieldErrors } from "@/components/FieldError";
+import { VendorOrderingFields, type OrderingProfile } from "@/components/VendorOrderingFields";
+import { OTHER_LOCATION, validateMinimumOrder, validateReorder } from "@/lib/vendorOrdering";
 import type { Vendor, Department, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -15,7 +18,14 @@ const ACTOR_KEY = "rgs_actor";
 // to be filed. Both are reachable from the department list so no vendor is ever stranded.
 const ALL = "all";
 const NONE = "none";
-const EMPTY_FORM = { name: "", department_id: "", rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active", notes: "" };
+const EMPTY_FORM = {
+  name: "", department_id: "", rep_name: "", phone: "", email: "", products_we_carry: "",
+  default_terms: "", status: "active", notes: "",
+  // The ordering profile, in the owner's screen order: below Products, above Notes.
+  minimum_order_amount: "", no_minimum_order: false,
+  summer_order_timeline: "", order_location: [] as string[], order_location_other: "",
+  reorder_status: "", reorder_comments: ""
+};
 
 export default function Vendors() {
   const { storeId, ready } = useActiveStore();
@@ -33,9 +43,12 @@ export default function Vendors() {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  // Validation messages sit under the field they are about, not in a card at the top.
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   // Effective actor: the signed-in member in enforced auth, else the dropdown selection.
   const { effectiveActorId, role } = useEffectiveActor(users, actorId);
+  const showMoney = canSeeMoney(role);
 
   async function load() {
     let query = supabase
@@ -59,6 +72,7 @@ export default function Vendors() {
     setQ("");
     setAdding(false);
     setForm({ ...EMPTY_FORM });
+    setFieldErrors({});
     (async () => {
       await load();
       let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
@@ -90,10 +104,29 @@ export default function Vendors() {
     // Drop any half-typed vendor: an abandoned draft reappearing under a different
     // department is how a vendor ends up filed in the wrong place.
     setForm({ ...EMPTY_FORM });
+    setFieldErrors({});
   }
 
   async function save() {
-    if (!form.name.trim()) return;
+    if (!form.name.trim()) {
+      setFieldErrors({ name: "Enter the company or vendor name." });
+      return;
+    }
+    // Every message lands under its own field. Collect them all in one pass rather than
+    // stopping at the first: fixing one problem only to be told about the next is the
+    // thing that makes a long form feel like an argument.
+    const errs: FieldErrors = {};
+    // Only asked of people who can see money, because only they are shown the field. A
+    // required field nobody can see is a form that cannot be submitted.
+    const minErr = showMoney ? validateMinimumOrder(form.minimum_order_amount, form.no_minimum_order) : null;
+    if (minErr) errs.minimum_order_amount = minErr;
+    const reErr = validateReorder(form.reorder_status, form.reorder_comments);
+    if (reErr) errs.reorder_comments = reErr;
+    if (form.order_location.includes(OTHER_LOCATION) && !form.order_location_other.trim()) {
+      errs.order_location_other = "Say where, since Other is ticked.";
+    }
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return;
     setBusy(true);
     setError(null);
     try {
@@ -109,11 +142,25 @@ export default function Vendors() {
         products_we_carry: form.products_we_carry || null,
         default_terms: form.default_terms || null,
         status: form.status,
+        // No minimum and an amount are mutually exclusive, so the unused side is written as
+        // null rather than left to whatever was typed before the tick box was ticked. Blank
+        // is null too, never 0: the check constraint refuses a zero minimum, and someone
+        // who cannot see money never saw the field to fill it in.
+        minimum_order_amount: form.no_minimum_order || !form.minimum_order_amount.trim() ? null : Number(form.minimum_order_amount),
+        no_minimum_order: form.no_minimum_order,
+        summer_order_timeline: form.summer_order_timeline.trim() || null,
+        order_location: form.order_location.length ? form.order_location : null,
+        order_location_other: form.order_location.includes(OTHER_LOCATION) ? form.order_location_other.trim() || null : null,
+        reorder_status: form.reorder_status || null,
+        // Written whatever the status says. The owner asked that a reorder note never be
+        // deleted just because the status moved on; clearing it is a deliberate click.
+        reorder_comments: form.reorder_comments.trim() || null,
         notes: form.notes.trim() || null
       }).select("id").single();
       if (r.error) throw new Error(r.error.message);
       if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "vendor_added", entity: "vendor", entity_id: r.data.id as string });
       setForm({ ...EMPTY_FORM });
+      setFieldErrors({});
       setAdding(false);
       await load();
     } catch (e: any) {
@@ -296,7 +343,9 @@ export default function Vendors() {
             <div className="card" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 10 }}>
               {inDepartment && <p className="help" style={{ margin: 0 }}>Filed under {openName}.</p>}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
-                <div><label className="label">Company or vendor name</label><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+                <div><label className="label">Company or vendor name</label><input className={fieldInputClass(fieldErrors, "name")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                  <FieldError errors={fieldErrors} name="name" />
+                </div>
                 {!inDepartment && (
                   <div><label className="label">Department</label>
                     <select className="input" value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}>
@@ -323,8 +372,15 @@ export default function Vendors() {
                 )}
               </div>
               <div><label className="label">Products we carry</label><input className="input" placeholder="Mugs, wallets, everyday gifts (comma-separated)" value={form.products_we_carry} onChange={(e) => setForm({ ...form, products_we_carry: e.target.value })} /></div>
-              <div><label className="label">Notes (optional)</label><input className="input" placeholder="Rep visits in summer, order by March" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
-              <div><button className="btn-primary" onClick={save} disabled={busy || !form.name.trim()}>{busy ? "Saving." : "Save vendor"}</button></div>
+              {/* Below Products, above Notes: the owner's placement. */}
+              <VendorOrderingFields
+                value={form as OrderingProfile}
+                onChange={(patch) => setForm({ ...form, ...patch })}
+                errors={fieldErrors}
+                showMoney={showMoney}
+              />
+              <div><label className="label">Notes and rules (optional)</label><input className="input" placeholder="Rep visits in summer, order by March" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
+              <div><button className="btn-primary" onClick={save} disabled={busy}>{busy ? "Saving." : "Save vendor"}</button></div>
             </div>
           )}
 
