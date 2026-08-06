@@ -56,9 +56,16 @@ Run in this order; skip nothing (each is safe to re-run):
    link or path: invoice.invoice_filing, invoice.digital_file_location,
    purchase_order.digital_file_location, payment.digital_file_location. Asked for on
    2026-07-31 so "digital" stops meaning a file nobody can find again.
-7. `edit_delete.sql` — soft-delete columns and the inventory line notes (older databases
+7. `vendor_ordering_fields.sql` — the vendor's ordering profile, asked for on 2026-07-31 and
+   2026-08-05: vendor.minimum_order_amount with vendor.no_minimum_order (mutually exclusive,
+   enforced by a check constraint rather than trusted to the form),
+   vendor.summer_order_timeline, vendor.order_location plus order_location_other, and
+   vendor.reorder_status with vendor.reorder_comments. Every column is optional, so the 130
+   vendors already on file stay valid and blank until somebody edits them.
+   **The vendor forms will not save until this has run**, because they write these columns.
+8. `edit_delete.sql` — soft-delete columns and the inventory line notes (older databases
    only; harmless if already applied).
-8. `auth_setup.sql` — ONLY if enforced login is on. Always re-run it LAST after any script
+9. `auth_setup.sql` — ONLY if enforced login is on. Always re-run it LAST after any script
    above, because it (re)applies the per-store policies to every table including new ones.
 
 ## What each remaining file is

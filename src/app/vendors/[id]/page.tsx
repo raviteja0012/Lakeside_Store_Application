@@ -16,6 +16,12 @@ import {
   recordPaymentRpc, voidPaymentRpc, editPaymentRpc, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
 } from "@/lib/payments";
+import { FieldError, fieldInputClass, type FieldErrors } from "@/components/FieldError";
+import { VendorOrderingFields, EMPTY_ORDERING_PROFILE, type OrderingProfile } from "@/components/VendorOrderingFields";
+import {
+  OTHER_LOCATION, minimumOrderLabel, orderLocationLabel,
+  validateMinimumOrder, validateReorder, REORDER_STATUS
+} from "@/lib/vendorOrdering";
 import type { Vendor, PurchaseOrder, Invoice, Payment, AppUser, CreditNote } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -50,8 +56,14 @@ export default function VendorDetail() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Validation messages, keyed by form and field, so each lands under the box it is about
+  // instead of in one card at the top of a page with twenty boxes on it.
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const clearField = (name: string) =>
+    setFieldErrors((prev) => (prev[name] ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== name)) : prev));
+
   const [editVendor, setEditVendor] = useState(false);
-  const [vForm, setVForm] = useState({ rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active", notes: "" });
+  const [vForm, setVForm] = useState({ rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active", notes: "", ...EMPTY_ORDERING_PROFILE });
   const [showPO, setShowPO] = useState(false);
   // The order fields the owner asked for, in his order: status, amount, where the
   // confirmation is filed, ship date, comments. The season year is not asked for; it
@@ -127,7 +139,7 @@ export default function VendorDetail() {
   async function load() {
     const { data: v, error: ve } = await supabase
       .from("vendor")
-      .select("id, store_id, department_id, name, rep_name, phone, email, products_we_carry, default_terms, status, notes, department:department_id(name, accent_color)")
+      .select("id, store_id, department_id, name, rep_name, phone, email, products_we_carry, default_terms, status, notes, minimum_order_amount, no_minimum_order, summer_order_timeline, order_location, order_location_other, reorder_status, reorder_comments, department:department_id(name, accent_color)")
       .eq("id", id)
       .is("voided_at", null)
       .maybeSingle();
@@ -195,13 +207,32 @@ export default function VendorDetail() {
       products_we_carry: vendor.products_we_carry || "",
       default_terms: vendor.default_terms || "",
       status: vendor.status || "active",
-      notes: vendor.notes || ""
+      notes: vendor.notes || "",
+      minimum_order_amount: vendor.minimum_order_amount != null ? String(vendor.minimum_order_amount) : "",
+      no_minimum_order: !!vendor.no_minimum_order,
+      summer_order_timeline: vendor.summer_order_timeline || "",
+      order_location: vendor.order_location || [],
+      order_location_other: vendor.order_location_other || "",
+      reorder_status: vendor.reorder_status || "",
+      reorder_comments: vendor.reorder_comments || ""
     });
+    setFieldErrors({});
     setEditVendor(true);
   }
 
   async function saveVendor() {
     if (!vendor) return;
+    const errs: FieldErrors = {};
+    // Only asked of people who can see money, because only they are shown the field.
+    const minErr = showMoney ? validateMinimumOrder(vForm.minimum_order_amount, vForm.no_minimum_order) : null;
+    if (minErr) errs.minimum_order_amount = minErr;
+    const reErr = validateReorder(vForm.reorder_status, vForm.reorder_comments);
+    if (reErr) errs.reorder_comments = reErr;
+    if (vForm.order_location.includes(OTHER_LOCATION) && !vForm.order_location_other.trim()) {
+      errs.order_location_other = "Say where, since Other is ticked.";
+    }
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return;
     setBusy(true);
     setError(null);
     try {
@@ -212,6 +243,16 @@ export default function VendorDetail() {
         products_we_carry: vForm.products_we_carry || null,
         default_terms: vForm.default_terms || null,
         status: vForm.status,
+        // Blank is null, never 0: the check constraint refuses a zero minimum.
+        minimum_order_amount: vForm.no_minimum_order || !vForm.minimum_order_amount.trim() ? null : Number(vForm.minimum_order_amount),
+        no_minimum_order: vForm.no_minimum_order,
+        summer_order_timeline: vForm.summer_order_timeline.trim() || null,
+        order_location: vForm.order_location.length ? vForm.order_location : null,
+        order_location_other: vForm.order_location.includes(OTHER_LOCATION) ? vForm.order_location_other.trim() || null : null,
+        reorder_status: vForm.reorder_status || null,
+        // Kept whatever the status now says: the owner asked that an earlier reorder note
+        // never disappear on its own. The Clear it button is the deliberate way to drop it.
+        reorder_comments: vForm.reorder_comments.trim() || null,
         notes: vForm.notes || null
       }).eq("id", vendor.id);
       if (r.error) throw new Error(r.error.message);
@@ -227,23 +268,23 @@ export default function VendorDetail() {
 
   async function addPO() {
     if (!vendor) return;
+    const errs: FieldErrors = {};
     // The owner's rule: a NEW order's expected ship date cannot be in the past. Editing an
     // old order keeps its historical date, so the check lives only on the add path.
     if (poForm.ship_date && poForm.ship_date < todayISO()) {
-      setError("The expected ship date cannot be before today.");
-      return;
+      errs["po.ship_date"] = "The expected ship date cannot be before today.";
     }
     // The owner wants these answered on every order, with N/A as the honest answer when
     // there is nothing to say. A blank field and a deliberate "nothing to note" look the
     // same in a report; N/A does not.
     if (!poForm.notes.trim()) {
-      setError("Order comments are required. Type N/A if there is nothing to note.");
-      return;
+      errs["po.notes"] = "Order comments are required. Type N/A if there is nothing to note.";
     }
     if (needsDigitalLocation(poForm.order_filing) && !poForm.digital_file_location.trim()) {
-      setError("Add the digital file location, so the confirmation can be found again.");
-      return;
+      errs["po.digital_file_location"] = "Add the digital file location, so the confirmation can be found again.";
     }
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return;
     setBusy(true);
     setError(null);
     try {
@@ -265,6 +306,7 @@ export default function VendorDetail() {
       if (r.error) throw new Error(r.error.message);
       await log("order_added", "purchase_order", r.data.id as string);
       setShowPO(false);
+      setFieldErrors({});
       setPoForm({ status: "in_progress", order_amount: "", order_filing: "", digital_file_location: "", ship_date: "", notes: "" });
       await load();
     } catch (e: any) {
@@ -291,26 +333,23 @@ export default function VendorDetail() {
 
   async function addInvoice() {
     if (!vendor) return;
+    const errs: FieldErrors = {};
     // Delivery notes matter most on the invoices nobody re-reads: a short shipment recorded
     // as blank is indistinguishable from a delivery nobody checked.
     if (!isProperty && !isFinance && !invForm.delivery_comments.trim()) {
-      setError("Delivery comments are required. Type N/A if nothing was short or damaged.");
-      return;
+      errs["inv.delivery_comments"] = "Delivery comments are required. Type N/A if nothing was short or damaged.";
     }
     if (needsDigitalLocation(invForm.invoice_filing) && !invForm.digital_file_location.trim()) {
-      setError("Add the digital file location, so the invoice can be found again.");
-      return;
+      errs["inv.digital_file_location"] = "Add the digital file location, so the invoice can be found again.";
     }
     // The "arrived already paid" flow records a payment for the full total right after the
     // insert, and the RPC refuses a zero allocation. Validate BEFORE anything is written so
     // a bad form never leaves an orphan invoice behind.
-    if (invForm.status === "paid") {
-      const payTotal = formTotal(invForm);
-      if (payTotal <= 0) {
-        setError("Enter the invoice amount before saving it as already paid.");
-        return;
-      }
+    if (invForm.status === "paid" && formTotal(invForm) <= 0) {
+      errs["inv.amount"] = "Enter the invoice amount before saving it as already paid.";
     }
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return;
     setBusy(true);
     setError(null);
     try {
@@ -362,6 +401,7 @@ export default function VendorDetail() {
         }
       }
       setShowInv(false);
+      setFieldErrors({});
       setInvForm({ ...emptyInvForm });
       await load();
     } catch (e: any) {
@@ -402,14 +442,15 @@ export default function VendorDetail() {
 
   async function saveInvoice() {
     if (!editInvId) return;
+    const errs: FieldErrors = {};
     if (!isProperty && !isFinance && !editInvForm.delivery_comments.trim()) {
-      setError("Delivery comments are required. Type N/A if nothing was short or damaged.");
-      return;
+      errs["editInv.delivery_comments"] = "Delivery comments are required. Type N/A if nothing was short or damaged.";
     }
     if (needsDigitalLocation(editInvForm.invoice_filing) && !editInvForm.digital_file_location.trim()) {
-      setError("Add the digital file location, so the invoice can be found again.");
-      return;
+      errs["editInv.digital_file_location"] = "Add the digital file location, so the invoice can be found again.";
     }
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return;
     setBusy(true);
     setError(null);
     try {
@@ -439,6 +480,7 @@ export default function VendorDetail() {
       // between paid and partially paid, so the engine re-derives it right away.
       await supabase.rpc("recompute_invoice_status", { p_invoice_id: editInvId });
       await log("invoice_edited", "invoice", editInvId);
+      setFieldErrors({});
       setEditInvId(null);
       await load();
     } catch (e: any) {
@@ -473,18 +515,20 @@ export default function VendorDetail() {
       ship_date: o.ship_date || "",
       notes: o.notes || ""
     });
+    setFieldErrors({});
   }
 
   async function savePO() {
     if (!editPoId) return;
+    const errs: FieldErrors = {};
     if (!editPoForm.notes.trim()) {
-      setError("Order comments are required. Type N/A if there is nothing to note.");
-      return;
+      errs["editPo.notes"] = "Order comments are required. Type N/A if there is nothing to note.";
     }
     if (needsDigitalLocation(editPoForm.order_filing) && !editPoForm.digital_file_location.trim()) {
-      setError("Add the digital file location, so the confirmation can be found again.");
-      return;
+      errs["editPo.digital_file_location"] = "Add the digital file location, so the confirmation can be found again.";
     }
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return;
     setBusy(true);
     setError(null);
     try {
@@ -502,6 +546,7 @@ export default function VendorDetail() {
       }).eq("id", editPoId);
       if (r.error) throw new Error(r.error.message);
       await log("order_edited", "purchase_order", editPoId);
+      setFieldErrors({});
       setEditPoId(null);
       await load();
     } catch (e: any) {
@@ -536,18 +581,18 @@ export default function VendorDetail() {
       filing: p.confirmation_filing || "",
       digital_file_location: p.digital_file_location || ""
     });
+    setFieldErrors({});
   }
 
   async function saveEditPayment() {
     if (!editPayId) return;
-    if (!editPayForm.paid_date) {
-      setError("Enter the paid date.");
-      return;
-    }
+    const errs: FieldErrors = {};
+    if (!editPayForm.paid_date) errs["editPay.paid_date"] = "Enter the paid date.";
     if (editPayForm.method === "other" && !editPayForm.notes.trim()) {
-      setError("Method is Other: say what it was in the notes.");
-      return;
+      errs["editPay.notes"] = "Payment method is Other: say what it was in the comments.";
     }
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return;
     setBusy(true);
     setError(null);
     try {
@@ -563,6 +608,7 @@ export default function VendorDetail() {
         actorId: effectiveActorId
       });
       await saveDigitalLocation(editPayId, editPayForm.digital_file_location);
+      setFieldErrors({});
       setEditPayId(null);
       await load();
     } catch (e: any) {
@@ -590,14 +636,11 @@ export default function VendorDetail() {
   async function addCredit() {
     if (!vendor) return;
     const amount = Number(creditForm.credit_amount);
-    if (!amount || amount <= 0) {
-      setError("Enter the credit amount.");
-      return;
-    }
-    if (!creditForm.reason.trim()) {
-      setError("Enter the reason for the credit.");
-      return;
-    }
+    const errs: FieldErrors = {};
+    if (!amount || amount <= 0) errs["credit.credit_amount"] = "Enter the credit amount.";
+    if (!creditForm.reason.trim()) errs["credit.reason"] = "Enter the reason for the credit.";
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return;
     setBusy(true);
     setError(null);
     try {
@@ -616,6 +659,7 @@ export default function VendorDetail() {
       if (r.error) throw new Error(r.error.message);
       await log("credit_added", "credit_note", r.data.id as string);
       setShowCredit(false);
+      setFieldErrors({});
       setCreditForm({ invoice_number: "", credit_amount: "", reason: "", comments: "", invoice_id: "", status: "pending", credit_type: "" });
       await load();
     } catch (e: any) {
@@ -659,6 +703,7 @@ export default function VendorDetail() {
     // covering their share reduce it.
     const left = round2(remainingToAllocate(invTotal(i), settlements.get(i.id)));
     setPayForm({ amount: left > 0 ? String(left) : "", method: "cheque", paid_date: todayISO(), reference: "", notes: "", filing: "", digital_file_location: "" });
+    setFieldErrors({});
   }
 
   // Stamp the file location onto a payment the engine has already written. Non-fatal: the
@@ -676,22 +721,20 @@ export default function VendorDetail() {
   async function recordPayment() {
     if (!payFor || !vendor) return;
     const amount = num(payForm.amount);
-    if (!amount || amount <= 0) {
-      setError("Enter the payment amount.");
-      return;
-    }
-    if (payForm.method === "other" && !payForm.notes.trim()) {
-      setError("Payment method is Other: say what it was in the comments.");
-      return;
-    }
+    const errs: FieldErrors = {};
+    if (!amount || amount <= 0) errs["pay.amount"] = "Enter the payment amount.";
     if (!payForm.notes.trim()) {
-      setError("Payment comments are required. Type N/A if there is nothing to note.");
-      return;
+      errs["pay.notes"] = payForm.method === "other"
+        ? "Payment method is Other: say what it was in the comments."
+        : "Payment comments are required. Type N/A if there is nothing to note.";
     }
     if (needsDigitalLocation(payForm.filing) && !payForm.digital_file_location.trim()) {
-      setError("Add the digital file location, so the confirmation can be found again.");
-      return;
+      errs["pay.digital_file_location"] = "Add the digital file location, so the confirmation can be found again.";
     }
+    setFieldErrors(errs);
+    // The amount check is repeated here rather than assumed from the error map, so the
+    // compiler can see the allocation below is never handed a null.
+    if (Object.keys(errs).length || !amount) return;
     setBusy(true);
     setError(null);
     try {
@@ -711,6 +754,7 @@ export default function VendorDetail() {
       // The RPC owns the money; this is a file path, and a failure here costs a path, not a
       // dollar. Widening the money function's signature to carry it would risk more.
       await saveDigitalLocation(paymentId, payForm.digital_file_location);
+      setFieldErrors({});
       setPayFor(null);
       await load();
     } catch (e: any) {
@@ -719,6 +763,15 @@ export default function VendorDetail() {
       setBusy(false);
     }
   }
+
+  // True when a typed order amount falls under the vendor's recorded minimum. Only ever a
+  // note on screen: nothing here stops an order being saved.
+  const belowMinimum = (amountText: string): boolean => {
+    const min = Number(vendor?.minimum_order_amount);
+    const typed = Number(amountText);
+    if (!vendor?.minimum_order_amount || !isFinite(min) || !amountText.trim() || !isFinite(typed)) return false;
+    return typed > 0 && typed < min;
+  };
 
   const invoiceTotal = (i: Invoice) => invTotal(i);
   // Owed right now: post-dated money has not left the account, so it still counts as owed
@@ -865,6 +918,26 @@ export default function VendorDetail() {
           </div>
         </div>
         {vendor.products_we_carry && <div><div className="help">Products</div><div>{vendor.products_we_carry}</div></div>}
+        {/* The ordering profile, between Products and Notes, where the owner asked for it.
+            Each line appears only once it has been answered: a row of "not set" labels on
+            130 vendors that have never been asked would be noise, not information. */}
+        {((showMoney && minimumOrderLabel(vendor)) || vendor.summer_order_timeline || orderLocationLabel(vendor.order_location, vendor.order_location_other) || vendor.reorder_status) && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            {/* A dollar figure, so it obeys the money gate like every other one on this page. */}
+            {showMoney && minimumOrderLabel(vendor) && <div><div className="help">Minimum order</div><div>{minimumOrderLabel(vendor)}</div></div>}
+            {vendor.summer_order_timeline && <div><div className="help">Summer order timeline</div><div>{vendor.summer_order_timeline}</div></div>}
+            {orderLocationLabel(vendor.order_location, vendor.order_location_other) && (
+              <div><div className="help">Location of the order</div><div>{orderLocationLabel(vendor.order_location, vendor.order_location_other)}</div></div>
+            )}
+            {vendor.reorder_status && (
+              <div>
+                <div className="help">Reorder status</div>
+                <div>{REORDER_STATUS.find((r) => r.value === vendor.reorder_status)?.label || labelize(vendor.reorder_status)}</div>
+                {vendor.reorder_comments && <div className="help" style={{ marginTop: 2 }}>{vendor.reorder_comments}</div>}
+              </div>
+            )}
+          </div>
+        )}
         {vendor.notes && <div><div className="help">Notes and rules</div><div>{vendor.notes}</div></div>}
         {!editVendor && canEdit(role) && (
           <div style={{ display: "flex", gap: 8 }}>
@@ -887,6 +960,12 @@ export default function VendorDetail() {
               <div><label className="label">Payment terms</label><input className="input" value={vForm.default_terms} onChange={(e) => setVForm({ ...vForm, default_terms: e.target.value })} /></div>
               <div><label className="label">Products</label><input className="input" value={vForm.products_we_carry} onChange={(e) => setVForm({ ...vForm, products_we_carry: e.target.value })} /></div>
             </div>
+            <VendorOrderingFields
+              value={vForm as OrderingProfile}
+              onChange={(patch) => setVForm({ ...vForm, ...patch })}
+              errors={fieldErrors}
+              showMoney={showMoney}
+            />
             <div><label className="label">Notes and rules</label><textarea className="input" rows={2} value={vForm.notes} onChange={(e) => setVForm({ ...vForm, notes: e.target.value })} /></div>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn-primary" onClick={saveVendor} disabled={busy}>{busy ? "Saving." : "Save vendor"}</button>
@@ -903,13 +982,28 @@ export default function VendorDetail() {
         </div>
         {showMoney && showPO && (
           <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
+            {/* What this vendor will not go below, in front of the buyer at the moment the
+                amount is being typed. That is the whole point of recording it. */}
+            {(minimumOrderLabel(vendor) || vendor.summer_order_timeline) && (
+              <p className="help" style={{ margin: 0 }}>
+                {minimumOrderLabel(vendor)}
+                {minimumOrderLabel(vendor) && vendor.summer_order_timeline ? " . " : ""}
+                {vendor.summer_order_timeline ? `Summer order: ${vendor.summer_order_timeline}` : ""}
+              </p>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
               <div><label className="label">Order status</label>
                 <select className="input" value={poForm.status} onChange={(e) => setPoForm({ ...poForm, status: e.target.value })}>
                   {orderStatusOptions(poForm.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </div>
-              <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={poForm.order_amount} onChange={(e) => setPoForm({ ...poForm, order_amount: e.target.value })} /></div>
+              <div><label className="label">Order amount</label><input className="input tabular" type="number" step="0.01" value={poForm.order_amount} onChange={(e) => setPoForm({ ...poForm, order_amount: e.target.value })} />
+                {/* A soft flag, not a block. Vendors waive their own minimum, and a top-up
+                    order against an earlier one is a normal reason to be under it. */}
+                {belowMinimum(poForm.order_amount) && (
+                  <p className="help" style={{ margin: "4px 0 0" }}>Below the {minimumOrderLabel(vendor)} on file for this vendor.</p>
+                )}
+              </div>
               <div><label className="label">Order confirmation filed</label>
                 <select className="input" value={poForm.order_filing} onChange={(e) => setPoForm({ ...poForm, order_filing: e.target.value })}>
                   <option value="">Not said</option>
@@ -918,14 +1012,18 @@ export default function VendorDetail() {
                 <p className="help" style={{ margin: "4px 0 0" }}>Where the confirmation is kept.</p>
               </div>
               {needsDigitalLocation(poForm.order_filing) && (
-                <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={poForm.digital_file_location} onChange={(e) => setPoForm({ ...poForm, digital_file_location: e.target.value })} />
+                <div><label className="label">Digital file location</label><input className={fieldInputClass(fieldErrors, "po.digital_file_location")} placeholder="Link or folder path" value={poForm.digital_file_location} onChange={(e) => { setPoForm({ ...poForm, digital_file_location: e.target.value }); clearField("po.digital_file_location"); }} />
                   <p className="help" style={{ margin: "4px 0 0" }}>Required. Where the confirmation is saved.</p>
+                  <FieldError errors={fieldErrors} name="po.digital_file_location" />
                 </div>
               )}
-              <div><label className="label">Ship date</label><input className="input" type="date" min={todayISO()} value={poForm.ship_date} onChange={(e) => setPoForm({ ...poForm, ship_date: e.target.value })} /></div>
+              <div><label className="label">Ship date</label><input className={fieldInputClass(fieldErrors, "po.ship_date")} type="date" min={todayISO()} value={poForm.ship_date} onChange={(e) => { setPoForm({ ...poForm, ship_date: e.target.value }); clearField("po.ship_date"); }} />
+                <FieldError errors={fieldErrors} name="po.ship_date" />
+              </div>
             </div>
-            <div><label className="label">Order comments</label><input className="input" placeholder="Anything worth noting, or N/A" value={poForm.notes} onChange={(e) => setPoForm({ ...poForm, notes: e.target.value })} />
+            <div><label className="label">Order comments</label><input className={fieldInputClass(fieldErrors, "po.notes")} placeholder="Anything worth noting, or N/A" value={poForm.notes} onChange={(e) => { setPoForm({ ...poForm, notes: e.target.value }); clearField("po.notes"); }} />
               <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
+              <FieldError errors={fieldErrors} name="po.notes" />
             </div>
             <div><button className="btn-primary" onClick={addPO} disabled={busy}>{busy ? "Saving." : "Save order"}</button></div>
           </div>
@@ -970,11 +1068,15 @@ export default function VendorDetail() {
                       </select>
                     </div>
                     {needsDigitalLocation(editPoForm.order_filing) && (
-                      <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={editPoForm.digital_file_location} onChange={(e) => setEditPoForm({ ...editPoForm, digital_file_location: e.target.value })} /></div>
+                      <div><label className="label">Digital file location</label><input className={fieldInputClass(fieldErrors, "editPo.digital_file_location")} placeholder="Link or folder path" value={editPoForm.digital_file_location} onChange={(e) => { setEditPoForm({ ...editPoForm, digital_file_location: e.target.value }); clearField("editPo.digital_file_location"); }} />
+                        <FieldError errors={fieldErrors} name="editPo.digital_file_location" />
+                      </div>
                     )}
                     <div><label className="label">Ship date</label><input className="input" type="date" value={editPoForm.ship_date} onChange={(e) => setEditPoForm({ ...editPoForm, ship_date: e.target.value })} /></div>
                   </div>
-                  <div><label className="label">Order comments</label><input className="input" placeholder="Anything worth noting, or N/A" value={editPoForm.notes} onChange={(e) => setEditPoForm({ ...editPoForm, notes: e.target.value })} /></div>
+                  <div><label className="label">Order comments</label><input className={fieldInputClass(fieldErrors, "editPo.notes")} placeholder="Anything worth noting, or N/A" value={editPoForm.notes} onChange={(e) => { setEditPoForm({ ...editPoForm, notes: e.target.value }); clearField("editPo.notes"); }} />
+                    <FieldError errors={fieldErrors} name="editPo.notes" />
+                  </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button className="btn-primary" onClick={savePO} disabled={busy}>{busy ? "Saving." : "Save order"}</button>
                     <button className="btn-ghost" onClick={() => setEditPoId(null)}>Cancel</button>
@@ -1006,7 +1108,9 @@ export default function VendorDetail() {
                 </>
               )}
               <div><label className="label">Invoice number</label><input className="input" value={invForm.invoice_number} onChange={(e) => setInvForm({ ...invForm, invoice_number: e.target.value })} /></div>
-              <div><label className="label">Invoice subtotal</label><input className="input tabular" type="number" step="0.01" value={invForm.amount} onChange={(e) => setInvForm({ ...invForm, amount: e.target.value, hst_amount: hstFieldForMode(invForm.tax_mode, e.target.value) })} /></div>
+              <div><label className="label">Invoice subtotal</label><input className={fieldInputClass(fieldErrors, "inv.amount") + " tabular"} type="number" step="0.01" value={invForm.amount} onChange={(e) => { setInvForm({ ...invForm, amount: e.target.value, hst_amount: hstFieldForMode(invForm.tax_mode, e.target.value) }); clearField("inv.amount"); }} />
+                <FieldError errors={fieldErrors} name="inv.amount" />
+              </div>
               <div><label className="label">Tax</label>
                 <select className="input" value={invForm.tax_mode} onChange={(e) => setInvForm({ ...invForm, tax_mode: e.target.value, hst_amount: hstFieldForMode(e.target.value, invForm.amount) })}>
                   {TAX_MODES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -1032,8 +1136,9 @@ export default function VendorDetail() {
               {isHardware && <div><label className="label">PO number</label><input className="input" value={invForm.po_number} onChange={(e) => setInvForm({ ...invForm, po_number: e.target.value })} /></div>}
             </div>
             {!isProperty && !isFinance && (
-              <div><label className="label">Delivery comments</label><input className="input" placeholder="Anything short-shipped or damaged, or N/A" value={invForm.delivery_comments} onChange={(e) => setInvForm({ ...invForm, delivery_comments: e.target.value })} />
+              <div><label className="label">Delivery comments</label><input className={fieldInputClass(fieldErrors, "inv.delivery_comments")} placeholder="Anything short-shipped or damaged, or N/A" value={invForm.delivery_comments} onChange={(e) => { setInvForm({ ...invForm, delivery_comments: e.target.value }); clearField("inv.delivery_comments"); }} />
                 <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
+                <FieldError errors={fieldErrors} name="inv.delivery_comments" />
               </div>
             )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
@@ -1044,8 +1149,9 @@ export default function VendorDetail() {
                 </select>
               </div>
               {needsDigitalLocation(invForm.invoice_filing) && (
-                <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={invForm.digital_file_location} onChange={(e) => setInvForm({ ...invForm, digital_file_location: e.target.value })} />
+                <div><label className="label">Digital file location</label><input className={fieldInputClass(fieldErrors, "inv.digital_file_location")} placeholder="Link or folder path" value={invForm.digital_file_location} onChange={(e) => { setInvForm({ ...invForm, digital_file_location: e.target.value }); clearField("inv.digital_file_location"); }} />
                   <p className="help" style={{ margin: "4px 0 0" }}>Required. Where the file is saved, so it can be found again.</p>
+                  <FieldError errors={fieldErrors} name="inv.digital_file_location" />
                 </div>
               )}
             </div>
@@ -1181,8 +1287,9 @@ export default function VendorDetail() {
                       {isHardware && <div><label className="label">PO number</label><input className="input" value={editInvForm.po_number} onChange={(e) => setEditInvForm({ ...editInvForm, po_number: e.target.value })} /></div>}
                     </div>
                     {!isProperty && !isFinance && (
-                      <div><label className="label">Delivery comments</label><input className="input" placeholder="Anything short-shipped or damaged, or N/A" value={editInvForm.delivery_comments} onChange={(e) => setEditInvForm({ ...editInvForm, delivery_comments: e.target.value })} />
+                      <div><label className="label">Delivery comments</label><input className={fieldInputClass(fieldErrors, "editInv.delivery_comments")} placeholder="Anything short-shipped or damaged, or N/A" value={editInvForm.delivery_comments} onChange={(e) => { setEditInvForm({ ...editInvForm, delivery_comments: e.target.value }); clearField("editInv.delivery_comments"); }} />
                         <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
+                        <FieldError errors={fieldErrors} name="editInv.delivery_comments" />
                       </div>
                     )}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
@@ -1193,7 +1300,9 @@ export default function VendorDetail() {
                         </select>
                       </div>
                       {needsDigitalLocation(editInvForm.invoice_filing) && (
-                        <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={editInvForm.digital_file_location} onChange={(e) => setEditInvForm({ ...editInvForm, digital_file_location: e.target.value })} /></div>
+                        <div><label className="label">Digital file location</label><input className={fieldInputClass(fieldErrors, "editInv.digital_file_location")} placeholder="Link or folder path" value={editInvForm.digital_file_location} onChange={(e) => { setEditInvForm({ ...editInvForm, digital_file_location: e.target.value }); clearField("editInv.digital_file_location"); }} />
+                          <FieldError errors={fieldErrors} name="editInv.digital_file_location" />
+                        </div>
                       )}
                     </div>
                     {isProperty && (
@@ -1228,8 +1337,9 @@ export default function VendorDetail() {
                 {showMoney && payFor === i.id && (
                   <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-                      <div><label className="label">Amount</label><input className="input tabular" type="number" step="0.01" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+                      <div><label className="label">Amount</label><input className={fieldInputClass(fieldErrors, "pay.amount") + " tabular"} type="number" step="0.01" value={payForm.amount} onChange={(e) => { setPayForm({ ...payForm, amount: e.target.value }); clearField("pay.amount"); }} />
                         <p className="help" style={{ margin: "4px 0 0" }}>A smaller amount records a partial payment.</p>
+                        <FieldError errors={fieldErrors} name="pay.amount" />
                       </div>
                       <div><label className="label">Payment method</label>
                         <select className="input" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
@@ -1249,10 +1359,13 @@ export default function VendorDetail() {
                         </select>
                       </div>
                       {needsDigitalLocation(payForm.filing) && (
-                        <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={payForm.digital_file_location} onChange={(e) => setPayForm({ ...payForm, digital_file_location: e.target.value })} /></div>
+                        <div><label className="label">Digital file location</label><input className={fieldInputClass(fieldErrors, "pay.digital_file_location")} placeholder="Link or folder path" value={payForm.digital_file_location} onChange={(e) => { setPayForm({ ...payForm, digital_file_location: e.target.value }); clearField("pay.digital_file_location"); }} />
+                          <FieldError errors={fieldErrors} name="pay.digital_file_location" />
+                        </div>
                       )}
-                      <div><label className="label">Payment comments{payForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" placeholder="Anything worth noting, or N/A" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
+                      <div><label className="label">Payment comments{payForm.method === "other" ? " (say what the method was)" : ""}</label><input className={fieldInputClass(fieldErrors, "pay.notes")} placeholder="Anything worth noting, or N/A" value={payForm.notes} onChange={(e) => { setPayForm({ ...payForm, notes: e.target.value }); clearField("pay.notes"); }} />
                         <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
+                        <FieldError errors={fieldErrors} name="pay.notes" />
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
@@ -1363,7 +1476,8 @@ export default function VendorDetail() {
                             {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                           </select>
                         </div>
-                        <div><label className="label">Paid date</label><input className="input" type="date" value={editPayForm.paid_date} onChange={(e) => setEditPayForm({ ...editPayForm, paid_date: e.target.value })} />
+                        <div><label className="label">Paid date</label><input className={fieldInputClass(fieldErrors, "editPay.paid_date")} type="date" value={editPayForm.paid_date} onChange={(e) => { setEditPayForm({ ...editPayForm, paid_date: e.target.value }); clearField("editPay.paid_date"); }} />
+                          <FieldError errors={fieldErrors} name="editPay.paid_date" />
                           {isFutureDate(editPayForm.paid_date) && <p className="help" style={{ margin: "4px 0 0" }}>Future date: becomes post-dated.</p>}
                         </div>
                         <div><label className="label">{referenceLabel(editPayForm.method)}</label><input className="input" value={editPayForm.reference} onChange={(e) => setEditPayForm({ ...editPayForm, reference: e.target.value })} />
@@ -1378,7 +1492,9 @@ export default function VendorDetail() {
                         {needsDigitalLocation(editPayForm.filing) && (
                           <div><label className="label">Digital file location</label><input className="input" placeholder="Link or folder path" value={editPayForm.digital_file_location} onChange={(e) => setEditPayForm({ ...editPayForm, digital_file_location: e.target.value })} /></div>
                         )}
-                        <div><label className="label">Payment comments{editPayForm.method === "other" ? " (say what the method was)" : ""}</label><input className="input" placeholder="Anything worth noting, or N/A" value={editPayForm.notes} onChange={(e) => setEditPayForm({ ...editPayForm, notes: e.target.value })} /></div>
+                        <div><label className="label">Payment comments{editPayForm.method === "other" ? " (say what the method was)" : ""}</label><input className={fieldInputClass(fieldErrors, "editPay.notes")} placeholder="Anything worth noting, or N/A" value={editPayForm.notes} onChange={(e) => { setEditPayForm({ ...editPayForm, notes: e.target.value }); clearField("editPay.notes"); }} />
+                          <FieldError errors={fieldErrors} name="editPay.notes" />
+                        </div>
                       </div>
                       <p className="help" style={{ margin: 0 }}>The amount stays {formatCAD(p.amount)}. Wrong amount? Void this payment and record it again.</p>
                       <div style={{ display: "flex", gap: 8 }}>
@@ -1416,7 +1532,8 @@ export default function VendorDetail() {
                 </div>
                 <div>
                   <label className="label">Credit amount</label>
-                  <input className="input tabular" type="number" step="0.01" value={creditForm.credit_amount} onChange={(e) => setCreditForm({ ...creditForm, credit_amount: e.target.value })} />
+                  <input className={fieldInputClass(fieldErrors, "credit.credit_amount") + " tabular"} type="number" step="0.01" value={creditForm.credit_amount} onChange={(e) => { setCreditForm({ ...creditForm, credit_amount: e.target.value }); clearField("credit.credit_amount"); }} />
+                  <FieldError errors={fieldErrors} name="credit.credit_amount" />
                 </div>
                 <div>
                   <label className="label">How it comes back</label>
@@ -1436,7 +1553,8 @@ export default function VendorDetail() {
               </div>
               <div>
                 <label className="label">Reason for credit</label>
-                <input className="input" placeholder="Damaged goods, short shipment, overcharge, return" value={creditForm.reason} onChange={(e) => setCreditForm({ ...creditForm, reason: e.target.value })} />
+                <input className={fieldInputClass(fieldErrors, "credit.reason")} placeholder="Damaged goods, short shipment, overcharge, return" value={creditForm.reason} onChange={(e) => { setCreditForm({ ...creditForm, reason: e.target.value }); clearField("credit.reason"); }} />
+                <FieldError errors={fieldErrors} name="credit.reason" />
               </div>
               <div>
                 <label className="label">Comments</label>

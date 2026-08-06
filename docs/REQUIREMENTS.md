@@ -92,6 +92,14 @@ SHIPPED (see VERIFICATION.md for sign-off):
   count: refreshes on navigation/focus/open/timer).
 - Brand: storefront-sign plaque (CSS only) on login and sidebar; evergreen canvas motif;
   print stays clean.
+- Vendor ordering profile (SCRUM-9, 2026-07-31 and 2026-08-05): minimum order amount or a
+  "No minimum order" tick, mutually exclusive and enforced in the database as well as the
+  form, shown on the vendor page, the Add order form and the Reorder list; summer order
+  timeline in free text; location of the order as a multi-select with a free-text Other;
+  reorder status with comments that are mandatory when Reordered and are never deleted by a
+  status change alone. Migration: supabase/vendor_ordering_fields.sql.
+- Field-level validation: every required field reports its own problem underneath itself,
+  not in a card at the top of the page (SCRUM-9, 2026-07-31).
 
 QUEUED (agreed, not built):
 - Department photo tiles and knowledge-note photo attachments, sourced from the owner's
@@ -121,11 +129,13 @@ OPEN (waiting on the owner):
   resolved: it was about the store's own domain email plan (docs/DOMAIN_EMAIL.md). Still
   un-decoded: the 12:18 note ("deposit on the device"). Owner to type it or re-record in
   Suggestions.
-- Domain panel actions (details and order in docs/DOMAIN_EMAIL.md): clear the three FULL
-  mailboxes (drygoods@, hardware@, info@ bounce vendor mail today); repoint or delete the
+- Domain panel actions (details and order in docs/DOMAIN_EMAIL.md): repoint or delete the
   stories@ alias (it forwards store mail to the previous owners' personal hotmail);
-  archive then retire joanne@; create invoices@ (unblocks email intake); add the CNAME
-  for app.robinsonsgeneralstore.ca so the app lives on the store's own domain.
+  archive then retire joanne@; create invoices@ (unblocks email intake); ask Vianet hosting
+  to add the CNAME for app.robinsonsgeneralstore.ca so the app lives on the store's own
+  domain. (An earlier version of this line said three mailboxes were full and bouncing.
+  That was wrong: the quota is 1000MB, not 250MB, and the fullest box is at 26 percent.
+  Nothing is bouncing and nothing needs clearing.)
 - Departments&WorkFlow.xlsx (OneDrive), sheet Lakeside&DryGoodsPaymentRecordF: upload it so
   the payment-record fields can be checked column by column (everything visible so far
   already exists).

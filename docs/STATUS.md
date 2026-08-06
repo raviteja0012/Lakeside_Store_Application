@@ -2,7 +2,38 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-07-31, on branch claude/great-johnson-CFSbi (latest: owner round 5, below; before it the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-08-06, on branch claude/great-johnson-CFSbi (latest: owner round 6, below; before it owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+
+Owner round 6 (SCRUM-9 comments of 31 July and 5 August), shipped 2026-08-06:
+- **Validation messages now sit under the field they are about**, in red, instead of in one
+  card at the top of the page. The owner asked for this after being told "Delivery comments
+  are required" above a form with twenty boxes in it. Applied to every required field on the
+  vendor page, not only the one he pointed at: invoice add and edit, order add and edit,
+  payment record and edit, credit notes, and the add-vendor form. All of a form's problems
+  are reported in one pass, so fixing one does not reveal the next.
+- **Minimum order** on every vendor: an amount, or a "No minimum order" tick. Never both:
+  the form refuses it and a database check constraint refuses it too. It shows on the vendor
+  page, on the Add order form beside the amount being typed, and on the Reorder list. An
+  order under the minimum gets a note, not a block, because vendors waive their own minimums
+  and a top-up against an earlier order is a normal reason to be under it.
+- **Three ordering fields** below Products and above Notes and rules, per the owner's layout:
+  Summer order timeline (free text, 150 characters, because his six real examples share no
+  shape), Location of the order (multi-select over Gift Show, Email, In Person, Rep Show,
+  Phone, Vendor Website/Portal, Other with free text), and Reorder status (Reordered /
+  No Reorder) with Reorder comments, mandatory when Reordered. Changing the status away from
+  Reordered hides the note but never deletes it; there is a Clear it button for when that is
+  meant. Reordered vendors are flagged on the Reorder screen, which is the point of asking.
+- The minimum order is a dollar figure, so it follows canSeeMoney like every other one:
+  hidden from the staff role on the vendor page, the reorder list, and both vendor forms,
+  and not required of anyone who cannot see it.
+- Autopilot fix: the workflow passed `allowed_tools`, which is not an input the action
+  accepts. It was ignored with a warning, so five runs spent six minutes each with no way to
+  edit a file, changed nothing, and went green. Now `claude_args`, plus a step that fails a
+  run which found a ticket and produced neither a change nor an explanation.
+
+Owner action for this round: run `supabase/vendor_ordering_fields.sql`. **The vendor forms
+cannot save until it has**, because they write the new columns. It only adds columns and a
+constraint, and it is safe to run twice.
 
 Owner feedback round 3 (2026-07-26/27), all shipped this round:
 - Payment EDIT everywhere (vendor page and payments screen): date, method, reference, notes, filing through the new edit_payment RPC; touched invoice statuses re-derive in the same transaction; amount stays locked (void and re-record). Payment row action labels are Void.

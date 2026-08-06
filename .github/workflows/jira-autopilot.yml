@@ -89,7 +89,11 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
+          # Tools go through claude_args. An earlier version passed allowed_tools, which is
+          # not an input this action accepts, so it was ignored with only a warning: Claude
+          # ran for six minutes with no way to edit a file, changed nothing, and the run went
+          # green. Five tickets were "worked" that way before anyone read the warning.
+          claude_args: '--allowedTools "Bash,Read,Write,Edit,Glob,Grep" --max-turns 60'
           prompt: |
             You are building one ticket for Robinson's General Store. Read CLAUDE.md and
             .claude/skills/robinsons-store/SKILL.md FIRST and follow every invariant there.
@@ -148,6 +152,19 @@ jobs:
           gh pr ready "$pr"
           gh pr merge "$pr" --merge --auto --delete-branch
           echo "PR #$pr will merge when its checks pass." >> autopilot-comment.txt
+
+      # A run that found a ticket, spent minutes on it, and changed nothing is a failed
+      # run, not a quiet one. Five went green that way while the tool configuration was
+      # wrong, and the only clue was a warning nobody was reading. Fail loudly instead.
+      - name: A run that did nothing is a failed run
+        if: steps.gate.outputs.ready == 'true' && steps.find.outputs.found == 'true'
+        run: |
+          if [ "${{ steps.tier.outputs.tier }}" = "none" ] && [ ! -f autopilot-comment.txt ]; then
+            echo "::error::Worked ${{ steps.find.outputs.issue_key }} but produced no change and no explanation."
+            echo "Either the build could not edit files, or it stopped without saying why."
+            echo "Check the Build it step for warnings about unrecognised inputs."
+            exit 1
+          fi
 
       - name: Tell the ticket
         if: always() && steps.gate.outputs.ready == 'true' && steps.find.outputs.found == 'true'

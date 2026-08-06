@@ -43,6 +43,21 @@ create table vendor (
   default_terms text,
   status text default 'active' check (status in ('active','skip','discontinue','bankrupt')),
   notes text,
+  -- The ordering profile: what the buyer needs in front of them before placing an order.
+  -- Mirrors supabase/vendor_ordering_fields.sql, which adds these to a live database.
+  minimum_order_amount numeric,
+  no_minimum_order boolean not null default false,
+  summer_order_timeline text,           -- "Before mid-January", in the buyer's own words
+  order_location text[],                -- gift show, email, rep visit; more than one applies
+  order_location_other text,            -- the free text behind "Other"
+  reorder_status text check (reorder_status is null or reorder_status in ('reordered','no_reorder')),
+  reorder_comments text,
+  -- An amount and "no minimum" are mutually exclusive: a row claiming both is not a state
+  -- anyone can act on, so the database refuses it rather than trusting the form.
+  constraint vendor_minimum_order_check check (
+    not (no_minimum_order and minimum_order_amount is not null)
+    and (minimum_order_amount is null or minimum_order_amount > 0)
+  ),
   created_at timestamptz default now()
 );
 

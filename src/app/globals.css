@@ -257,6 +257,15 @@ a { color: var(--primary); }
 .input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--focus-halo); }
 .help { font-size: 12px; color: var(--text-secondary); }
 
+/* A field that failed validation, and the sentence saying why, directly underneath it.
+   The owner asked for the message beside the field rather than in a card at the top of the
+   page: one error above twenty boxes says something is wrong and leaves you hunting.
+   The red border is the second signal, never the only one, so the message still reads for
+   anyone who cannot pick the colour out. */
+.input-error { border-color: var(--error-base); background: var(--error-tint); }
+.input-error:focus { border-color: var(--error-base); box-shadow: 0 0 0 3px rgba(192, 54, 44, 0.16); }
+.field-error { font-size: 12px; font-weight: 600; color: var(--error-base); }
+
 .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .chip-success { background: var(--success-tint); color: var(--success-base); }
 .chip-progress { background: var(--progress-tint); color: var(--progress-base); }

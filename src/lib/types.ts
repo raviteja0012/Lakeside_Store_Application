@@ -50,6 +50,16 @@ export type Vendor = {
   default_terms: string | null;
   status: string;
   notes: string | null;
+  // The ordering profile: what the buyer needs in front of them before placing an order.
+  // All optional, because 130 vendors were on file before these existed. See
+  // src/lib/vendorOrdering.ts for the rules and supabase/vendor_ordering_fields.sql.
+  minimum_order_amount?: number | null; // what this vendor will not go below
+  no_minimum_order?: boolean | null; // mutually exclusive with the amount
+  summer_order_timeline?: string | null; // when to order, in the buyer's own words
+  order_location?: string[] | null; // gift show, email, rep visit; more than one applies
+  order_location_other?: string | null; // the free text behind "Other"
+  reorder_status?: string | null; // reordered | no_reorder
+  reorder_comments?: string | null; // required when reordered: date, quantity, why
   department?: { name: string; accent_color: string | null } | null;
 };
 
