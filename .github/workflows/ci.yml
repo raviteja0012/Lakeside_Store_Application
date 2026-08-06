@@ -5,6 +5,12 @@ on:
     branches: [main, claude/great-johnson-CFSbi]
   pull_request:
     branches: [main]
+  # On demand, for any branch. Added 2026-08-06 after a push landed (Vercel deployed it)
+  # without GitHub creating a CI run at all, and there was no way to ask for one: the gates
+  # could only be re-run by pushing another commit. A pull request with no CI result looks
+  # exactly like a pull request whose CI has not finished, and neither is a state to merge
+  # from.
+  workflow_dispatch:
 
 jobs:
   build:
