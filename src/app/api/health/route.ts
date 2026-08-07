@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 // `fix` is the one sentence a person can act on. It is the only detail this route gives
 // away without the secret, because a check that only says what is wrong and never what to
-// do about it gets raised, read, and ignored, which is what happened four times running to
+// do about it gets raised, read, and ignored, which is what happened six times running to
 // the vendor columns in August 2026.
 type Check = { name: string; ok: boolean; detail?: string; count?: number; fix?: string };
 
@@ -189,7 +189,7 @@ export async function GET(req: NextRequest) {
   // add it here in the same change. It is still a list a person maintains, but it is one
   // list rather than one per screen, and it fails loudly instead of quietly.
   //
-  // Failing loudly was not enough on its own. The vendor columns failed after four deploys
+  // Failing loudly was not enough on its own. The vendor columns failed on six checks
   // running because the check said "vendor columns present" and nothing else, so whoever
   // read the ticket had no way to know that one named file in the SQL editor would end it.
   // Each entry now carries the script that supplies its columns, and the failure says so.

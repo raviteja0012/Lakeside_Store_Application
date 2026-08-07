@@ -10,11 +10,18 @@ The health check names its own fix (SCRUM-12), 2026-08-07:
   supabase/vendor_ordering_fields.sql in the Supabase SQL editor. Nothing in the code is
   wrong. The seven vendor ordering columns are not in the live database yet, so the vendor
   ordering fields cannot save.
-- What was fixed here is the reporting, because the failure came back four times and the
+- What was fixed here is the reporting, because the failure came back six times and the
   ticket never said what to do about it. /api/health now knows which script supplies each
   column it checks for, and a failing check answers with the file to run and that it is safe
   to run twice. That sentence is the one detail the route gives away without CRON_SECRET, so
-  it reaches the raised ticket whether or not that secret is set.
+  it reaches the raised ticket whether or not that secret is set. The watchdog builds its
+  ticket out of each failing check's `detail`, and with no secret set there was no detail at
+  all, which is the whole reason six tickets in a row said "vendor columns present" and
+  nothing more.
+- This change was written on 2026-08-07 and pushed, but no pull request was opened for it,
+  so it never reached anybody and the ticket fired twice more. It is now a draft pull
+  request. The code itself is unchanged from that first attempt; what was missing was the
+  pull request.
 - Still open and only the owner can do it: add SUPABASE_DB_URL as a repository secret. The
   workflow that applies merged scripts has never applied one, because without the secret it
   exits quietly, so every migration is still typed by hand in the SQL editor.
