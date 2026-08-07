@@ -100,6 +100,12 @@ SHIPPED (see VERIFICATION.md for sign-off):
   status change alone. Migration: supabase/vendor_ordering_fields.sql.
 - Field-level validation: every required field reports its own problem underneath itself,
   not in a card at the top of the page (SCRUM-9, 2026-07-31).
+- The health check names its own fix (SCRUM-12, 2026-08-07): when /api/health finds a column
+  the release needs and the live database does not have, it says which script in supabase/
+  supplies it and that the script is safe to run again. The watchdog puts that sentence in
+  the ticket it raises, so a missing migration is a job somebody can finish instead of a
+  check name they cannot act on. The code was never wrong in that failure; the ticket just
+  never said what to do.
 
 QUEUED (agreed, not built):
 - Department photo tiles and knowledge-note photo attachments, sourced from the owner's
@@ -125,6 +131,14 @@ QUEUED (agreed, not built):
 - Price-check activity list and notification (grocery).
 
 OPEN (waiting on the owner):
+- Run supabase/vendor_ordering_fields.sql in the Supabase SQL editor (step 7 in
+  docs/SUPABASE_SETUP.md). It adds the seven vendor ordering columns; until it runs, the
+  vendor ordering fields cannot save and the live site fails its own health check after
+  every deploy (SCRUM-12, failing since 2026-08-06).
+- Add SUPABASE_DB_URL as a repository secret so merged scripts apply themselves. The
+  workflow that was built for this on 2026-07-31 has never applied anything, because
+  without the secret it exits quietly, which is why the script above is still a manual job.
+  Instructions are at the top of docs/SUPABASE_SETUP.md.
 - Of the three 2026-07-10 voice notes ("most important"), the domain-email one is now
   resolved: it was about the store's own domain email plan (docs/DOMAIN_EMAIL.md). Still
   un-decoded: the 12:18 note ("deposit on the device"). Owner to type it or re-record in

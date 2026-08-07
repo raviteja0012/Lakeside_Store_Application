@@ -2,7 +2,22 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-08-06, on branch claude/great-johnson-CFSbi (latest: owner round 6, below; before it owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-08-07, on branch claude/auto-SCRUM-12 (latest: the health check names its own fix, below; before it owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+
+The health check names its own fix (SCRUM-12), 2026-08-07:
+- The live site has failed its post-deploy health check on "vendor columns present" after
+  every deploy since 2026-08-06, and it will keep failing until somebody runs
+  supabase/vendor_ordering_fields.sql in the Supabase SQL editor. Nothing in the code is
+  wrong. The seven vendor ordering columns are not in the live database yet, so the vendor
+  ordering fields cannot save.
+- What was fixed here is the reporting, because the failure came back four times and the
+  ticket never said what to do about it. /api/health now knows which script supplies each
+  column it checks for, and a failing check answers with the file to run and that it is safe
+  to run twice. That sentence is the one detail the route gives away without CRON_SECRET, so
+  it reaches the raised ticket whether or not that secret is set.
+- Still open and only the owner can do it: add SUPABASE_DB_URL as a repository secret. The
+  workflow that applies merged scripts has never applied one, because without the secret it
+  exits quietly, so every migration is still typed by hand in the SQL editor.
 
 Owner round 6 (SCRUM-9 comments of 31 July and 5 August), shipped 2026-08-06:
 - **Validation messages now sit under the field they are about**, in red, instead of in one
