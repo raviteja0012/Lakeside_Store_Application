@@ -35,6 +35,15 @@ a manual job.
 per-role ones, and running it while enforced login is off would lock everyone out of a
 working store. That one stays a deliberate step, described at the end of this page.
 
+## The live site will tell you which script is missing
+
+If a ticket says the health check failed on something like "vendor columns present", the
+failure now names the columns the database does not have and the one file that adds them,
+for example "Run supabase/vendor_ordering_fields.sql". Find that file in the numbered list
+below, run it and anything above it that has not been run, and the check passes on the next
+deploy. Nothing is being diagnosed by hand: the deployed app compares itself against the
+columns it needs and says which script closes the gap.
+
 ## Existing database: bring it current (2026-07 round)
 
 Run in this order; skip nothing (each is safe to re-run):

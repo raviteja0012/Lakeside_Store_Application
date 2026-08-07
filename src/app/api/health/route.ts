@@ -24,50 +24,81 @@ export const dynamic = "force-dynamic";
 // the vendor columns in August 2026.
 type Check = { name: string; ok: boolean; detail?: string; count?: number; fix?: string };
 
-// Every column the deployed app expects to exist, per table, with the script that adds it.
+// Every column the deployed app expects to exist, and the script in supabase/ that adds it.
 // A missing one means a migration has not been run, and the screens that read it render
 // blank.
 //
 // KEEP THIS CURRENT. When a change adds a column to any select in the app, add it here in
-// the same change, under the script that creates it. The cost of forgetting is a watchdog
+// the same change, with the script that creates it. The cost of forgetting is a watchdog
 // that says the site is fine while a screen is empty, which is what happened on 2026-07-31.
-const REQUIRED_COLUMNS: Record<string, { columns: string[]; scripts: string[] }> = {
+//
+// The script sits against the column rather than against the table on purpose. A table can
+// be waiting on two different scripts, and the whole point of this check is to name the one
+// file that is actually missing instead of every file it could be.
+const REQUIRED_COLUMNS: Record<string, Record<string, string>> = {
   vendor: {
-    columns: [
-      "minimum_order_amount", "no_minimum_order", "summer_order_timeline",
-      "order_location", "order_location_other", "reorder_status", "reorder_comments"
-                                                         // vendor_ordering_fields.sql
-    ],
-    scripts: ["vendor_ordering_fields.sql"]
+    minimum_order_amount: "vendor_ordering_fields.sql",
+    no_minimum_order: "vendor_ordering_fields.sql",
+    summer_order_timeline: "vendor_ordering_fields.sql",
+    order_location: "vendor_ordering_fields.sql",
+    order_location_other: "vendor_ordering_fields.sql",
+    reorder_status: "vendor_ordering_fields.sql",
+    reorder_comments: "vendor_ordering_fields.sql"
   },
   invoice: {
-    columns: [
-      "tax_mode", "delivered_date", "delivery_comments", // order_invoice_fields.sql
-      "invoice_filing", "digital_file_location"          // filing_locations.sql
-    ],
-    scripts: ["order_invoice_fields.sql", "filing_locations.sql"]
+    tax_mode: "order_invoice_fields.sql",
+    delivered_date: "order_invoice_fields.sql",
+    delivery_comments: "order_invoice_fields.sql",
+    invoice_filing: "filing_locations.sql",
+    digital_file_location: "filing_locations.sql"
   },
   purchase_order: {
-    columns: [
-      "order_filing",                                    // order_invoice_fields.sql
-      "digital_file_location"                            // filing_locations.sql
-    ],
-    scripts: ["order_invoice_fields.sql", "filing_locations.sql"]
+    order_filing: "order_invoice_fields.sql",
+    digital_file_location: "filing_locations.sql"
   },
   payment: {
-    columns: [
-      "digital_file_location"                            // filing_locations.sql
-    ],
-    scripts: ["filing_locations.sql"]
+    digital_file_location: "filing_locations.sql"
   }
 };
 
-// One select covers every column a table needs, so a failure cannot say which of the
-// table's scripts is behind. Naming both is fine and is the cheaper answer: every script in
-// run-order.txt is idempotent, so running one that was already applied changes nothing.
+// The sentence a person can act on, built from the scripts the missing columns came from.
+// Every script in run-order.txt is idempotent, so "run it again" is always a safe answer and
+// saying so removes the one reason somebody would hesitate.
 function runThese(scripts: string[]): string {
   const list = scripts.map((s) => `supabase/${s}`).join(" and ");
   return `Run ${list} in the Supabase SQL editor, in the order given in docs/SUPABASE_SETUP.md. Safe to run again if it has already been run.`;
+}
+
+// Which of the required columns the live table does not have.
+//
+// The fast path is one select for the whole list, because that is the normal answer and it
+// costs one query. Only when that fails does this ask column by column, and the extra
+// queries buy the difference between "one of these two scripts" and the one file to run.
+//
+// `id` is the control. Every table here has it, so if the select for `id` alone also fails
+// the table or the database is the problem and no migration would fix it. Returning null
+// says exactly that, and the caller then reports the error without a fix nobody should act
+// on.
+async function missingColumns(
+  db: ReturnType<typeof healthClient>,
+  table: string,
+  columns: string[]
+): Promise<string[] | null> {
+  const probe = async (select: string) => {
+    const { error } = await db.from(table).select(select).limit(1);
+    return !error;
+  };
+
+  if (await probe(columns.join(", "))) return [];
+  if (!(await probe("id"))) return null;
+
+  const missing: string[] = [];
+  for (const column of columns) {
+    if (!(await probe(column))) missing.push(column);
+  }
+  // Every column answered on its own but not together: not a missing migration, so let the
+  // caller fall back to reporting the error it already has.
+  return missing.length ? missing : null;
 }
 
 function healthClient() {
@@ -192,19 +223,33 @@ export async function GET(req: NextRequest) {
   // Failing loudly was not enough on its own. The vendor columns failed on six checks
   // running because the check said "vendor columns present" and nothing else, so whoever
   // read the ticket had no way to know that one named file in the SQL editor would end it.
-  // Each entry now carries the script that supplies its columns, and the failure says so.
-  for (const [table, { columns, scripts }] of Object.entries(REQUIRED_COLUMNS)) {
-    const fix = runThese(scripts);
+  // Each column now carries the script that supplies it, and a failure names the missing
+  // columns and the file to run for them.
+  for (const [table, scriptByColumn] of Object.entries(REQUIRED_COLUMNS)) {
+    const columns = Object.keys(scriptByColumn);
     try {
-      const { error } = await db.from(table).select(columns.join(", ")).limit(1);
-      checks.push({
-        name: `${table} columns present`,
-        ok: !error,
-        detail: error ? `${error.message}. Expected: ${columns.join(", ")}. ${fix}` : undefined,
-        fix: error ? fix : undefined
-      });
+      const missing = await missingColumns(db, table, columns);
+      if (missing && missing.length === 0) {
+        checks.push({ name: `${table} columns present`, ok: true });
+        continue;
+      }
+      if (!missing) {
+        // The table did not answer at all, or answered for every column separately and not
+        // together. Either way this is not a script somebody forgot to run, so say what
+        // happened and do not send anyone to the SQL editor.
+        const { error } = await db.from(table).select(columns.join(", ")).limit(1);
+        checks.push({
+          name: `${table} columns present`,
+          ok: false,
+          detail: `${error?.message || "the table did not answer"}. Expected: ${columns.join(", ")}`
+        });
+        continue;
+      }
+      const scripts = [...new Set(missing.map((c) => scriptByColumn[c]))];
+      const fix = `${table} is missing ${missing.join(", ")}. ${runThese(scripts)}`;
+      checks.push({ name: `${table} columns present`, ok: false, detail: fix, fix });
     } catch (e: any) {
-      checks.push({ name: `${table} columns present`, ok: false, detail: `${e?.message}. ${fix}`, fix });
+      checks.push({ name: `${table} columns present`, ok: false, detail: e?.message });
     }
   }
 

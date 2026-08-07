@@ -11,13 +11,22 @@ The health check names its own fix (SCRUM-12), 2026-08-07:
   wrong. The seven vendor ordering columns are not in the live database yet, so the vendor
   ordering fields cannot save.
 - What was fixed here is the reporting, because the failure came back six times and the
-  ticket never said what to do about it. /api/health now knows which script supplies each
-  column it checks for, and a failing check answers with the file to run and that it is safe
-  to run twice. That sentence is the one detail the route gives away without CRON_SECRET, so
-  it reaches the raised ticket whether or not that secret is set. The watchdog builds its
-  ticket out of each failing check's `detail`, and with no secret set there was no detail at
-  all, which is the whole reason six tickets in a row said "vendor columns present" and
-  nothing more.
+  ticket never said what to do about it. /api/health now records which script supplies each
+  column it checks for, and a failing check answers with the columns that are missing and the
+  file that adds them. That sentence is the one detail the route gives away without
+  CRON_SECRET, and that is the part that mattered: the watchdog builds its ticket out of each
+  failing check's `detail`, the secret is not set on this repository, and so there was no
+  detail at all. Six tickets in a row said "vendor columns present" and nothing more for that
+  one reason.
+- The script is named per column, not per table, so the fix is the file that is actually
+  missing rather than every file that table could be waiting on. The invoice check covers two
+  scripts; when only the filing columns are absent it now says filing_locations.sql alone.
+  The precise answer costs one query per column and only when a check has already failed.
+- A database that does not answer gets no fix sentence. The columns checks cannot tell a
+  missing migration from a database that is down, so they ask for `id` first, which every one
+  of these tables has: if that fails too, the check reports the error and stays quiet about
+  the SQL editor, because "database reachable" is already saying the true thing and running a
+  migration would not have helped.
 - This change was written on 2026-08-07 and pushed, but no pull request was opened for it,
   so it never reached anybody and the ticket fired twice more. The reason is now known and
   it is a repository setting, not a mistake: GitHub refuses `createPullRequest` from the

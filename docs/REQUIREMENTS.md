@@ -101,11 +101,13 @@ SHIPPED (see VERIFICATION.md for sign-off):
 - Field-level validation: every required field reports its own problem underneath itself,
   not in a card at the top of the page (SCRUM-9, 2026-07-31).
 - The health check names its own fix (SCRUM-12, 2026-08-07): when /api/health finds a column
-  the release needs and the live database does not have, it says which script in supabase/
-  supplies it and that the script is safe to run again. The watchdog puts that sentence in
-  the ticket it raises, so a missing migration is a job somebody can finish instead of a
-  check name they cannot act on. The code was never wrong in that failure; the ticket just
-  never said what to do.
+  the release needs and the live database does not have, it names the missing columns, the one
+  script in supabase/ that adds them, and that the script is safe to run again. The script is
+  recorded per column, so a table waiting on two scripts names the one it is actually waiting
+  on. A database that does not answer at all gets no such sentence, because that is not a
+  migration anybody forgot. The watchdog puts the sentence in the ticket it raises, so a
+  missing migration becomes a job somebody can finish instead of a check name they cannot act
+  on. The code was never wrong in that failure; the ticket just never said what to do.
 
 QUEUED (agreed, not built):
 - Department photo tiles and knowledge-note photo attachments, sourced from the owner's
