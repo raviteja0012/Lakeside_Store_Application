@@ -19,9 +19,13 @@ The health check names its own fix (SCRUM-12), 2026-08-07:
   all, which is the whole reason six tickets in a row said "vendor columns present" and
   nothing more.
 - This change was written on 2026-08-07 and pushed, but no pull request was opened for it,
-  so it never reached anybody and the ticket fired twice more. It is now a draft pull
-  request. The code itself is unchanged from that first attempt; what was missing was the
-  pull request.
+  so it never reached anybody and the ticket fired twice more. The reason is now known and
+  it is a repository setting, not a mistake: GitHub refuses `createPullRequest` from the
+  automation's token ("GitHub Actions is not permitted to create or approve pull requests"),
+  so the autopilot can push a branch and can never open the pull request for it. Somebody
+  has to click Compare and pull request on claude/auto-SCRUM-12. Turning that setting on
+  (Settings, Actions, General, Workflow permissions) would fix it for every future ticket,
+  and is worth doing once: a branch nobody opens is work that does not exist.
 - Still open and only the owner can do it: add SUPABASE_DB_URL as a repository secret. The
   workflow that applies merged scripts has never applied one, because without the secret it
   exits quietly, so every migration is still typed by hand in the SQL editor.

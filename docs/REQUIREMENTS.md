@@ -139,6 +139,12 @@ OPEN (waiting on the owner):
   workflow that was built for this on 2026-07-31 has never applied anything, because
   without the secret it exits quietly, which is why the script above is still a manual job.
   Instructions are at the top of docs/SUPABASE_SETUP.md.
+- Let the automation open its own pull requests: Settings, Actions, General, Workflow
+  permissions, "Allow GitHub Actions to create and approve pull requests". Today GitHub
+  refuses createPullRequest from the autopilot's token, so a finished ticket ends as a
+  pushed branch that somebody has to open by hand, and SCRUM-12 sat unopened for a day
+  because of it. Merging stays human either way: the tier is decided by
+  .github/scripts/classify-change.mjs reading the diff, and this setting does not touch it.
 - Of the three 2026-07-10 voice notes ("most important"), the domain-email one is now
   resolved: it was about the store's own domain email plan (docs/DOMAIN_EMAIL.md). Still
   un-decoded: the 12:18 note ("deposit on the device"). Owner to type it or re-record in
