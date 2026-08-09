@@ -1,0 +1,136 @@
+name: Promote develop to production
+
+# The gate between the dev site and the store's live one.
+#
+# Ravi tries a change on the dev site against dummy data. When it is right he moves the
+# ticket to Approved on the board. That move, and only that move, promotes the change to
+# production. This workflow watches for it.
+#
+# Why a board status rather than a button here: because approval belongs where it is visible
+# at a glance, next to the request it approves, rather than buried in a workflow run nobody
+# opens. And because "the owner said yes" is a fact about the work, not about the pipeline.
+#
+# WHAT THIS DOES NOT DO: it does not decide whether a change is safe. That is still the tier
+# classifier reading the diff, and the same three gates running on the pull request. This
+# only answers "has a person said yes", which is the one question a machine must never
+# answer for itself.
+#
+# Inert until the Approved status exists on the board, so it is safe to merge before the
+# board is configured.
+
+on:
+  schedule:
+    - cron: "12,42 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: promote-develop
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Is there a develop branch yet
+        id: branch
+        run: |
+          if git ls-remote --exit-code --heads origin develop >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "There is no develop branch yet, so there is nothing to promote from."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: What has the owner approved
+        id: approved
+        if: steps.branch.outputs.exists == 'true'
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: node .github/scripts/jira-approved.mjs
+
+      - name: Is develop actually ahead of main
+        id: ahead
+        if: steps.approved.outputs.found == 'true'
+        run: |
+          git fetch origin main develop --quiet
+          count=$(git rev-list --count origin/main..origin/develop)
+          echo "Commits on develop that are not on main: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "Nothing to promote: develop and main already agree."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or reuse the promotion pull request
+        id: pr
+        if: steps.ahead.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEYS: ${{ steps.approved.outputs.keys }}
+        run: |
+          set -euo pipefail
+          existing=$(gh pr list --head develop --base main --state open --json number --jq '.[0].number' || echo "")
+          if [ -n "$existing" ]; then
+            echo "Reusing pull request #$existing."
+            echo "number=$existing" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          body=$(printf '%s\n' \
+            "Promoting develop to production." \
+            "" \
+            "Approved on the board, which is what opened this: $KEYS" \
+            "" \
+            "The change has already been merged to develop, deployed to the dev site, and tried" \
+            "there against dummy data. Merging this deploys it to the store and runs the same" \
+            "ordered list of database scripts against the live database." )
+          # A failure here is usually the repository setting that forbids Actions from opening
+          # pull requests, not a problem with the change. Say so rather than dying silently.
+          if ! gh pr create --base main --head develop --title "Promote develop to production ($KEYS)" --body "$body"; then
+            echo "::error::Could not open the promotion pull request."
+            echo "If the message above mentions permissions, turn on Settings, Actions, General,"
+            echo "Workflow permissions, 'Allow GitHub Actions to create and approve pull requests'."
+            echo "Until then, open it by hand: ${{ github.server_url }}/${{ github.repository }}/compare/main...develop"
+            exit 1
+          fi
+          number=$(gh pr list --head develop --base main --state open --json number --jq '.[0].number')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Merge it once its checks pass
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # --auto holds the merge until every check is green, so a red check means this never
+          # lands rather than landing first and being noticed afterwards.
+          gh pr merge "${{ steps.pr.outputs.number }}" --merge --auto
+          echo "Pull request #${{ steps.pr.outputs.number }} will merge when its checks pass."
+
+      - name: Tell the tickets they are on their way
+        if: steps.pr.outputs.number != ''
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          KEYS: ${{ steps.approved.outputs.keys }}
+        run: |
+          IFS=',' read -ra list <<< "$KEYS"
+          for key in "${list[@]}"; do
+            [ -z "$key" ] && continue
+            ISSUE_KEY="$key" TO_STATUS="Done" node .github/scripts/jira-transition.mjs
+          done
