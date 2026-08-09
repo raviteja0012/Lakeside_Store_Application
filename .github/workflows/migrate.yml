@@ -12,20 +12,32 @@ name: Apply database scripts
 #   migration that a person has already reviewed and merged. The judgement stays human; the
 #   typing does not.
 #
-# It runs only on push to main (post-merge), never from a feature branch, so an autopilot
-# branch cannot reach the database. The list of scripts comes from supabase/run-order.txt,
-# which deliberately excludes schema.sql, seed.sql, and auth_setup.sql.
+# It runs only on push to main or develop (post-merge), never from a feature branch, so an
+# autopilot branch cannot reach either database. The list of scripts comes from
+# supabase/run-order.txt, which deliberately excludes schema.sql, seed.sql, auth_setup.sql
+# and seed_dev.sql.
 #
-# Setup (one time): add SUPABASE_DB_URL as a repository secret. In Supabase, Project
-# Settings, Database, Connection string, choose the SESSION pooler (port 5432) or the direct
-# connection, and copy the URI including the password. The transaction pooler on 6543 does
-# not run every DDL statement reliably, so do not use that one.
+# TWO DATABASES, ONE LIST. A push to develop applies to the dev database, a push to main
+# applies to production, and both read the same ordered list. That is the point of having a
+# dev environment at all: a migration is always exercised against dev before it reaches the
+# store's ledger, and it cannot drift between them because there is only one list.
 #
-# Until that secret exists the workflow exits quietly and the scripts stay a manual step.
+# Setup (one time): add SUPABASE_DB_URL as a repository secret, and SUPABASE_DB_URL_DEV once
+# the dev project exists. In Supabase, Project Settings, Database, Connection string, choose
+# the SESSION pooler (port 5432, IPv4) and copy the URI including the password. The direct
+# connection is IPv6-only, which a GitHub runner cannot reach; the transaction pooler on 6543
+# does not run every DDL statement reliably. So: session pooler, both times.
+#
+# Add the secret under Settings, Secrets and variables, ACTIONS, Repository secrets. The
+# Codespaces and Dependabot tabs on that page hold different secrets, and one added there is
+# invisible to this workflow.
+#
+# Until the relevant secret exists the workflow exits quietly and the scripts stay a manual
+# step for that environment.
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "supabase/**"
       - ".github/workflows/migrate.yml"
@@ -50,13 +62,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Which database this run is for. develop means dev, anything else means production.
+      # Decided from the ref rather than from an input, so a dispatch cannot aim a dev change
+      # at the store's ledger by mistake.
+      - name: Decide which database this is
+        id: env
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "develop" ]; then
+            echo "name=dev" >> "$GITHUB_OUTPUT"
+            echo "This run targets the DEV database."
+          else
+            echo "name=production" >> "$GITHUB_OUTPUT"
+            echo "This run targets the PRODUCTION database."
+          fi
+
       - name: Check the connection secret is set
         id: gate
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONN: ${{ github.ref_name == 'develop' && secrets.SUPABASE_DB_URL_DEV || secrets.SUPABASE_DB_URL }}
+          WHICH: ${{ steps.env.outputs.name }}
         run: |
-          if [ -z "$SUPABASE_DB_URL" ]; then
-            echo "No SUPABASE_DB_URL secret, so the scripts stay a manual step. See docs/SUPABASE_SETUP.md."
+          # The length, never the value. A length of 0 means the job genuinely cannot see the
+          # secret, which is a repository settings problem rather than anything in this file,
+          # and printing it turns "skipped" from a mystery into a measurement.
+          echo "Connection secret length as seen by this job: ${#PGCONN}"
+          if [ -z "$PGCONN" ]; then
+            echo "No connection secret for $WHICH, so its scripts stay a manual step."
+            echo "Add it under Settings, Secrets and variables, ACTIONS, Repository secrets."
+            echo "The Codespaces and Dependabot tabs hold different secrets; one added there"
+            echo "is invisible here. See docs/SUPABASE_SETUP.md."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
@@ -65,13 +99,15 @@ jobs:
       - name: Apply the scripts in order
         if: steps.gate.outputs.ready == 'true'
         env:
-          PGCONN: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONN: ${{ github.ref_name == 'develop' && secrets.SUPABASE_DB_URL_DEV || secrets.SUPABASE_DB_URL }}
+          WHICH: ${{ steps.env.outputs.name }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           # The list is the contract. Anything not named here does not run, so adding a file
           # to supabase/ cannot silently execute against the live database.
           scripts=$(grep -vE '^\s*(#|$)' supabase/run-order.txt)
+          echo "Applying to the $WHICH database."
           echo "Scripts to apply, in order:"
           echo "$scripts" | sed 's/^/  /'
 
@@ -96,7 +132,7 @@ jobs:
       - name: Ask the site whether it is still healthy
         if: steps.gate.outputs.ready == 'true' && inputs.dry_run != true
         env:
-          SITE: ${{ vars.PRODUCTION_URL || 'https://robinsons-store.vercel.app' }}
+          SITE: ${{ github.ref_name == 'develop' && vars.DEV_URL || (vars.PRODUCTION_URL || 'https://robinsons-store.vercel.app') }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: node .github/scripts/health-check.mjs
 

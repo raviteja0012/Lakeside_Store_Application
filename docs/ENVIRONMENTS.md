@@ -91,6 +91,27 @@ it out on the store's ledger.
 Steps 2, 3, 4, 7 and 8 are automatic. Steps 5 and 6 are the human ones, and they are the
 whole point of the arrangement.
 
+## What is built, as of 2026-08-09
+
+The design above was written first and the code came after. All of it now exists:
+
+| Piece | Where |
+|---|---|
+| Scripts apply to dev on a push to `develop`, to production on a push to `main` | `.github/workflows/migrate.yml` |
+| The autopilot opens its pull requests into `develop` when that branch exists | `.github/workflows/jira-autopilot.yml` |
+| A finished change parks the ticket in QA | `.github/scripts/jira-transition.mjs` |
+| Approved on the board opens and merges a `develop` to `main` pull request | `.github/workflows/promote.yml`, `.github/scripts/jira-approved.mjs` |
+| Dev dummy data, built from the shapes that have actually broken this code | `supabase/seed_dev.sql` |
+
+Every piece is inert until its secret, branch or status exists, and that is deliberate: the
+autopilot targets `main` exactly as before until a `develop` branch appears, the promotion
+workflow finds nothing until the Approved status exists, and the dev migration is skipped
+until `SUPABASE_DB_URL_DEV` is set. There is no flag day and nothing half-configured breaks.
+
+One rule enforced by CI rather than by remembering it: `supabase/run-order.txt` may never
+name a seed file, so `seed_dev.sql` cannot reach any database through the pipeline. Dev data
+is put there by hand, once.
+
 ## Setting it up
 
 Each piece is inert until its secret or setting exists, so this can be done in any order

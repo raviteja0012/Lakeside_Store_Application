@@ -35,6 +35,34 @@ a manual job.
 per-role ones, and running it while enforced login is off would lock everyone out of a
 working store. That one stays a deliberate step, described at the end of this page.
 
+## Where the connection secret goes, exactly
+
+`SUPABASE_DB_URL` must be a **repository secret on the Actions tab**. That page has three
+tabs, Actions, Codespaces and Dependabot, and an Environment secrets section further down. A
+secret in any of those other places is invisible to the workflow, and the symptom is not an
+error: the migration step reports `skipped` and the run goes green, which looks exactly like
+nothing needing to be done. That cost two days once.
+
+The address is the proof:
+
+    https://github.com/raviteja0012/Lakeside_Store_Application/settings/secrets/actions
+
+If the page URL ends in `/secrets/actions` and the row reads `SUPABASE_DB_URL`, the workflow
+can see it. The gate step prints the value's LENGTH, never the value, so a run now tells you
+whether it found the secret instead of leaving you to guess. A length of 0 means it is not
+there under that name, whatever the settings page appears to show; re-adding it clears any
+stray space or lookalike character that a list view will not display.
+
+The value is the **session pooler** URI from Supabase, port 5432, with the password filled in:
+
+    postgresql://postgres.<project-ref>:<password>@aws-1-<region>.pooler.supabase.com:5432/postgres
+
+Not the direct connection on `db.<ref>.supabase.co`, which is IPv6-only and unreachable from a
+GitHub runner. Not the transaction pooler on 6543, which does not run every DDL statement
+reliably. Percent-encode any of `@ : / ? # [ ] %` in the password, or pick one without them.
+
+For the dev database the same rules apply, under the name `SUPABASE_DB_URL_DEV`.
+
 ## Existing database: bring it current (2026-07 round)
 
 Run in this order; skip nothing (each is safe to re-run):

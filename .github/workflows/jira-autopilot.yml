@@ -73,6 +73,22 @@ jobs:
       - run: npm ci
         if: steps.gate.outputs.ready == 'true'
 
+      # Where finished work lands. Once a develop branch exists, everything goes there first
+      # and reaches production only when the owner approves the ticket. Until it exists this
+      # is main, so the autopilot keeps working exactly as it does today and the dev
+      # environment can be set up without a flag day.
+      - name: Decide where this should land
+        id: base
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          if git ls-remote --exit-code --heads origin develop >/dev/null 2>&1; then
+            echo "branch=develop" >> "$GITHUB_OUTPUT"
+            echo "Work will target develop, and reach production through the Approved gate."
+          else
+            echo "branch=main" >> "$GITHUB_OUTPUT"
+            echo "No develop branch yet, so work targets main as before."
+          fi
+
       - name: Find the work
         id: find
         if: steps.gate.outputs.ready == 'true'
@@ -118,10 +134,11 @@ jobs:
                npm run lint
             4. Update docs/REQUIREMENTS.md, docs/STATUS.md and docs/VERIFICATION.md in the
                same change, as the project rules require.
-            5. Commit, push the branch, and open a DRAFT pull request whose description says
-               what changed, how it was verified, and which ticket it came from. Do not merge:
-               whether this change merges itself is decided after you finish, by a script
-               reading your diff, and nothing you write can change that decision.
+            5. Commit, push the branch, and open a DRAFT pull request AGAINST THE BRANCH
+               "${{ steps.base.outputs.branch }}", whose description says what changed, how it
+               was verified, and which ticket it came from. Do not merge: whether this change
+               merges itself is decided after you finish, by a script reading your diff, and
+               nothing you write can change that decision.
             6. Write the outcome to a file called autopilot-comment.txt in the repository
                root: two or three plain sentences for the owner saying what was built and
                that a pull request is waiting, or why the ticket needs a person. No jargon,
@@ -134,8 +151,9 @@ jobs:
         id: tier
         if: steps.gate.outputs.ready == 'true' && steps.find.outputs.found == 'true'
         run: |
-          git fetch origin main --quiet || true
-          node .github/scripts/classify-change.mjs origin/main
+          base="${{ steps.base.outputs.branch }}"
+          git fetch origin "$base" --quiet || true
+          node .github/scripts/classify-change.mjs "origin/$base"
 
       - name: Merge it when it is only words
         if: steps.tier.outputs.tier == 'A'
@@ -166,6 +184,20 @@ jobs:
             exit 1
           fi
 
+      # A change that reached develop is sitting on the dev site waiting to be tried. Say so
+      # on the board, so "ready for you to look at" is a status rather than something the
+      # owner has to infer from a pull request notification.
+      - name: Park it in QA for the owner to try
+        if: steps.base.outputs.branch == 'develop' && steps.tier.outputs.tier != 'none' && steps.find.outputs.found == 'true'
+        continue-on-error: true
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          ISSUE_KEY: ${{ steps.find.outputs.issue_key }}
+          TO_STATUS: QA
+        run: node .github/scripts/jira-transition.mjs
+
       - name: Tell the ticket
         if: always() && steps.gate.outputs.ready == 'true' && steps.find.outputs.found == 'true'
         env:
@@ -176,4 +208,5 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TIER: ${{ steps.tier.outputs.tier }}
           TIER_REASON: ${{ steps.tier.outputs.reason }}
+          DEV_URL: ${{ steps.base.outputs.branch == 'develop' && vars.DEV_URL || '' }}
         run: node .github/scripts/jira-comment.mjs
