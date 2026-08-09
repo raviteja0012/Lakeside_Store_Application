@@ -79,31 +79,56 @@ jobs:
       - name: Check the connection secret is set
         id: gate
         env:
-          PGCONN: ${{ github.ref_name == 'develop' && secrets.SUPABASE_DB_URL_DEV || secrets.SUPABASE_DB_URL }}
+          # SUPABASE_DB_URL is the name this workflow asks for. POSTGRES_URL_NON_POOLING is
+          # accepted too, because that is what Vercel's Supabase integration calls the same
+          # thing, and copying the value from Vercel along with its name is the obvious
+          # mistake to make. It was made here, and cost a day: the secret existed, the run
+          # said "skipped", and nothing said why.
+          PRIMARY: ${{ github.ref_name == 'develop' && secrets.SUPABASE_DB_URL_DEV || secrets.SUPABASE_DB_URL }}
+          FALLBACK: ${{ github.ref_name == 'develop' && secrets.POSTGRES_URL_NON_POOLING_DEV || secrets.POSTGRES_URL_NON_POOLING }}
           WHICH: ${{ steps.env.outputs.name }}
         run: |
-          # The length, never the value. A length of 0 means the job genuinely cannot see the
-          # secret, which is a repository settings problem rather than anything in this file,
-          # and printing it turns "skipped" from a mystery into a measurement.
-          echo "Connection secret length as seen by this job: ${#PGCONN}"
-          if [ -z "$PGCONN" ]; then
+          # Lengths, never values. A length of 0 for both means the job genuinely cannot see
+          # a secret, which is a repository settings problem rather than anything in this
+          # file, and printing it turns "skipped" from a mystery into a measurement.
+          echo "Lengths seen by this job: SUPABASE_DB_URL=${#PRIMARY}, POSTGRES_URL_NON_POOLING=${#FALLBACK}"
+          if [ -n "$PRIMARY" ]; then
+            echo "Using SUPABASE_DB_URL."
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$FALLBACK" ]; then
+            echo "Using POSTGRES_URL_NON_POOLING, the name Vercel's Supabase integration uses."
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
             echo "No connection secret for $WHICH, so its scripts stay a manual step."
             echo "Add it under Settings, Secrets and variables, ACTIONS, Repository secrets."
             echo "The Codespaces and Dependabot tabs hold different secrets; one added there"
             echo "is invisible here. See docs/SUPABASE_SETUP.md."
             echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Apply the scripts in order
         if: steps.gate.outputs.ready == 'true'
         env:
-          PGCONN: ${{ github.ref_name == 'develop' && secrets.SUPABASE_DB_URL_DEV || secrets.SUPABASE_DB_URL }}
+          PRIMARY: ${{ github.ref_name == 'develop' && secrets.SUPABASE_DB_URL_DEV || secrets.SUPABASE_DB_URL }}
+          FALLBACK: ${{ github.ref_name == 'develop' && secrets.POSTGRES_URL_NON_POOLING_DEV || secrets.POSTGRES_URL_NON_POOLING }}
           WHICH: ${{ steps.env.outputs.name }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
+          PGCONN="${PRIMARY:-$FALLBACK}"
+
+          # A direct connection resolves only over IPv6 on Supabase projects created since
+          # early 2024, and a GitHub runner has no IPv6 route to it. The failure that causes
+          # is a bare "network is unreachable" that reads like an outage, so name it here
+          # while we can still say something useful.
+          case "$PGCONN" in
+            *db.*.supabase.co*)
+              echo "::warning::This looks like the DIRECT connection, which is IPv6-only and"
+              echo "::warning::usually unreachable from a GitHub runner. If the next step fails"
+              echo "::warning::to connect, swap the secret for the SESSION POOLER URI:"
+              echo "::warning::  postgresql://postgres.<ref>:<password>@aws-<n>-<region>.pooler.supabase.com:5432/postgres"
+              ;;
+          esac
           # The list is the contract. Anything not named here does not run, so adding a file
           # to supabase/ cannot silently execute against the live database.
           scripts=$(grep -vE '^\s*(#|$)' supabase/run-order.txt)
