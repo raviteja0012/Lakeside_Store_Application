@@ -23,14 +23,9 @@ name: Apply database scripts
 # store's ledger, and it cannot drift between them because there is only one list.
 #
 # Setup (one time): add SUPABASE_DB_URL as a repository secret, and SUPABASE_DB_URL_DEV once
-# the dev project exists. In Supabase, Project Settings, Database, Connection string, choose
-# the SESSION pooler (port 5432, IPv4) and copy the URI including the password. The direct
-# connection is IPv6-only, which a GitHub runner cannot reach; the transaction pooler on 6543
-# does not run every DDL statement reliably. So: session pooler, both times.
-#
-# Add the secret under Settings, Secrets and variables, ACTIONS, Repository secrets. The
-# Codespaces and Dependabot tabs on that page hold different secrets, and one added there is
-# invisible to this workflow.
+# the dev project exists. The name is ours and the value comes from Supabase: the SESSION
+# POOLER URI on port 5432. Full instructions, including the two connection modes that cannot
+# work, are in docs/SUPABASE_SETUP.md, which is the single place that explains this.
 #
 # Until the relevant secret exists the workflow exits quietly and the scripts stay a manual
 # step for that environment.
@@ -79,43 +74,32 @@ jobs:
       - name: Check the connection secret is set
         id: gate
         env:
-          # SUPABASE_DB_URL is the name this workflow asks for. POSTGRES_URL_NON_POOLING is
-          # accepted too, because that is what Vercel's Supabase integration calls the same
-          # thing, and copying the value from Vercel along with its name is the obvious
-          # mistake to make. It was made here, and cost a day: the secret existed, the run
-          # said "skipped", and nothing said why.
-          PRIMARY: ${{ github.ref_name == 'develop' && secrets.SUPABASE_DB_URL_DEV || secrets.SUPABASE_DB_URL }}
-          FALLBACK: ${{ github.ref_name == 'develop' && secrets.POSTGRES_URL_NON_POOLING_DEV || secrets.POSTGRES_URL_NON_POOLING }}
+          PGCONN: ${{ github.ref_name == 'develop' && secrets.SUPABASE_DB_URL_DEV || secrets.SUPABASE_DB_URL }}
           WHICH: ${{ steps.env.outputs.name }}
         run: |
-          # Lengths, never values. A length of 0 for both means the job genuinely cannot see
-          # a secret, which is a repository settings problem rather than anything in this
-          # file, and printing it turns "skipped" from a mystery into a measurement.
-          echo "Lengths seen by this job: SUPABASE_DB_URL=${#PRIMARY}, POSTGRES_URL_NON_POOLING=${#FALLBACK}"
-          if [ -n "$PRIMARY" ]; then
-            echo "Using SUPABASE_DB_URL."
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          elif [ -n "$FALLBACK" ]; then
-            echo "Using POSTGRES_URL_NON_POOLING, the name Vercel's Supabase integration uses."
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
+          # The length, never the value. A length of 0 means the job cannot see the secret,
+          # which is a settings problem rather than anything in this file, and printing it
+          # turns "skipped" from a mystery into a measurement. It is how a secret that had
+          # been saved under a different name was found in August 2026.
+          echo "Connection secret length as seen by this job: ${#PGCONN}"
+          if [ -z "$PGCONN" ]; then
             echo "No connection secret for $WHICH, so its scripts stay a manual step."
-            echo "Add it under Settings, Secrets and variables, ACTIONS, Repository secrets."
-            echo "The Codespaces and Dependabot tabs hold different secrets; one added there"
-            echo "is invisible here. See docs/SUPABASE_SETUP.md."
+            echo "It must be named exactly SUPABASE_DB_URL (or SUPABASE_DB_URL_DEV for dev),"
+            echo "under Settings, Secrets and variables, ACTIONS, Repository secrets."
+            echo "See docs/SUPABASE_SETUP.md."
             echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Apply the scripts in order
         if: steps.gate.outputs.ready == 'true'
         env:
-          PRIMARY: ${{ github.ref_name == 'develop' && secrets.SUPABASE_DB_URL_DEV || secrets.SUPABASE_DB_URL }}
-          FALLBACK: ${{ github.ref_name == 'develop' && secrets.POSTGRES_URL_NON_POOLING_DEV || secrets.POSTGRES_URL_NON_POOLING }}
+          PGCONN: ${{ github.ref_name == 'develop' && secrets.SUPABASE_DB_URL_DEV || secrets.SUPABASE_DB_URL }}
           WHICH: ${{ steps.env.outputs.name }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          PGCONN="${PRIMARY:-$FALLBACK}"
 
           # A direct connection resolves only over IPv6 on Supabase projects created since
           # early 2024, and a GitHub runner has no IPv6 route to it. The failure that causes

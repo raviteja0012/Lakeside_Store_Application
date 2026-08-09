@@ -121,7 +121,7 @@ and nothing breaks half-configured.
 |---|---|---|
 | Create a second Supabase project, name it something like `robinsons-store-dev` | supabase.com | The dev database |
 | Run `schema.sql`, then `seed.sql`, then `seed_dev.sql` in it | Supabase SQL editor | Builds and fills the dev database |
-| Add repository secret `SUPABASE_DB_URL_DEV` | GitHub, Settings, Secrets | Lets the scripts run against dev. Session pooler or direct connection, not the 6543 transaction pooler |
+| Add repository secret `SUPABASE_DB_URL_DEV` | GitHub, Settings, Secrets and variables, **Actions** | Lets the scripts run against dev. The session pooler URI on port 5432, from Supabase. Not the direct connection (IPv6-only, unreachable from a runner) and not the 6543 transaction pooler. See docs/SUPABASE_SETUP.md |
 | Create a second Vercel project from the same repo, set its production branch to `develop` | vercel.com | The dev site |
 | Point that project's env vars at the DEV Supabase | Vercel, dev project, Environments | So the dev site never reads the real database. Check this twice |
 | Add repository variable `DEV_URL` with the dev site address | GitHub, Settings, Variables | So the ticket comment can link to it |

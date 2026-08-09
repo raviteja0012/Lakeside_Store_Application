@@ -25,11 +25,8 @@ What is automated is only the APPLYING. A schema change still needs a person: `s
 never auto-merges, so a human reads the SQL and merges the pull request exactly as before.
 The judgement stays human; the typing does not.
 
-To switch it on, add a `SUPABASE_DB_URL` repository secret: Supabase, Project Settings,
-Database, Connection string, the SESSION pooler (port 5432) or the direct connection,
-including the password. Not the transaction pooler on 6543, which does not run every DDL
-statement reliably. Without the secret the workflow exits quietly and the list below stays
-a manual job.
+To switch it on, add the `SUPABASE_DB_URL` repository secret described in the next section.
+Without it the workflow exits quietly and the list below stays a manual job.
 
 `auth_setup.sql` is deliberately NOT automated. It swaps the open demo policies for locked
 per-role ones, and running it while enforced login is off would lock everyone out of a
@@ -43,33 +40,45 @@ for example "Run supabase/vendor_ordering_fields.sql". Find that file in the num
 below, run it and anything above it that has not been run, and the check passes on the next
 deploy. Nothing is being diagnosed by hand: the deployed app compares itself against the
 columns it needs and says which script closes the gap.
-## Where the connection secret goes, exactly
+## The connection secret: one name, one source
 
-`SUPABASE_DB_URL` must be a **repository secret on the Actions tab**. That page has three
-tabs, Actions, Codespaces and Dependabot, and an Environment secrets section further down. A
-secret in any of those other places is invisible to the workflow, and the symptom is not an
-error: the migration step reports `skipped` and the run goes green, which looks exactly like
-nothing needing to be done. That cost two days once.
+Two separate things, and confusing them cost a day here, so they are stated apart:
 
-The address is the proof:
+**The NAME is `SUPABASE_DB_URL`.** Ours, not copied from anywhere. Exactly that, case
+sensitive. For the dev database it is `SUPABASE_DB_URL_DEV`.
+
+**The VALUE comes from Supabase**, never from Vercel. Vercel's Supabase integration does
+hold the same connection string under `POSTGRES_URL_NON_POOLING`, but it is marked Sensitive
+there, which means Vercel will not show it to you again after it is created. Going there
+wastes a trip and puts the wrong name in your head.
+
+Getting the value:
+
+1. Supabase dashboard, your project, **Connect**, then **Direct, Connection string**.
+2. Take the **Shared / session pooler** URI, port **5432**. It looks like:
+
+       postgresql://postgres.<project-ref>:<password>@aws-<n>-<region>.pooler.supabase.com:5432/postgres
+
+3. Replace `<password>` with the database password. If you never set one, Project Settings,
+   Database, Reset database password. Nothing in the app reads that password, so resetting it
+   cannot break the site.
+
+Not the direct connection on `db.<ref>.supabase.co`: it resolves only over IPv6, and GitHub
+runners have no IPv6 route, so it fails with a bare "network is unreachable" that reads like
+an outage. Not the transaction pooler on 6543: it does not run every DDL statement reliably.
+**Session pooler, port 5432. That is the only one that works.**
+
+Where it goes:
 
     https://github.com/raviteja0012/Lakeside_Store_Application/settings/secrets/actions
 
-If the page URL ends in `/secrets/actions` and the row reads `SUPABASE_DB_URL`, the workflow
-can see it. The gate step prints the value's LENGTH, never the value, so a run now tells you
-whether it found the secret instead of leaving you to guess. A length of 0 means it is not
-there under that name, whatever the settings page appears to show; re-adding it clears any
-stray space or lookalike character that a list view will not display.
+It must be a **Repository secret on the Actions tab**. That page also has Codespaces and
+Dependabot tabs and an Environment secrets section, and a secret in any of those is invisible
+to the workflow. The symptom is not an error: the migration step reports `skipped` and the run
+goes green, which looks exactly like nothing needing to be done.
 
-The value is the **session pooler** URI from Supabase, port 5432, with the password filled in:
-
-    postgresql://postgres.<project-ref>:<password>@aws-1-<region>.pooler.supabase.com:5432/postgres
-
-Not the direct connection on `db.<ref>.supabase.co`, which is IPv6-only and unreachable from a
-GitHub runner. Not the transaction pooler on 6543, which does not run every DDL statement
-reliably. Percent-encode any of `@ : / ? # [ ] %` in the password, or pick one without them.
-
-For the dev database the same rules apply, under the name `SUPABASE_DB_URL_DEV`.
+The gate step prints the value's LENGTH, never the value. A length of 0 means the workflow
+cannot see it under that name, whatever the settings page appears to show.
 
 ## Existing database: bring it current (2026-07 round)
 
