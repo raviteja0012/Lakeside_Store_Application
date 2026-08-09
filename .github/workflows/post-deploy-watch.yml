@@ -46,6 +46,23 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: node .github/scripts/health-check.mjs
 
+      # A loop that opens tickets has to close them, or the board goes on saying the site is
+      # broken long after it was fixed, and the next real incident lands as a comment on a
+      # stale ticket named after the last one. This is the half that was missing: SCRUM-12
+      # stayed open through its own recovery because nothing was watching for it.
+      #
+      # Two HTTP calls when a ticket is open, one when none is, and no model call ever.
+      - name: Close the health ticket when it is well again
+        if: steps.health.outputs.healthy == 'true'
+        continue-on-error: true
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          SUMMARY: ${{ steps.health.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node .github/scripts/resolve-health-ticket.mjs
+
       - name: Raise a ticket when it is not well
         if: steps.health.outputs.healthy == 'false'
         env:

@@ -91,6 +91,12 @@ the things a green build cannot see:
 A failure raises a bug on the board, which the intake loop then picks up. That is what makes
 it a loop rather than a pipeline: the output of the watch is the input of the build.
 
+**And it closes what it opens.** When the site is well again the watchdog comments what
+recovered and moves its own ticket to Done. That half was missing until 2026-08-09, and its
+absence was not cosmetic: SCRUM-12 stayed open through its own recovery, and a board that
+goes on saying the site is broken is one where the next real incident arrives as a comment
+on a stale ticket named after the last one. Raising is the easy half of monitoring.
+
 It never reports a dollar figure, so the endpoint is safe to call from anywhere.
 
 ### 5. Refine
