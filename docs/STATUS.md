@@ -2,7 +2,42 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-08-06, on branch claude/great-johnson-CFSbi (latest: owner round 6, below; before it owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-08-07, on branch claude/auto-SCRUM-12 (latest: the health check names its own fix, below; before it owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+
+The health check names its own fix (SCRUM-12), 2026-08-07:
+- The live site has failed its post-deploy health check on "vendor columns present" after
+  every deploy since 2026-08-06, and it will keep failing until somebody runs
+  supabase/vendor_ordering_fields.sql in the Supabase SQL editor. Nothing in the code is
+  wrong. The seven vendor ordering columns are not in the live database yet, so the vendor
+  ordering fields cannot save.
+- What was fixed here is the reporting, because the failure came back six times and the
+  ticket never said what to do about it. /api/health now records which script supplies each
+  column it checks for, and a failing check answers with the columns that are missing and the
+  file that adds them. That sentence is the one detail the route gives away without
+  CRON_SECRET, and that is the part that mattered: the watchdog builds its ticket out of each
+  failing check's `detail`, the secret is not set on this repository, and so there was no
+  detail at all. Six tickets in a row said "vendor columns present" and nothing more for that
+  one reason.
+- The script is named per column, not per table, so the fix is the file that is actually
+  missing rather than every file that table could be waiting on. The invoice check covers two
+  scripts; when only the filing columns are absent it now says filing_locations.sql alone.
+  The precise answer costs one query per column and only when a check has already failed.
+- A database that does not answer gets no fix sentence. The columns checks cannot tell a
+  missing migration from a database that is down, so they ask for `id` first, which every one
+  of these tables has: if that fails too, the check reports the error and stays quiet about
+  the SQL editor, because "database reachable" is already saying the true thing and running a
+  migration would not have helped.
+- This change was written on 2026-08-07 and pushed, but no pull request was opened for it,
+  so it never reached anybody and the ticket fired twice more. The reason is now known and
+  it is a repository setting, not a mistake: GitHub refuses `createPullRequest` from the
+  automation's token ("GitHub Actions is not permitted to create or approve pull requests"),
+  so the autopilot can push a branch and can never open the pull request for it. Somebody
+  has to click Compare and pull request on claude/auto-SCRUM-12. Turning that setting on
+  (Settings, Actions, General, Workflow permissions) would fix it for every future ticket,
+  and is worth doing once: a branch nobody opens is work that does not exist.
+- Still open and only the owner can do it: add SUPABASE_DB_URL as a repository secret. The
+  workflow that applies merged scripts has never applied one, because without the secret it
+  exits quietly, so every migration is still typed by hand in the SQL editor.
 
 Owner round 6 (SCRUM-9 comments of 31 July and 5 August), shipped 2026-08-06:
 - **Validation messages now sit under the field they are about**, in red, instead of in one
