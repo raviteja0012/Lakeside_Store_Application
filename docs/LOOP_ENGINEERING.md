@@ -91,6 +91,12 @@ the things a green build cannot see:
 A failure raises a bug on the board, which the intake loop then picks up. That is what makes
 it a loop rather than a pipeline: the output of the watch is the input of the build.
 
+**And it closes what it opens.** When the site is well again the watchdog comments what
+recovered and moves its own ticket to Done. That half was missing until 2026-08-09, and its
+absence was not cosmetic: SCRUM-12 stayed open through its own recovery, and a board that
+goes on saying the site is broken is one where the next real incident arrives as a comment
+on a stale ticket named after the last one. Raising is the easy half of monitoring.
+
 It never reports a dollar figure, so the endpoint is safe to call from anywhere.
 
 ### 5. Refine
@@ -147,6 +153,30 @@ tier classifier is the strong one, because it does not read the ticket.
 
 Both have `tools: Read, Grep, Glob` and no write access at all. That is config, not
 instruction: they cannot edit even if asked to.
+
+## Borrowed skills
+
+`.agents/skills/` holds two skills installed from Supabase's official `supabase/agent-skills`
+repository on 2026-08-09, pinned by content hash in `skills-lock.json` and symlinked into
+`.claude/skills/` so Claude Code picks them up:
+
+- **supabase-postgres-best-practices** covers schema design, migrations, RLS policies and
+  their tests, indexes, and diagnosing slow queries or rows visible to the wrong tenant.
+- **supabase** covers the client libraries, auth and session handling, and the CLI.
+
+They earn their place here specifically because this repository's recurring failures have all
+been database ones: a migration nobody ran, a policy that scoped a table but not its children,
+a money rule changed on one side only. That is exactly the ground the first skill covers.
+
+They were read before being committed, because a skill runs with the agent's permissions.
+Both are documentation only: 208K of markdown, no scripts of any kind, nothing executable.
+Re-check that after any update, because it is the property that makes them safe to keep.
+
+The Supabase MCP server is a separate thing and is NOT enabled by this. It needs an
+interactive sign-in that a headless run cannot do, and it would give an agent live access to
+the production database, which is a bigger decision than reading documentation. These skills
+make the agent better at writing SQL a person still applies; the MCP server would let it
+reach the store's real data.
 
 ## How these standards travel (and why they are not a plugin)
 

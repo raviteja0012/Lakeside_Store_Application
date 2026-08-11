@@ -14,35 +14,92 @@ export const dynamic = "force-dynamic";
 // raises a ticket when a check fails, so a bad release is found by the machine rather than
 // by the owner noticing a wrong number a week later.
 //
-// It never returns a dollar figure. Without CRON_SECRET it answers pass/fail per check;
-// with the secret it adds counts, so the response is safe to call from anywhere.
+// It never returns a dollar figure. Without CRON_SECRET it answers pass/fail per check plus
+// the one sentence saying what to do about a failure; with the secret it adds the database
+// error and the counts, so the response is safe to call from anywhere.
 
-type Check = { name: string; ok: boolean; detail?: string; count?: number };
+// `fix` is the one sentence a person can act on. It is the only detail this route gives
+// away without the secret, because a check that only says what is wrong and never what to
+// do about it gets raised, read, and ignored, which is what happened six times running to
+// the vendor columns in August 2026.
+type Check = { name: string; ok: boolean; detail?: string; count?: number; fix?: string };
 
-// Every column the deployed app expects to exist, per table. A missing one means a
-// migration has not been run, and the screens that read it render blank.
+// Every column the deployed app expects to exist, and the script in supabase/ that adds it.
+// A missing one means a migration has not been run, and the screens that read it render
+// blank.
 //
 // KEEP THIS CURRENT. When a change adds a column to any select in the app, add it here in
-// the same change. The cost of forgetting is a watchdog that says the site is fine while a
-// screen is empty, which is what happened on 2026-07-31.
-const REQUIRED_COLUMNS: Record<string, string[]> = {
-  vendor: [
-    "minimum_order_amount", "no_minimum_order", "summer_order_timeline",
-    "order_location", "order_location_other", "reorder_status", "reorder_comments"
-                                                         // vendor_ordering_fields.sql
-  ],
-  invoice: [
-    "tax_mode", "delivered_date", "delivery_comments",   // order_invoice_fields.sql
-    "invoice_filing", "digital_file_location"            // filing_locations.sql
-  ],
-  purchase_order: [
-    "order_filing",                                      // order_invoice_fields.sql
-    "digital_file_location"                              // filing_locations.sql
-  ],
-  payment: [
-    "digital_file_location"                              // filing_locations.sql
-  ]
+// the same change, with the script that creates it. The cost of forgetting is a watchdog
+// that says the site is fine while a screen is empty, which is what happened on 2026-07-31.
+//
+// The script sits against the column rather than against the table on purpose. A table can
+// be waiting on two different scripts, and the whole point of this check is to name the one
+// file that is actually missing instead of every file it could be.
+const REQUIRED_COLUMNS: Record<string, Record<string, string>> = {
+  vendor: {
+    minimum_order_amount: "vendor_ordering_fields.sql",
+    no_minimum_order: "vendor_ordering_fields.sql",
+    summer_order_timeline: "vendor_ordering_fields.sql",
+    order_location: "vendor_ordering_fields.sql",
+    order_location_other: "vendor_ordering_fields.sql",
+    reorder_status: "vendor_ordering_fields.sql",
+    reorder_comments: "vendor_ordering_fields.sql"
+  },
+  invoice: {
+    tax_mode: "order_invoice_fields.sql",
+    delivered_date: "order_invoice_fields.sql",
+    delivery_comments: "order_invoice_fields.sql",
+    invoice_filing: "filing_locations.sql",
+    digital_file_location: "filing_locations.sql"
+  },
+  purchase_order: {
+    order_filing: "order_invoice_fields.sql",
+    digital_file_location: "filing_locations.sql"
+  },
+  payment: {
+    digital_file_location: "filing_locations.sql"
+  }
 };
+
+// The sentence a person can act on, built from the scripts the missing columns came from.
+// Every script in run-order.txt is idempotent, so "run it again" is always a safe answer and
+// saying so removes the one reason somebody would hesitate.
+function runThese(scripts: string[]): string {
+  const list = scripts.map((s) => `supabase/${s}`).join(" and ");
+  return `Run ${list} in the Supabase SQL editor, in the order given in docs/SUPABASE_SETUP.md. Safe to run again if it has already been run.`;
+}
+
+// Which of the required columns the live table does not have.
+//
+// The fast path is one select for the whole list, because that is the normal answer and it
+// costs one query. Only when that fails does this ask column by column, and the extra
+// queries buy the difference between "one of these two scripts" and the one file to run.
+//
+// `id` is the control. Every table here has it, so if the select for `id` alone also fails
+// the table or the database is the problem and no migration would fix it. Returning null
+// says exactly that, and the caller then reports the error without a fix nobody should act
+// on.
+async function missingColumns(
+  db: ReturnType<typeof healthClient>,
+  table: string,
+  columns: string[]
+): Promise<string[] | null> {
+  const probe = async (select: string) => {
+    const { error } = await db.from(table).select(select).limit(1);
+    return !error;
+  };
+
+  if (await probe(columns.join(", "))) return [];
+  if (!(await probe("id"))) return null;
+
+  const missing: string[] = [];
+  for (const column of columns) {
+    if (!(await probe(column))) missing.push(column);
+  }
+  // Every column answered on its own but not together: not a missing migration, so let the
+  // caller fall back to reporting the error it already has.
+  return missing.length ? missing : null;
+}
 
 function healthClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -162,23 +219,52 @@ export async function GET(req: NextRequest) {
   // in the comment above each entry: if you add a column to a select anywhere in the app,
   // add it here in the same change. It is still a list a person maintains, but it is one
   // list rather than one per screen, and it fails loudly instead of quietly.
-  for (const [table, columns] of Object.entries(REQUIRED_COLUMNS)) {
+  //
+  // Failing loudly was not enough on its own. The vendor columns failed on six checks
+  // running because the check said "vendor columns present" and nothing else, so whoever
+  // read the ticket had no way to know that one named file in the SQL editor would end it.
+  // Each column now carries the script that supplies it, and a failure names the missing
+  // columns and the file to run for them.
+  for (const [table, scriptByColumn] of Object.entries(REQUIRED_COLUMNS)) {
+    const columns = Object.keys(scriptByColumn);
     try {
-      const { error } = await db.from(table).select(columns.join(", ")).limit(1);
-      checks.push({
-        name: `${table} columns present`,
-        ok: !error,
-        detail: error ? `${error.message}. Expected: ${columns.join(", ")}` : undefined
-      });
+      const missing = await missingColumns(db, table, columns);
+      if (missing && missing.length === 0) {
+        checks.push({ name: `${table} columns present`, ok: true });
+        continue;
+      }
+      if (!missing) {
+        // The table did not answer at all, or answered for every column separately and not
+        // together. Either way this is not a script somebody forgot to run, so say what
+        // happened and do not send anyone to the SQL editor.
+        const { error } = await db.from(table).select(columns.join(", ")).limit(1);
+        checks.push({
+          name: `${table} columns present`,
+          ok: false,
+          detail: `${error?.message || "the table did not answer"}. Expected: ${columns.join(", ")}`
+        });
+        continue;
+      }
+      const scripts = [...new Set(missing.map((c) => scriptByColumn[c]))];
+      const fix = `${table} is missing ${missing.join(", ")}. ${runThese(scripts)}`;
+      checks.push({ name: `${table} columns present`, ok: false, detail: fix, fix });
     } catch (e: any) {
       checks.push({ name: `${table} columns present`, ok: false, detail: e?.message });
     }
   }
 
   const ok = checks.every((c) => c.ok);
+  // Without the secret a failing check still says what to do about it. The fix names a
+  // script that is already public in this repository, so it gives away nothing the store
+  // would not want said out loud, and it is the difference between a ticket somebody can
+  // close and a ticket that comes back after every deploy.
   const body = full
     ? { ok, configured: true, checks }
-    : { ok, configured: true, checks: checks.map((c) => ({ name: c.name, ok: c.ok })) };
+    : {
+        ok,
+        configured: true,
+        checks: checks.map((c) => (c.ok || !c.fix ? { name: c.name, ok: c.ok } : { name: c.name, ok: c.ok, detail: c.fix }))
+      };
   // Always 200: the watchdog reads `ok`, and a non-200 would be indistinguishable from the
   // site being down, which is a different problem with a different fix.
   return NextResponse.json(body);

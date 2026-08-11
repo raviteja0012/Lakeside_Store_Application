@@ -100,6 +100,14 @@ SHIPPED (see VERIFICATION.md for sign-off):
   status change alone. Migration: supabase/vendor_ordering_fields.sql.
 - Field-level validation: every required field reports its own problem underneath itself,
   not in a card at the top of the page (SCRUM-9, 2026-07-31).
+- The health check names its own fix (SCRUM-12, 2026-08-07): when /api/health finds a column
+  the release needs and the live database does not have, it names the missing columns, the one
+  script in supabase/ that adds them, and that the script is safe to run again. The script is
+  recorded per column, so a table waiting on two scripts names the one it is actually waiting
+  on. A database that does not answer at all gets no such sentence, because that is not a
+  migration anybody forgot. The watchdog puts the sentence in the ticket it raises, so a
+  missing migration becomes a job somebody can finish instead of a check name they cannot act
+  on. The code was never wrong in that failure; the ticket just never said what to do.
 
 QUEUED (agreed, not built):
 - Department photo tiles and knowledge-note photo attachments, sourced from the owner's
@@ -125,6 +133,24 @@ QUEUED (agreed, not built):
 - Price-check activity list and notification (grocery).
 
 OPEN (waiting on the owner):
+- DONE, verified 2026-08-11: run supabase/vendor_ordering_fields.sql. This was recorded as
+  failing since 2026-08-06, with the vendor ordering fields unable to save. The live health
+  check now answers ok:true with "vendor columns present" passing, so the script has been
+  run and the columns are there. Left in place rather than deleted because it is the second
+  stale OPEN item found this way (the first was the custom domain in docs/DOMAIN_EMAIL.md):
+  this file records what somebody believed on the day they wrote it, and a line that says
+  "still broken" outlives the fix unless something checks. /api/health is the check for this
+  one, so read it before repeating anything in this section.
+- Add SUPABASE_DB_URL as a repository secret so merged scripts apply themselves. The
+  workflow that was built for this on 2026-07-31 has never applied anything, because
+  without the secret it exits quietly, which is why the script above is still a manual job.
+  Instructions are at the top of docs/SUPABASE_SETUP.md.
+- Let the automation open its own pull requests: Settings, Actions, General, Workflow
+  permissions, "Allow GitHub Actions to create and approve pull requests". Today GitHub
+  refuses createPullRequest from the autopilot's token, so a finished ticket ends as a
+  pushed branch that somebody has to open by hand, and SCRUM-12 sat unopened for a day
+  because of it. Merging stays human either way: the tier is decided by
+  .github/scripts/classify-change.mjs reading the diff, and this setting does not touch it.
 - The vendor form asks every vendor for everything (owner complaint 2026-08-11, and the
   same point he made on 2026-07-27). Adding a vendor presents about 13 field groups and 20
   controls, including a seven-box location group, whatever the vendor is. His own workbook

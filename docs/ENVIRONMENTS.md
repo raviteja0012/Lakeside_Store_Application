@@ -91,6 +91,27 @@ it out on the store's ledger.
 Steps 2, 3, 4, 7 and 8 are automatic. Steps 5 and 6 are the human ones, and they are the
 whole point of the arrangement.
 
+## What is built, as of 2026-08-09
+
+The design above was written first and the code came after. All of it now exists:
+
+| Piece | Where |
+|---|---|
+| Scripts apply to dev on a push to `develop`, to production on a push to `main` | `.github/workflows/migrate.yml` |
+| The autopilot opens its pull requests into `develop` when that branch exists | `.github/workflows/jira-autopilot.yml` |
+| A finished change parks the ticket in QA | `.github/scripts/jira-transition.mjs` |
+| Approved on the board opens and merges a `develop` to `main` pull request | `.github/workflows/promote.yml`, `.github/scripts/jira-approved.mjs` |
+| Dev dummy data, built from the shapes that have actually broken this code | `supabase/seed_dev.sql` |
+
+Every piece is inert until its secret, branch or status exists, and that is deliberate: the
+autopilot targets `main` exactly as before until a `develop` branch appears, the promotion
+workflow finds nothing until the Approved status exists, and the dev migration is skipped
+until `SUPABASE_DB_URL_DEV` is set. There is no flag day and nothing half-configured breaks.
+
+One rule enforced by CI rather than by remembering it: `supabase/run-order.txt` may never
+name a seed file, so `seed_dev.sql` cannot reach any database through the pipeline. Dev data
+is put there by hand, once.
+
 ## Setting it up
 
 Each piece is inert until its secret or setting exists, so this can be done in any order
@@ -100,7 +121,7 @@ and nothing breaks half-configured.
 |---|---|---|
 | Create a second Supabase project, name it something like `robinsons-store-dev` | supabase.com | The dev database |
 | Run `schema.sql`, then `seed.sql`, then `seed_dev.sql` in it | Supabase SQL editor | Builds and fills the dev database |
-| Add repository secret `SUPABASE_DB_URL_DEV` | GitHub, Settings, Secrets | Lets the scripts run against dev. Session pooler or direct connection, not the 6543 transaction pooler |
+| Add repository secret `SUPABASE_DB_URL_DEV` | GitHub, Settings, Secrets and variables, **Actions** | Lets the scripts run against dev. The session pooler URI on port 5432, from Supabase. Not the direct connection (IPv6-only, unreachable from a runner) and not the 6543 transaction pooler. See docs/SUPABASE_SETUP.md |
 | Create a second Vercel project from the same repo, set its production branch to `develop` | vercel.com | The dev site |
 | Point that project's env vars at the DEV Supabase | Vercel, dev project, Environments | So the dev site never reads the real database. Check this twice |
 | Add repository variable `DEV_URL` with the dev site address | GitHub, Settings, Variables | So the ticket comment can link to it |
