@@ -1,0 +1,632 @@
+<title>What the store's app runs on</title>
+<style>
+  /* Same tokens as the vendor-details note, on purpose: these are companion
+     documents for the same reader. From references/design-tokens.md. */
+  :root {
+    --ground: #F7F8FA;
+    --panel: #FFFFFF;
+    --panel-sunk: #FCFDFE;
+    --border: #E2E6EB;
+    --border-strong: #CDD5DE;
+    --ink: #1F2933;
+    --ink-soft: #5B6570;
+    --ink-faint: #808A96;
+    --accent: #2F5FA8;
+    --accent-soft: #EAF1FB;
+    --warn: #B7791F;
+    --warn-tint: #FBF1E1;
+    --good: #1E8E5A;
+    --good-tint: #E6F4EC;
+    --shadow: 0 1px 2px rgba(31, 41, 51, .05), 0 8px 24px -16px rgba(31, 41, 51, .22);
+
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #12171D;
+      --panel: #1A2029;
+      --panel-sunk: #161C24;
+      --border: #2A323C;
+      --border-strong: #3A4450;
+      --ink: #E8ECF1;
+      --ink-soft: #A3AEBB;
+      --ink-faint: #7E8896;
+      --accent: #7BA4DC;
+      --accent-soft: #1D2A3D;
+      --warn: #E0A94A;
+      --warn-tint: #2E2617;
+      --good: #4FBF8B;
+      --good-tint: #14291F;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #12171D;
+    --panel: #1A2029;
+    --panel-sunk: #161C24;
+    --border: #2A323C;
+    --border-strong: #3A4450;
+    --ink: #E8ECF1;
+    --ink-soft: #A3AEBB;
+    --ink-faint: #7E8896;
+    --accent: #7BA4DC;
+    --accent-soft: #1D2A3D;
+    --warn: #E0A94A;
+    --warn-tint: #2E2617;
+    --good: #4FBF8B;
+    --good-tint: #14291F;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    padding: 28px 20px 72px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap { max-width: 42rem; margin: 0 auto; display: flex; flex-direction: column; gap: 36px; }
+
+  .masthead { display: flex; flex-direction: column; gap: 10px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(27px, 6.4vw, 37px);
+    line-height: 1.16;
+    letter-spacing: -.021em;
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .standfirst { font-size: 17px; color: var(--ink-soft); margin: 0; text-wrap: pretty; }
+
+  .byline {
+    font-size: 13.5px;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    margin: 4px 0 0;
+  }
+
+  section { display: flex; flex-direction: column; gap: 14px; }
+
+  h2 { font-size: 20px; font-weight: 600; letter-spacing: -.012em; margin: 0; text-wrap: balance; }
+  h3 { font-size: 15.5px; font-weight: 600; margin: 0; text-wrap: balance; }
+  p { margin: 0; text-wrap: pretty; }
+  .lede { font-size: 16.5px; }
+
+  /* The four pieces, as a stack the eye can follow ---------------------- */
+  .stack { display: flex; flex-direction: column; gap: 8px; }
+
+  .layer {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 13px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+  }
+
+  .layer .role {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    flex: 0 0 100%;
+  }
+
+  .layer .name { font-weight: 600; font-size: 15.5px; }
+  .layer .note { font-size: 14.5px; color: var(--ink-soft); }
+
+  .arrow {
+    text-align: center;
+    color: var(--border-strong);
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  /* Tables -------------------------------------------------------------- */
+  .tbl-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 32rem;
+    font-size: 14.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  caption {
+    caption-side: bottom;
+    text-align: left;
+    font-size: 13px;
+    color: var(--ink-faint);
+    padding: 10px 16px 12px;
+  }
+
+  th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    background: var(--panel-sunk);
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+  td.k { color: var(--ink); font-weight: 600; white-space: nowrap; width: 1%; }
+  td.v { color: var(--ink-soft); }
+  td.num { text-align: right; white-space: nowrap; color: var(--ink-soft); }
+  th.num { text-align: right; }
+  tfoot td { font-weight: 600; color: var(--ink); border-top: 1px solid var(--border-strong); }
+
+  /* Blocks -------------------------------------------------------------- */
+  .block { border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .block.gap { background: var(--warn-tint); border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent); }
+  .block.gain { background: var(--good-tint); border: 1px solid color-mix(in srgb, var(--good) 34%, transparent); }
+
+  .block-head {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    margin: 0;
+  }
+
+  .block.gap .block-head { color: var(--warn); }
+  .block.gain .block-head { color: var(--good); }
+
+  ul.plain {
+    margin: 0;
+    padding-left: 1.15em;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    font-size: 15px;
+    color: var(--ink-soft);
+  }
+
+  ul.plain li::marker { color: var(--ink-faint); }
+  ul.plain strong { color: var(--ink); font-weight: 600; }
+
+  ol.todo {
+    margin: 0;
+    padding-left: 1.3em;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    font-size: 15px;
+    color: var(--ink-soft);
+  }
+
+  ol.todo li::marker { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  ol.todo strong { color: var(--ink); font-weight: 600; }
+  ol.todo .sub { display: block; margin-top: 3px; }
+
+  .callout {
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    padding: 18px 20px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: .89em;
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 2px 6px;
+    border-radius: 4px;
+    word-break: break-all;
+  }
+
+  footer {
+    font-size: 13.5px;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+  /* Print and PDF --------------------------------------------------------
+     Light tokens are forced: nobody wants a dark-theme PDF. The tinted blocks
+     carry status meaning rather than decoration, so colour adjustment is set
+     to exact and they survive the print instead of washing out. Contrast is
+     nudged up, because ink on paper has no backlight to help it. */
+  @media print {
+    :root {
+      --ground: #FFFFFF;
+      --panel: #FFFFFF;
+      --panel-sunk: #FAFBFC;
+      --border: #D8DEE5;
+      --border-strong: #B9C3CE;
+      --ink: #141A21;
+      --ink-soft: #4A545F;
+      --ink-faint: #6E7883;
+      --accent: #23508F;
+      --accent-soft: #EAF1FB;
+      --warn: #8A5A12;
+      --warn-tint: #FBF1E1;
+      --good: #146848;
+      --good-tint: #E6F4EC;
+      --shadow: none;
+    }
+
+    @page { size: A4; margin: 16mm 15mm; }
+
+    html, body {
+      background: #FFFFFF;
+      font-size: 10.4pt;
+      line-height: 1.5;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .wrap { max-width: none; gap: 22px; }
+
+    h1 { font-size: 22pt; }
+    h2 { font-size: 13.5pt; }
+    h3 { font-size: 11pt; }
+    .standfirst { font-size: 11pt; }
+    .lede { font-size: 10.6pt; }
+
+    /* A heading stays with what it introduces. */
+    h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
+
+    /* Never split a self-contained unit across a page boundary. Tables are
+       deliberately absent: some run longer than a page, and forbidding a split
+       would push the whole thing to a fresh sheet and leave a gap behind it.
+       They break between rows instead, repeating the header. */
+    .block, .callout, .ask, .choice, .example, .layer, .stack, .item, li, tr {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    /* A horizontal scroller has nowhere to scroll on paper. */
+    .tbl-wrap { overflow: visible; }
+    table { min-width: 0; width: 100%; }
+    thead { display: table-header-group; }
+    /* Shrink the label column to its content so the prose column gets the room. */
+    td.k { width: 1%; }
+
+    .ask, .callout, .tbl-wrap { box-shadow: none; }
+    p { orphans: 3; widows: 3; }
+    a { color: var(--accent); text-decoration: none; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Reference note</p>
+    <h1>The store's app: what it does, and what it runs on</h1>
+    <p class="standfirst">
+      Everything the app covers, the services behind it, where the store's data physically
+      sits, what it costs a month, and the short list of things only you can do.
+    </p>
+    <p class="byline">Robinson's General Store &middot; for Ravi Kiran &middot; 11 August 2026</p>
+  </header>
+
+  <section>
+    <h2>What the app covers</h2>
+    <p class="lede">
+      Seven areas. Everything starts from a photograph of a piece of paper, which is the
+      part that used to get lost.
+    </p>
+
+    <div class="tbl-wrap">
+      <table>
+        <caption>Every area listed here is built and in use. The staff see only what their role allows.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Area</th>
+            <th scope="col">What it does</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k">Capture</td>
+            <td class="v">Photograph or drop an invoice and the app reads the vendor, date, and each line off it. Staff confirm one screen. Anything the app was unsure about is flagged in amber and cannot be saved until a person looks at it. There is a typing path too, for phone orders with no paperwork.</td>
+          </tr>
+          <tr>
+            <td class="k">Vendors and orders</td>
+            <td class="v">The vendor directory by department, each vendor's orders, invoices, credits, contact and rep, payment terms, and the ordering profile: minimum order, when the summer order goes in, where it gets placed, and whether it needed reordering.</td>
+          </tr>
+          <tr>
+            <td class="k">Money</td>
+            <td class="v">Invoices with HST handled four ways, freight, part deliveries, payments split across several invoices, deposits, post-dated cheques that settle themselves on the day, credit notes, and what is due or overdue with a quick way to pay it.</td>
+          </tr>
+          <tr>
+            <td class="k">Stock and pricing</td>
+            <td class="v">Inventory counts, reorder suggestions worked out from the order history and the counts, and printable Garden Centre price signs with a margin calculator.</td>
+          </tr>
+          <tr>
+            <td class="k">Knowing and asking</td>
+            <td class="v">The knowledge notes, where what used to live in somebody's head gets written down and attributed, and Ask the store, which answers questions from the store's own records and names where the answer came from.</td>
+          </tr>
+          <tr>
+            <td class="k">Property and people</td>
+            <td class="v">Building assets and recurring maintenance tasks with due dates and a daily checklist, the Ontario pesticide licence and insurance with their expiry dates, employees, pay rates, and the weekly schedule.</td>
+          </tr>
+          <tr>
+            <td class="k">Getting data in and out</td>
+            <td class="v">Import the bookings workbook, the weekly schedule or a stock sheet; export everything as one Excel file with a tab per table. Plus the Suggestions space where your notes, screenshots and voice recordings become work.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="block gain">
+      <p class="block-head">The three places the app reads and writes for you</p>
+      <ul class="plain">
+        <li><strong>Reading invoices.</strong> Turns a photograph into lines with amounts, flagging anything it is unsure of.</li>
+        <li><strong>Answering questions.</strong> Ask the store anything about your vendors, invoices and notes, in plain words.</li>
+        <li><strong>Drafting the reorder list.</strong> Suggests what to reorder, with the reasoning shown, for you to accept or ignore.</li>
+      </ul>
+      <p style="font-size:15px;color:var(--ink-soft);margin:0;">
+        None of the three decides anything on its own. Every dollar figure is confirmed by a
+        person before it is saved.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The four pieces</h2>
+    <p class="lede">
+      The app is not one product. It is four services doing four jobs, and any one of them
+      can be swapped without rebuilding the others.
+    </p>
+
+    <div class="stack">
+      <div class="layer">
+        <span class="role">What you and the staff touch</span>
+        <span class="name">The app itself</span>
+        <span class="note">Runs on Vercel. Opens in any browser, on the department laptops and on your phone.</span>
+      </div>
+      <div class="arrow" aria-hidden="true">&darr;</div>
+      <div class="layer">
+        <span class="role">Where everything is kept</span>
+        <span class="name">Supabase, Toronto</span>
+        <span class="note">The database, the logins, and the invoice photos and PDFs.</span>
+      </div>
+      <div class="arrow" aria-hidden="true">&darr;</div>
+      <div class="layer">
+        <span class="role">The reading and answering</span>
+        <span class="name">Anthropic (Claude)</span>
+        <span class="note">Reads invoice photos, answers questions about the store, writes the reorder summary.</span>
+      </div>
+      <div class="arrow" aria-hidden="true">&darr;</div>
+      <div class="layer">
+        <span class="role">The daily email</span>
+        <span class="name">Resend</span>
+        <span class="note">Sends the due and overdue summary once a day. Optional, and off unless switched on.</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Every service, in one table</h2>
+    <div class="tbl-wrap">
+      <table>
+        <caption>The store's domain and mailboxes are with Vianet, who also provide the store's internet.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Service</th>
+            <th scope="col">What it does</th>
+            <th scope="col">Where it runs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k">Vercel</td>
+            <td class="v">Hosts the app and puts each new version live automatically</td>
+            <td class="v">Global, nearest server to the visitor</td>
+          </tr>
+          <tr>
+            <td class="k">Supabase</td>
+            <td class="v">Database, staff logins, and stored invoice documents</td>
+            <td class="v">Toronto, Canada</td>
+          </tr>
+          <tr>
+            <td class="k">Anthropic</td>
+            <td class="v">Reads invoices, answers store questions, drafts reorder summaries</td>
+            <td class="v">United States</td>
+          </tr>
+          <tr>
+            <td class="k">Resend</td>
+            <td class="v">The daily due-date email</td>
+            <td class="v">United States</td>
+          </tr>
+          <tr>
+            <td class="k">Vianet</td>
+            <td class="v">The domain robinsonsgeneralstore.ca and the five store mailboxes</td>
+            <td class="v">Canada</td>
+          </tr>
+          <tr>
+            <td class="k">GitHub</td>
+            <td class="v">Holds the code and runs the checks before anything goes live</td>
+            <td class="v">United States</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Web addresses</h3>
+    <ul class="plain">
+      <li><strong>The store's own address:</strong> <code>app.robinsonsgeneralstore.ca</code>. Live, secure, and the one to use and share. Checked 11 August 2026.</li>
+      <li><strong>The backup address:</strong> <code>robinsons-store.vercel.app</code>. Kept on purpose, and it cannot be switched off in any case. It does not depend on the store's domain or on Vianet, so if the domain ever lapses or a setting is changed by mistake, the app stays reachable here and staff can carry on receiving stock.</li>
+    </ul>
+    <p>
+      Both reach the same app and the same data. There is no second copy and nothing to keep
+      in step. Use the store's own address on anything printed or shared, and make sure the
+      manager knows the backup one exists.
+    </p>
+  </section>
+
+  <section>
+    <h2>Where the store's data actually sits</h2>
+    <p class="lede">
+      This matters for a Canadian business, so it was chosen deliberately rather than by
+      default.
+    </p>
+    <ul class="plain">
+      <li><strong>All store records stay in Canada.</strong> Vendors, orders, invoices, payments, staff records and every uploaded invoice photo live in the Toronto data centre.</li>
+      <li><strong>Invoice images are sent to the US to be read.</strong> When an invoice is photographed, the image goes to Anthropic in the United States, comes back as text, and the record is saved in Toronto. Vendor invoices are business documents, not personal information, so this is a reasonable trade for the accuracy.</li>
+      <li><strong>Staff personal information never leaves Canada.</strong> Pay rates, schedules and employee details are never sent to the AI. Canadian privacy law (PIPEDA) covers this data and the design keeps it in the Canadian services.</li>
+      <li><strong>Your data is not used to train the AI.</strong> That is off by default on the plan the app uses.</li>
+      <li><strong>Records are kept for six years,</strong> which is the Canadian requirement for business records.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What protects it</h2>
+    <ul class="plain">
+      <li><strong>The database enforces the rules, not just the screens.</strong> Staff cannot reach cost, order amounts, payments or pay even by going around the app. The rule sits in the database itself.</li>
+      <li><strong>Every login belongs to one store and one role.</strong> Owner, manager, lead, staff.</li>
+      <li><strong>Nothing is ever truly deleted.</strong> Deleting marks a record as void and hides it. It stays recoverable, and the export includes it.</li>
+      <li><strong>Every change records who and when.</strong> Every save writes an entry naming the person.</li>
+      <li><strong>Invoice photos are private.</strong> Links to them expire. There is no permanent public address for an invoice image.</li>
+      <li><strong>Money cannot be edited by hand.</strong> Payments go through one controlled path, so an invoice can never show "paid" with no payment behind it.</li>
+      <li><strong>The app checks itself after every update.</strong> It confirms the app and the database still agree on what each invoice owes, and raises a ticket automatically if they do not.</li>
+      <li><strong>You can take everything out at any time.</strong> The Import and Export screen produces one Excel workbook with a tab per table.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What it costs each month</h2>
+    <div class="tbl-wrap">
+      <table>
+        <caption>Prices checked May 2026 and they do change. The AI cost is the only one that moves with how much you use it.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Service</th>
+            <th scope="col" class="num">Per month, CAD</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="k">Vercel</td><td class="num">Free to $20</td></tr>
+          <tr><td class="k">Supabase</td><td class="num">Free to $25</td></tr>
+          <tr><td class="k">Anthropic, by invoice volume</td><td class="num">$5 to $40</td></tr>
+          <tr><td class="k">Resend email</td><td class="num">$0 to $20</td></tr>
+          <tr><td class="k">Domain</td><td class="num">$1 to $2</td></tr>
+          <tr><td class="k">Vianet mailboxes</td><td class="num">About $10</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>Typical total</td><td class="num">$50 to $100</td></tr>
+        </tfoot>
+      </table>
+    </div>
+    <p>
+      The ceiling agreed at the start was $200 a month. The point where this needs
+      rethinking is past roughly 10,000 documents a month, which is far above the store's
+      volume.
+    </p>
+  </section>
+
+  <section>
+    <h2>Two copies: a practice one and the real one</h2>
+    <p class="lede">
+      You asked on 31 July to try changes before they reach the store. That is how it now
+      works.
+    </p>
+    <ul class="plain">
+      <li><strong>The practice site</strong> has its own separate database filled with invented data. Anything can be tried there and nothing real is at risk.</li>
+      <li><strong>The live site</strong> is what the store uses.</li>
+      <li><strong>A change reaches the store only when you say so.</strong> It is built, it appears on the practice site, you try it, and moving the ticket to Approved is what sends it live.</li>
+      <li><strong>Real data never copies into the practice site,</strong> and practice data never reaches the live one.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What is on your plate</h2>
+    <p class="lede">
+      In the order I would do them. The web address is off this list because it is done:
+      the app is on the store's own domain and I confirmed it on 11 August.
+    </p>
+    <p>
+      The remaining items come from the domain and mailbox records last checked on
+      31 July, and unlike the web address I have no way to verify them from here. If any
+      are already handled, tell me and I will correct the record.
+    </p>
+    <ol class="todo">
+      <li>
+        <strong>Delete the Lawson "PO Details.docx" from the shared Drive.</strong>
+        <span class="sub">It contains a full credit card number in plain text. This is the only item here with any real exposure attached to it.</span>
+      </li>
+      <li>
+        <strong>Check the card on file for the domain renewal.</strong>
+        <span class="sub">robinsonsgeneralstore.ca expires 16 October 2026. Auto-renew is on, so this is only about making sure the payment card has not expired. If the domain lapses, the store's email stops.</span>
+      </li>
+      <li>
+        <strong>Create the invoices@ mailbox.</strong>
+        <span class="sub">Five of your ten mailboxes are used, so there is room. This is what unblocks vendors emailing invoices straight into the app instead of somebody photographing them.</span>
+      </li>
+      <li>
+        <strong>Decide on the stories@ alias.</strong>
+        <span class="sub">It currently forwards store mail to the previous owners' personal email address. It should be repointed to you or removed.</span>
+      </li>
+      <li>
+        <strong>Change the demo password.</strong>
+        <span class="sub">The account set up for demonstrations still has its original password.</span>
+      </li>
+    </ol>
+  </section>
+
+  <div class="callout">
+    <h3>If you ever need someone else to take this over</h3>
+    <p>
+      Everything needed to run or rebuild the app is written down in the code repository:
+      the full database structure, the setup order, every decision and why it was made, and
+      your feedback recorded round by round. None of it depends on one person's memory, and
+      the accounts are all in the store's name.
+    </p>
+  </div>
+
+  <footer>
+    <p>Prepared by Raviteja. Sources: the app's own architecture, environment and domain records.</p>
+    <p>Ask me about any line here and I will expand it.</p>
+  </footer>
+
+</div>

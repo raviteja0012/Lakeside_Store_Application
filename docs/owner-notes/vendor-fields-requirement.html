@@ -1,0 +1,586 @@
+<title>Vendor details: showing only what applies</title>
+<style>
+  /* Light palette. The app's own tokens (references/design-tokens.md), so this note
+     looks like it belongs to the store's app. */
+  :root {
+    --ground: #F7F8FA;
+    --panel: #FFFFFF;
+    --panel-sunk: #FCFDFE;
+    --border: #E2E6EB;
+    --border-strong: #CDD5DE;
+    --ink: #1F2933;
+    --ink-soft: #5B6570;
+    --ink-faint: #808A96;
+    --accent: #2F5FA8;
+    --accent-soft: #EAF1FB;
+    --warn: #B7791F;
+    --warn-tint: #FBF1E1;
+    --good: #1E8E5A;
+    --good-tint: #E6F4EC;
+    --shadow: 0 1px 2px rgba(31, 41, 51, .05), 0 8px 24px -16px rgba(31, 41, 51, .22);
+
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  /* System-default dark. Guarded so an explicit light choice still wins. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #12171D;
+      --panel: #1A2029;
+      --panel-sunk: #161C24;
+      --border: #2A323C;
+      --border-strong: #3A4450;
+      --ink: #E8ECF1;
+      --ink-soft: #A3AEBB;
+      --ink-faint: #7E8896;
+      --accent: #7BA4DC;
+      --accent-soft: #1D2A3D;
+      --warn: #E0A94A;
+      --warn-tint: #2E2617;
+      --good: #4FBF8B;
+      --good-tint: #14291F;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+
+  /* Explicit dark choice wins over a light OS. */
+  :root[data-theme="dark"] {
+    --ground: #12171D;
+    --panel: #1A2029;
+    --panel-sunk: #161C24;
+    --border: #2A323C;
+    --border-strong: #3A4450;
+    --ink: #E8ECF1;
+    --ink-soft: #A3AEBB;
+    --ink-faint: #7E8896;
+    --accent: #7BA4DC;
+    --accent-soft: #1D2A3D;
+    --warn: #E0A94A;
+    --warn-tint: #2E2617;
+    --good: #4FBF8B;
+    --good-tint: #14291F;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    padding: 28px 20px 72px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap {
+    max-width: 40rem;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 34px;
+  }
+
+  /* Masthead ------------------------------------------------------------ */
+  .masthead { display: flex; flex-direction: column; gap: 10px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(27px, 6.4vw, 37px);
+    line-height: 1.16;
+    letter-spacing: -.021em;
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: 17px;
+    color: var(--ink-soft);
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  .byline {
+    font-size: 13.5px;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    margin: 4px 0 0;
+  }
+
+  /* Sections ------------------------------------------------------------ */
+  section { display: flex; flex-direction: column; gap: 14px; }
+
+  h2 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -.012em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-size: 15.5px;
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  p { margin: 0; text-wrap: pretty; }
+
+  .lede { font-size: 16.5px; }
+
+  /* The ask, up top. Bordered rather than filled so it reads as a panel, not a status. */
+  .ask {
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    padding: 20px 22px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .ask-label {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  ol.asks {
+    margin: 0;
+    padding-left: 1.25em;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  ol.asks li { padding-left: 4px; }
+  ol.asks li::marker { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+  /* Gap and gain blocks. Colour carries status only, per the app's rule. */
+  .block {
+    border-radius: 10px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .block.gap { background: var(--warn-tint); border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent); }
+  .block.gain { background: var(--good-tint); border: 1px solid color-mix(in srgb, var(--good) 34%, transparent); }
+
+  .block-head {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    margin: 0;
+  }
+
+  .block.gap .block-head { color: var(--warn); }
+  .block.gain .block-head { color: var(--good); }
+
+  .item { display: flex; flex-direction: column; gap: 4px; }
+  .item p { font-size: 15px; color: var(--ink-soft); }
+  .item h3 { color: var(--ink); }
+
+  ul.plain {
+    margin: 0;
+    padding-left: 1.15em;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 15px;
+    color: var(--ink-soft);
+  }
+
+  ul.plain li::marker { color: var(--ink-faint); }
+  ul.plain strong { color: var(--ink); font-weight: 600; }
+
+  /* Quoted example ------------------------------------------------------ */
+  .example {
+    background: var(--panel-sunk);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .turn { display: flex; gap: 10px; font-size: 15px; align-items: baseline; }
+
+  .who {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    flex: 0 0 3.4rem;
+    padding-top: 2px;
+  }
+
+  .said { margin: 0; }
+  .said.wrong { color: var(--warn); }
+
+  /* Table --------------------------------------------------------------- */
+  .tbl-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 30rem;
+    font-size: 14.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  caption {
+    caption-side: bottom;
+    text-align: left;
+    font-size: 13px;
+    color: var(--ink-faint);
+    padding: 10px 16px 12px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    background: var(--panel-sunk);
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+  td.screen { color: var(--ink); }
+  td.verdict { color: var(--ink-soft); }
+  td.verdict.none { color: var(--warn); }
+
+  /* Field name chips ---------------------------------------------------- */
+  .fields { display: flex; flex-wrap: wrap; gap: 7px; }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 5px;
+    padding: 3px 9px;
+    white-space: nowrap;
+  }
+
+  /* Decision ------------------------------------------------------------ */
+  .choice {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .choice .opt { font-size: 15px; color: var(--ink-soft); }
+  .choice .opt strong { color: var(--ink); font-weight: 600; }
+
+  .rule { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+  footer {
+    font-size: 13.5px;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  a { color: var(--accent); }
+  a:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  /* Print and PDF --------------------------------------------------------
+     Light tokens are forced: nobody wants a dark-theme PDF. The tinted blocks
+     carry status meaning rather than decoration, so colour adjustment is set
+     to exact and they survive the print instead of washing out. Contrast is
+     nudged up, because ink on paper has no backlight to help it. */
+  @media print {
+    :root {
+      --ground: #FFFFFF;
+      --panel: #FFFFFF;
+      --panel-sunk: #FAFBFC;
+      --border: #D8DEE5;
+      --border-strong: #B9C3CE;
+      --ink: #141A21;
+      --ink-soft: #4A545F;
+      --ink-faint: #6E7883;
+      --accent: #23508F;
+      --accent-soft: #EAF1FB;
+      --warn: #8A5A12;
+      --warn-tint: #FBF1E1;
+      --good: #146848;
+      --good-tint: #E6F4EC;
+      --shadow: none;
+    }
+
+    @page { size: A4; margin: 16mm 15mm; }
+
+    html, body {
+      background: #FFFFFF;
+      font-size: 10.4pt;
+      line-height: 1.5;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .wrap { max-width: none; gap: 22px; }
+
+    h1 { font-size: 22pt; }
+    h2 { font-size: 13.5pt; }
+    h3 { font-size: 11pt; }
+    .standfirst { font-size: 11pt; }
+    .lede { font-size: 10.6pt; }
+
+    /* A heading stays with what it introduces. */
+    h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
+
+    /* Never split a self-contained unit across a page boundary. Tables are
+       deliberately absent: forbidding a split would push a long one to a fresh
+       sheet and leave a gap behind it. They break between rows instead,
+       repeating the header. */
+    .block, .callout, .ask, .choice, .example, .item, li, tr {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    /* A horizontal scroller has nowhere to scroll on paper. */
+    .tbl-wrap { overflow: visible; }
+    table { min-width: 0; width: 100%; }
+    thead { display: table-header-group; }
+
+    .ask, .callout, .tbl-wrap { box-shadow: none; }
+    p { orphans: 3; widows: 3; }
+    a { color: var(--accent); text-decoration: none; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Requirements note</p>
+    <h1>Vendor details: showing only what applies</h1>
+    <p class="standfirst">
+      The ordering questions you asked for in July are saved correctly. Three screens are
+      not reading them back. Here is what is happening and what I would like to fix.
+    </p>
+    <p class="byline">Robinson's General Store &middot; for Ravi Kiran &middot; 11 August 2026</p>
+  </header>
+
+  <div class="ask">
+    <p class="ask-label">What I need from you</p>
+    <ol class="asks">
+      <li>A yes or no on the fix described below.</li>
+      <li>
+        One choice: should the app stay quiet about vendor questions nobody has answered
+        yet, or should it be able to show you the list of what is still blank?
+      </li>
+    </ol>
+  </div>
+
+  <section>
+    <h2>What is working</h2>
+    <p class="lede">
+      Every vendor can now record the four ordering facts you asked for on 31 July and
+      5 August:
+    </p>
+    <div class="fields">
+      <span class="chip">Minimum order</span>
+      <span class="chip">Summer order timeline</span>
+      <span class="chip">Location of the order</span>
+      <span class="chip">Reorder status and comments</span>
+    </div>
+    <p>
+      All four are optional on purpose. There are about 130 vendors on file and nobody is
+      going to fill these in for all of them in one sitting. The vendor page already hides
+      the ones that have not been answered, so you never see a screen full of blanks.
+    </p>
+  </section>
+
+  <section>
+    <h2>What is not working</h2>
+    <p class="lede">
+      Nothing is lost. The answers are in the database. The problem is that each screen was
+      told separately which vendor details to load, and they were told different things.
+    </p>
+
+    <div class="block gap">
+      <p class="block-head">Three gaps</p>
+
+      <div class="item">
+        <h3>Ask the store cannot answer ordering questions</h3>
+        <p>
+          You can type the answer into a vendor, then ask the store about it and be told it
+          is not on file.
+        </p>
+      </div>
+
+      <div class="example">
+        <div class="turn">
+          <span class="who">You</span>
+          <p class="said">When do I place the summer order for Lawson?</p>
+        </div>
+        <div class="turn">
+          <span class="who">App</span>
+          <p class="said wrong">That is not recorded for this vendor.</p>
+        </div>
+      </div>
+
+      <div class="item">
+        <p>
+          It is recorded. The Ask page simply never loads that field, so it answers honestly
+          from what it can see.
+        </p>
+      </div>
+
+      <hr class="rule" />
+
+      <div class="item">
+        <h3>The reorder summary is blind to the same fields</h3>
+        <p>
+          When the app writes its reorder summary it cannot take the minimum order or the
+          order timeline into account, for the same reason.
+        </p>
+      </div>
+
+      <hr class="rule" />
+
+      <div class="item">
+        <h3>The vendor list shows none of it</h3>
+        <p>
+          To find out which vendors have a January deadline you have to open them one at a
+          time. The directory does not load those fields at all.
+        </p>
+      </div>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <caption>What each screen loads today. Eight places in the app ask for vendor details and no two ask for the same set.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Screen</th>
+            <th scope="col">Ordering fields it loads</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="screen">Vendor page</td><td class="verdict">All four</td></tr>
+          <tr><td class="screen">Reorder list</td><td class="verdict">Three of four</td></tr>
+          <tr><td class="screen">Vendor directory</td><td class="verdict none">None</td></tr>
+          <tr><td class="screen">Ask the store</td><td class="verdict none">None</td></tr>
+          <tr><td class="screen">Reorder summary</td><td class="verdict none">None</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>What I would like to build</h2>
+    <p class="lede">
+      One list of vendor questions, written down once, in your words. Each entry says what
+      the question is called on screen, whether the answer is a dollar figure, and what to
+      do when it is blank. Every screen then reads that one list instead of keeping its own.
+    </p>
+
+    <div class="block gain">
+      <p class="block-head">What changes for you</p>
+      <ul class="plain">
+        <li><strong>Ask the store starts answering</strong> questions about minimums, timelines and reorders.</li>
+        <li><strong>The reorder summary can use them</strong> when it works out what to suggest.</li>
+        <li><strong>The vendor directory can show ordering facts</strong>, so you can scan for the January deadlines without opening every vendor.</li>
+        <li><strong>Every screen describes a vendor the same way</strong>, using the same words for the same thing.</li>
+        <li><strong>Adding a new vendor question later</strong> becomes one small change rather than five, so the next round of your feedback is quicker to build.</li>
+      </ul>
+    </div>
+
+    <h3>What does not change</h3>
+    <ul class="plain">
+      <li>Nothing to re-enter. No change to the database and no data entry.</li>
+      <li>The fields, the wording and the rules you approved in July stay exactly as they are, including the minimum order that cannot be both an amount and "no minimum".</li>
+      <li>Blank answers stay hidden by default. A vendor nobody has been asked about still shows a clean page.</li>
+      <li>Staff still never see the minimum order, because it is a dollar figure.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>The choice I need from you</h2>
+    <p class="lede">
+      Today a vendor question with no answer is invisible. That is right for a page you are
+      reading. It is unhelpful when you want to know how much is still blank across the
+      roughly 130 vendors. This fix makes the second option cheap, so it is worth deciding
+      now rather than later.
+    </p>
+
+    <div class="choice">
+      <p class="opt"><strong>Option A. Leave it as it is.</strong> Blank questions stay hidden everywhere. Simplest, and nothing on screen changes for staff.</p>
+      <hr class="rule" />
+      <p class="opt"><strong>Option B. Add a "not answered yet" view.</strong> A list you can open showing which vendors are still missing a minimum order, a timeline, and so on, so the gaps can be filled a few at a time over the season.</p>
+    </div>
+
+    <p>
+      My recommendation is B. The information is only useful once most vendors have it, and
+      right now there is no way to see how far along that is.
+    </p>
+  </section>
+
+  <section>
+    <h2>Cost and risk</h2>
+    <ul class="plain">
+      <li><strong>Effort.</strong> One build round. No database script for you to run and no downtime.</li>
+      <li><strong>Risk.</strong> Low. The rules that protect money and hide costs from staff are not being touched, only the list of what each screen loads.</li>
+      <li><strong>If you say no.</strong> Everything keeps working exactly as it does today. The three gaps above stay, and the Ask page keeps saying that ordering details are not on file.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p>Prepared by Raviteja. Recorded in the requirements ledger as an open item awaiting your decision.</p>
+    <p>Reply with a yes or no and your pick of A or B, and I will get it built.</p>
+  </footer>
+
+</div>
