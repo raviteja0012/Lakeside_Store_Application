@@ -1,7 +1,5 @@
-<title>Vendor details: showing only what applies</title>
+<title>The vendor form: asking each department only what it uses</title>
 <style>
-  /* Light palette. The app's own tokens (references/design-tokens.md), so this note
-     looks like it belongs to the store's app. */
   :root {
     --ground: #F7F8FA;
     --panel: #FFFFFF;
@@ -18,49 +16,30 @@
     --good: #1E8E5A;
     --good-tint: #E6F4EC;
     --shadow: 0 1px 2px rgba(31, 41, 51, .05), 0 8px 24px -16px rgba(31, 41, 51, .22);
-
     --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
 
-  /* System-default dark. Guarded so an explicit light choice still wins. */
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --ground: #12171D;
-      --panel: #1A2029;
-      --panel-sunk: #161C24;
-      --border: #2A323C;
-      --border-strong: #3A4450;
-      --ink: #E8ECF1;
-      --ink-soft: #A3AEBB;
-      --ink-faint: #7E8896;
-      --accent: #7BA4DC;
-      --accent-soft: #1D2A3D;
-      --warn: #E0A94A;
-      --warn-tint: #2E2617;
-      --good: #4FBF8B;
-      --good-tint: #14291F;
-      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+      --ground: #12171D; --panel: #1A2029; --panel-sunk: #161C24;
+      --border: #2A323C; --border-strong: #3A4450;
+      --ink: #E8ECF1; --ink-soft: #A3AEBB; --ink-faint: #7E8896;
+      --accent: #7BA4DC; --accent-soft: #1D2A3D;
+      --warn: #E0A94A; --warn-tint: #2E2617;
+      --good: #4FBF8B; --good-tint: #14291F;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
     }
   }
 
-  /* Explicit dark choice wins over a light OS. */
   :root[data-theme="dark"] {
-    --ground: #12171D;
-    --panel: #1A2029;
-    --panel-sunk: #161C24;
-    --border: #2A323C;
-    --border-strong: #3A4450;
-    --ink: #E8ECF1;
-    --ink-soft: #A3AEBB;
-    --ink-faint: #7E8896;
-    --accent: #7BA4DC;
-    --accent-soft: #1D2A3D;
-    --warn: #E0A94A;
-    --warn-tint: #2E2617;
-    --good: #4FBF8B;
-    --good-tint: #14291F;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    --ground: #12171D; --panel: #1A2029; --panel-sunk: #161C24;
+    --border: #2A323C; --border-strong: #3A4450;
+    --ink: #E8ECF1; --ink-soft: #A3AEBB; --ink-faint: #7E8896;
+    --accent: #7BA4DC; --accent-soft: #1D2A3D;
+    --warn: #E0A94A; --warn-tint: #2E2617;
+    --good: #4FBF8B; --good-tint: #14291F;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
   }
 
   * { box-sizing: border-box; }
@@ -76,325 +55,201 @@
     -webkit-text-size-adjust: 100%;
   }
 
-  .wrap {
-    max-width: 40rem;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 34px;
-  }
+  .wrap { max-width: 44rem; margin: 0 auto; display: flex; flex-direction: column; gap: 34px; }
 
-  /* Masthead ------------------------------------------------------------ */
   .masthead { display: flex; flex-direction: column; gap: 10px; }
 
   .eyebrow {
-    font-family: var(--mono);
-    font-size: 11.5px;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    margin: 0;
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-faint); margin: 0;
   }
 
   h1 {
-    font-size: clamp(27px, 6.4vw, 37px);
-    line-height: 1.16;
-    letter-spacing: -.021em;
-    font-weight: 600;
-    margin: 0;
-    text-wrap: balance;
+    font-size: clamp(26px, 6vw, 35px); line-height: 1.16; letter-spacing: -.021em;
+    font-weight: 600; margin: 0; text-wrap: balance;
   }
 
-  .standfirst {
-    font-size: 17px;
-    color: var(--ink-soft);
-    margin: 0;
-    text-wrap: pretty;
-  }
+  .standfirst { font-size: 17px; color: var(--ink-soft); margin: 0; text-wrap: pretty; }
 
   .byline {
-    font-size: 13.5px;
-    color: var(--ink-faint);
-    border-top: 1px solid var(--border);
-    padding-top: 12px;
-    margin: 4px 0 0;
+    font-size: 13.5px; color: var(--ink-faint);
+    border-top: 1px solid var(--border); padding-top: 12px; margin: 4px 0 0;
   }
 
-  /* Sections ------------------------------------------------------------ */
   section { display: flex; flex-direction: column; gap: 14px; }
-
-  h2 {
-    font-size: 20px;
-    font-weight: 600;
-    letter-spacing: -.012em;
-    margin: 0;
-    text-wrap: balance;
-  }
-
-  h3 {
-    font-size: 15.5px;
-    font-weight: 600;
-    margin: 0;
-    text-wrap: balance;
-  }
-
+  h2 { font-size: 20px; font-weight: 600; letter-spacing: -.012em; margin: 0; text-wrap: balance; }
+  h3 { font-size: 15.5px; font-weight: 600; margin: 0; text-wrap: balance; }
   p { margin: 0; text-wrap: pretty; }
-
   .lede { font-size: 16.5px; }
 
-  /* The ask, up top. Bordered rather than filled so it reads as a panel, not a status. */
   .ask {
-    background: var(--panel);
-    border: 1px solid var(--border-strong);
-    border-radius: 10px;
-    padding: 20px 22px;
-    box-shadow: var(--shadow);
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
+    background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px;
+    padding: 20px 22px; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 14px;
   }
 
   .ask-label {
-    font-family: var(--mono);
-    font-size: 11.5px;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin: 0;
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--accent); margin: 0;
   }
 
-  ol.asks {
-    margin: 0;
-    padding-left: 1.25em;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
+  ol.asks { margin: 0; padding-left: 1.25em; display: flex; flex-direction: column; gap: 10px; }
   ol.asks li { padding-left: 4px; }
-  ol.asks li::marker { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  ol.asks li::marker { color: var(--ink-faint); }
 
-  /* Gap and gain blocks. Colour carries status only, per the app's rule. */
-  .block {
-    border-radius: 10px;
-    padding: 16px 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
+  .block { border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
   .block.gap { background: var(--warn-tint); border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent); }
   .block.gain { background: var(--good-tint); border: 1px solid color-mix(in srgb, var(--good) 34%, transparent); }
 
   .block-head {
-    font-family: var(--mono);
-    font-size: 11.5px;
-    letter-spacing: .09em;
-    text-transform: uppercase;
-    margin: 0;
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .09em;
+    text-transform: uppercase; margin: 0;
   }
 
   .block.gap .block-head { color: var(--warn); }
   .block.gain .block-head { color: var(--good); }
 
-  .item { display: flex; flex-direction: column; gap: 4px; }
-  .item p { font-size: 15px; color: var(--ink-soft); }
-  .item h3 { color: var(--ink); }
-
   ul.plain {
-    margin: 0;
-    padding-left: 1.15em;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    font-size: 15px;
-    color: var(--ink-soft);
+    margin: 0; padding-left: 1.15em; display: flex; flex-direction: column; gap: 8px;
+    font-size: 15px; color: var(--ink-soft);
   }
 
   ul.plain li::marker { color: var(--ink-faint); }
   ul.plain strong { color: var(--ink); font-weight: 600; }
 
-  /* Quoted example ------------------------------------------------------ */
-  .example {
-    background: var(--panel-sunk);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    border-radius: 0 8px 8px 0;
-    padding: 14px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+  /* Form mockups -------------------------------------------------------
+     Drawn rather than described, because "thirteen groups of boxes" does not
+     land the way thirteen boxes on a page does. */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  @media (max-width: 640px) { .compare { grid-template-columns: 1fr; } }
+
+  .mock {
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--panel); padding: 14px;
+    display: flex; flex-direction: column; gap: 9px;
   }
 
-  .turn { display: flex; gap: 10px; font-size: 15px; align-items: baseline; }
+  .mock.now { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .mock.next { border-color: color-mix(in srgb, var(--good) 45%, transparent); }
 
-  .who {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    flex: 0 0 3.4rem;
-    padding-top: 2px;
+  .mock-cap {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
+    text-transform: uppercase; margin: 0; display: flex; justify-content: space-between; gap: 8px;
   }
 
-  .said { margin: 0; }
-  .said.wrong { color: var(--warn); }
+  .mock.now .mock-cap { color: var(--warn); }
+  .mock.next .mock-cap { color: var(--good); }
+  .mock-cap .count { color: var(--ink-faint); }
 
-  /* Table --------------------------------------------------------------- */
+  .fld { display: flex; flex-direction: column; gap: 3px; }
+  .fld .fl { font-size: 11px; color: var(--ink-soft); font-weight: 600; }
+  .fld .fb {
+    border: 1px solid var(--border-strong); border-radius: 5px;
+    background: var(--panel-sunk); min-height: 22px; padding: 3px 7px;
+    font-size: 11.5px; color: var(--ink-faint);
+  }
+  .fld .fb.filled { color: var(--ink); }
+  .fld.req .fl::after { content: " (must answer)"; color: var(--warn); font-weight: 500; }
+  .fld.new .fl::after { content: " (new)"; color: var(--good); font-weight: 500; }
+
+  .checks { display: flex; flex-wrap: wrap; gap: 3px 9px; padding-top: 1px; }
+  .checks span { font-size: 11px; color: var(--ink-faint); }
+
+  .drop {
+    font-size: 11.5px; color: var(--ink-faint); border-top: 1px dashed var(--border-strong);
+    padding-top: 8px; margin: 2px 0 0;
+  }
+
+  .drop b { color: var(--ink-soft); font-weight: 600; }
+
+  /* Tables -------------------------------------------------------------- */
   .tbl-wrap {
-    overflow-x: auto;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--panel);
-    -webkit-overflow-scrolling: touch;
+    overflow-x: auto; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--panel); -webkit-overflow-scrolling: touch;
   }
 
-  table {
-    border-collapse: collapse;
-    width: 100%;
-    min-width: 30rem;
-    font-size: 14.5px;
-    font-variant-numeric: tabular-nums;
-  }
+  table { border-collapse: collapse; width: 100%; min-width: 34rem; font-size: 14px; }
 
   caption {
-    caption-side: bottom;
-    text-align: left;
-    font-size: 13px;
-    color: var(--ink-faint);
-    padding: 10px 16px 12px;
+    caption-side: bottom; text-align: left; font-size: 13px;
+    color: var(--ink-faint); padding: 10px 14px 12px;
   }
 
-  th, td {
-    text-align: left;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-  }
+  th, td { text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
 
   thead th {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: .07em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    font-weight: 500;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--ink-faint); font-weight: 500;
     background: var(--panel-sunk);
-    white-space: nowrap;
   }
 
+  thead th.rot { text-align: center; width: 1%; white-space: nowrap; }
   tbody tr:last-child td { border-bottom: none; }
-  td.screen { color: var(--ink); }
-  td.verdict { color: var(--ink-soft); }
-  td.verdict.none { color: var(--warn); }
+  td.k { color: var(--ink); font-weight: 600; width: 1%; white-space: nowrap; }
+  td.mark { text-align: center; color: var(--good); font-weight: 600; }
+  td.mark.no { color: var(--border-strong); font-weight: 400; }
 
-  /* Field name chips ---------------------------------------------------- */
-  .fields { display: flex; flex-wrap: wrap; gap: 7px; }
-
-  .chip {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    background: var(--accent-soft);
-    color: var(--accent);
-    border-radius: 5px;
-    padding: 3px 9px;
-    white-space: nowrap;
-  }
-
-  /* Decision ------------------------------------------------------------ */
   .choice {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; display: flex; flex-direction: column; gap: 8px;
   }
 
   .choice .opt { font-size: 15px; color: var(--ink-soft); }
   .choice .opt strong { color: var(--ink); font-weight: 600; }
-
   .rule { border: none; border-top: 1px solid var(--border); margin: 0; }
 
+  .callout {
+    background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px;
+    padding: 18px 20px; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
   footer {
-    font-size: 13.5px;
-    color: var(--ink-faint);
-    border-top: 1px solid var(--border);
-    padding-top: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    font-size: 13.5px; color: var(--ink-faint); border-top: 1px solid var(--border);
+    padding-top: 16px; display: flex; flex-direction: column; gap: 6px;
   }
 
   a { color: var(--accent); }
-  a:focus-visible, [tabindex]:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-    border-radius: 3px;
-  }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
-  /* Print and PDF --------------------------------------------------------
-     Light tokens are forced: nobody wants a dark-theme PDF. The tinted blocks
-     carry status meaning rather than decoration, so colour adjustment is set
-     to exact and they survive the print instead of washing out. Contrast is
-     nudged up, because ink on paper has no backlight to help it. */
+  /* Print and PDF -------------------------------------------------------- */
   @media print {
     :root {
-      --ground: #FFFFFF;
-      --panel: #FFFFFF;
-      --panel-sunk: #FAFBFC;
-      --border: #D8DEE5;
-      --border-strong: #B9C3CE;
-      --ink: #141A21;
-      --ink-soft: #4A545F;
-      --ink-faint: #6E7883;
-      --accent: #23508F;
-      --accent-soft: #EAF1FB;
-      --warn: #8A5A12;
-      --warn-tint: #FBF1E1;
-      --good: #146848;
-      --good-tint: #E6F4EC;
+      --ground: #FFFFFF; --panel: #FFFFFF; --panel-sunk: #FAFBFC;
+      --border: #D8DEE5; --border-strong: #B9C3CE;
+      --ink: #141A21; --ink-soft: #4A545F; --ink-faint: #6E7883;
+      --accent: #23508F; --accent-soft: #EAF1FB;
+      --warn: #8A5A12; --warn-tint: #FBF1E1;
+      --good: #146848; --good-tint: #E6F4EC;
       --shadow: none;
     }
 
-    @page { size: A4; margin: 16mm 15mm; }
+    @page { size: A4; margin: 15mm 14mm; }
 
     html, body {
-      background: #FFFFFF;
-      font-size: 10.4pt;
-      line-height: 1.5;
-      margin: 0;
-      padding: 0;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
+      background: #FFFFFF; font-size: 10.2pt; line-height: 1.48;
+      margin: 0; padding: 0;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
     }
 
-    .wrap { max-width: none; gap: 22px; }
-
-    h1 { font-size: 22pt; }
-    h2 { font-size: 13.5pt; }
-    h3 { font-size: 11pt; }
-    .standfirst { font-size: 11pt; }
-    .lede { font-size: 10.6pt; }
-
-    /* A heading stays with what it introduces. */
+    .wrap { max-width: none; gap: 20px; }
+    h1 { font-size: 21pt; }
+    h2 { font-size: 13pt; }
+    h3 { font-size: 10.8pt; }
+    .standfirst { font-size: 10.8pt; }
+    .lede { font-size: 10.4pt; }
     h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
 
-    /* Never split a self-contained unit across a page boundary. Tables are
-       deliberately absent: forbidding a split would push a long one to a fresh
-       sheet and leave a gap behind it. They break between rows instead,
-       repeating the header. */
-    .block, .callout, .ask, .choice, .example, .item, li, tr {
-      break-inside: avoid;
-      page-break-inside: avoid;
+    /* Tables are absent on purpose: the department map runs long, and refusing
+       to split it would push the whole thing to a fresh sheet. It breaks
+       between rows instead, repeating the header. */
+    .block, .callout, .ask, .choice, .mock, .compare, .fld, li, tr {
+      break-inside: avoid; page-break-inside: avoid;
     }
 
-    /* A horizontal scroller has nowhere to scroll on paper. */
     .tbl-wrap { overflow: visible; }
     table { min-width: 0; width: 100%; }
     thead { display: table-header-group; }
-
     .ask, .callout, .tbl-wrap { box-shadow: none; }
     p { orphans: 3; widows: 3; }
     a { color: var(--accent); text-decoration: none; }
@@ -405,10 +260,11 @@
 
   <header class="masthead">
     <p class="eyebrow">Requirements note</p>
-    <h1>Vendor details: showing only what applies</h1>
+    <h1>The vendor form: asking each department only what it uses</h1>
     <p class="standfirst">
-      The ordering questions you asked for in July are saved correctly. Three screens are
-      not reading them back. Here is what is happening and what I would like to fix.
+      You said the vendor entry screen lists every column even for vendors where only a few
+      apply. You are right, and you told us this once already. Here is what it looks like
+      now, what it would look like after, and the list I need you to check.
     </p>
     <p class="byline">Robinson's General Store &middot; for Ravi Kiran &middot; 11 August 2026</p>
   </header>
@@ -416,171 +272,267 @@
   <div class="ask">
     <p class="ask-label">What I need from you</p>
     <ol class="asks">
-      <li>A yes or no on the fix described below.</li>
-      <li>
-        One choice: should the app stay quiet about vendor questions nobody has answered
-        yet, or should it be able to show you the list of what is still blank?
-      </li>
+      <li>Look at the table near the end and correct it. It says which questions each department gets asked. It is my best guess from your own spreadsheets, and you are the only one who knows if it is right.</li>
+      <li>Answer one question about the minimum order, at the very end.</li>
     </ol>
+    <p style="font-size:15px;color:var(--ink-soft);margin:0;">
+      Nothing gets built until you have marked up that table. Ticks and crosses on a
+      printout are a perfectly good answer.
+    </p>
   </div>
 
   <section>
-    <h2>What is working</h2>
+    <h2>You already told us this</h2>
     <p class="lede">
-      Every vendor can now record the four ordering facts you asked for on 31 July and
-      5 August:
+      On 27 July you sent the 2026_Payments workbook. The note taken that day records your
+      point in these words:
     </p>
-    <div class="fields">
-      <span class="chip">Minimum order</span>
-      <span class="chip">Summer order timeline</span>
-      <span class="chip">Location of the order</span>
-      <span class="chip">Reorder status and comments</span>
+    <div class="block gap">
+      <p class="block-head">From the notes, 27 July 2026</p>
+      <p style="font-size:15.5px;color:var(--ink);margin:0;">
+        "fields differ BY DEPARTMENT, the owner's core point"
+      </p>
     </div>
     <p>
-      All four are optional on purpose. There are about 130 vendors on file and nobody is
-      going to fill these in for all of them in one sitting. The vendor page already hides
-      the ones that have not been answered, so you never see a screen full of blanks.
+      Your own tabs prove it. Bakery, Meat and Store Supplies keep five columns, and the note
+      calls that "the light form". Local Vendors adds invoice and terms. Grocery carries the
+      full merchandise shape. Hardware is Grocery plus a PO number. Maintenance Payments is a
+      different shape again, with who the contractor is and what they specialize in.
+    </p>
+    <p>
+      That point was written down and then not acted on. It never became a line on the work
+      list, so nothing was built from it. That is our mistake, not a misunderstanding on your
+      side, and it is why you are looking at a form that asks a bakery about summer gift
+      orders.
     </p>
   </section>
 
   <section>
-    <h2>What is not working</h2>
+    <h2>Example one: adding a bakery supplier</h2>
     <p class="lede">
-      Nothing is lost. The answers are in the database. The problem is that each screen was
-      told separately which vendor details to load, and they were told different things.
+      This is the whole complaint in one picture. Your bakery sheet keeps five columns. The
+      app asks for this.
     </p>
 
-    <div class="block gap">
-      <p class="block-head">Three gaps</p>
-
-      <div class="item">
-        <h3>Ask the store cannot answer ordering questions</h3>
-        <p>
-          You can type the answer into a vendor, then ask the store about it and be told it
-          is not on file.
-        </p>
-      </div>
-
-      <div class="example">
-        <div class="turn">
-          <span class="who">You</span>
-          <p class="said">When do I place the summer order for Lawson?</p>
+    <div class="compare">
+      <div class="mock now">
+        <p class="mock-cap"><span>Today</span><span class="count">13 groups, 20 boxes</span></p>
+        <div class="fld"><span class="fl">Company or vendor name</span><span class="fb filled">Dorset Bakery Supply</span></div>
+        <div class="fld"><span class="fl">Department</span><span class="fb filled">Bakery</span></div>
+        <div class="fld"><span class="fl">Rep name</span><span class="fb">&nbsp;</span></div>
+        <div class="fld"><span class="fl">Phone</span><span class="fb filled">705 555 0134</span></div>
+        <div class="fld"><span class="fl">Email</span><span class="fb">&nbsp;</span></div>
+        <div class="fld"><span class="fl">Payment terms</span><span class="fb">Net 30</span></div>
+        <div class="fld"><span class="fl">Status</span><span class="fb filled">Active</span></div>
+        <div class="fld"><span class="fl">Products we carry</span><span class="fb">&nbsp;</span></div>
+        <div class="fld req"><span class="fl">Minimum order amount</span><span class="fb">1500.00</span></div>
+        <div class="fld"><span class="fl">Summer order timeline</span><span class="fb">Example: Before mid-January</span></div>
+        <div class="fld">
+          <span class="fl">Location of the order</span>
+          <div class="checks">
+            <span>&#9744; Gift Show</span><span>&#9744; Email</span><span>&#9744; In Person</span>
+            <span>&#9744; Rep Show</span><span>&#9744; Phone</span><span>&#9744; Website</span><span>&#9744; Other</span>
+          </div>
         </div>
-        <div class="turn">
-          <span class="who">App</span>
-          <p class="said wrong">That is not recorded for this vendor.</p>
-        </div>
+        <div class="fld"><span class="fl">Reorder status</span><span class="fb">Not said</span></div>
+        <div class="fld"><span class="fl">Notes and rules</span><span class="fb">&nbsp;</span></div>
+        <p class="drop"><b>And it will not save.</b> The minimum order must be answered, or the No Minimum box ticked, before this bakery can be added at all.</p>
       </div>
 
-      <div class="item">
-        <p>
-          It is recorded. The Ask page simply never loads that field, so it answers honestly
-          from what it can see.
-        </p>
-      </div>
-
-      <hr class="rule" />
-
-      <div class="item">
-        <h3>The reorder summary is blind to the same fields</h3>
-        <p>
-          When the app writes its reorder summary it cannot take the minimum order or the
-          order timeline into account, for the same reason.
-        </p>
-      </div>
-
-      <hr class="rule" />
-
-      <div class="item">
-        <h3>The vendor list shows none of it</h3>
-        <p>
-          To find out which vendors have a January deadline you have to open them one at a
-          time. The directory does not load those fields at all.
-        </p>
+      <div class="mock next">
+        <p class="mock-cap"><span>Proposed</span><span class="count">6 boxes</span></p>
+        <div class="fld"><span class="fl">Company or vendor name</span><span class="fb filled">Dorset Bakery Supply</span></div>
+        <div class="fld"><span class="fl">Department</span><span class="fb filled">Bakery</span></div>
+        <div class="fld"><span class="fl">Phone</span><span class="fb filled">705 555 0134</span></div>
+        <div class="fld"><span class="fl">Email</span><span class="fb">&nbsp;</span></div>
+        <div class="fld"><span class="fl">Status</span><span class="fb filled">Active</span></div>
+        <div class="fld"><span class="fl">Notes and rules</span><span class="fb">&nbsp;</span></div>
+        <p class="drop"><b>Saves straight away.</b> Nothing about gift shows, summer orders or minimums, because a bakery has none of that.</p>
       </div>
     </div>
+  </section>
+
+  <section>
+    <h2>Example two: adding a gift vendor</h2>
+    <p class="lede">
+      Just as important: where the ordering questions came from, nothing is taken away. Dry
+      Goods and Lakeside is the seasonal side, and the whole ordering profile stays.
+    </p>
+
+    <div class="compare">
+      <div class="mock now">
+        <p class="mock-cap"><span>Today</span><span class="count">13 groups</span></p>
+        <div class="fld"><span class="fl">Company or vendor name</span><span class="fb filled">Faith in the Forest</span></div>
+        <div class="fld"><span class="fl">Department</span><span class="fb filled">DryGoods &amp; Lakeside</span></div>
+        <div class="fld"><span class="fl">Rep name</span><span class="fb filled">Joanne</span></div>
+        <div class="fld"><span class="fl">Phone, Email</span><span class="fb filled">705 555 0199</span></div>
+        <div class="fld"><span class="fl">Payment terms, Status</span><span class="fb filled">Net 30, Active</span></div>
+        <div class="fld"><span class="fl">Products we carry</span><span class="fb filled">Clothing, moccasins</span></div>
+        <div class="fld req"><span class="fl">Minimum order amount</span><span class="fb filled">1500.00</span></div>
+        <div class="fld"><span class="fl">Summer order timeline</span><span class="fb filled">Before mid-January</span></div>
+        <div class="fld"><span class="fl">Location of the order</span><span class="fb filled">Gift Show, Email</span></div>
+        <div class="fld"><span class="fl">Reorder status</span><span class="fb filled">Reordered</span></div>
+        <div class="fld"><span class="fl">Notes and rules</span><span class="fb">&nbsp;</span></div>
+      </div>
+
+      <div class="mock next">
+        <p class="mock-cap"><span>Proposed</span><span class="count">the same 13</span></p>
+        <div class="fld"><span class="fl">Company or vendor name</span><span class="fb filled">Faith in the Forest</span></div>
+        <div class="fld"><span class="fl">Department</span><span class="fb filled">DryGoods &amp; Lakeside</span></div>
+        <div class="fld"><span class="fl">Rep name</span><span class="fb filled">Joanne</span></div>
+        <div class="fld"><span class="fl">Phone, Email</span><span class="fb filled">705 555 0199</span></div>
+        <div class="fld"><span class="fl">Payment terms, Status</span><span class="fb filled">Net 30, Active</span></div>
+        <div class="fld"><span class="fl">Products we carry</span><span class="fb filled">Clothing, moccasins</span></div>
+        <div class="fld"><span class="fl">Minimum order amount</span><span class="fb filled">1500.00</span></div>
+        <div class="fld"><span class="fl">Summer order timeline</span><span class="fb filled">Before mid-January</span></div>
+        <div class="fld"><span class="fl">Location of the order</span><span class="fb filled">Gift Show, Email</span></div>
+        <div class="fld"><span class="fl">Reorder status</span><span class="fb filled">Reordered</span></div>
+        <div class="fld"><span class="fl">Notes and rules</span><span class="fb">&nbsp;</span></div>
+        <p class="drop"><b>Unchanged.</b> This is the department those questions were built for, so this is where they stay.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Example three: adding a maintenance contractor</h2>
+    <p class="lede">
+      Here the form is not just too long, it is missing the thing you actually record. Your
+      Maintenance Payments tab keeps what the contractor specializes in and who the technician
+      is. The app has no place for either on the contractor.
+    </p>
+
+    <div class="compare">
+      <div class="mock now">
+        <p class="mock-cap"><span>Today</span><span class="count">13 groups, none of them right</span></p>
+        <div class="fld"><span class="fl">Company or vendor name</span><span class="fb filled">Muskoka Electric</span></div>
+        <div class="fld"><span class="fl">Department</span><span class="fb filled">Property Maintenance</span></div>
+        <div class="fld"><span class="fl">Rep name</span><span class="fb filled">Dave</span></div>
+        <div class="fld"><span class="fl">Phone, Email</span><span class="fb filled">705 555 0177</span></div>
+        <div class="fld"><span class="fl">Products we carry</span><span class="fb">&nbsp;</span></div>
+        <div class="fld req"><span class="fl">Minimum order amount</span><span class="fb">&nbsp;</span></div>
+        <div class="fld"><span class="fl">Summer order timeline</span><span class="fb">&nbsp;</span></div>
+        <div class="fld"><span class="fl">Location of the order</span><span class="fb">&nbsp;</span></div>
+        <div class="fld"><span class="fl">Reorder status</span><span class="fb">&nbsp;</span></div>
+        <p class="drop"><b>Nowhere to record that they are the electrician.</b> The app keeps "specialized on" against each invoice, not against the contractor, so you cannot look up who to call.</p>
+      </div>
+
+      <div class="mock next">
+        <p class="mock-cap"><span>Proposed</span><span class="count">7 boxes</span></p>
+        <div class="fld"><span class="fl">Company or vendor name</span><span class="fb filled">Muskoka Electric</span></div>
+        <div class="fld"><span class="fl">Department</span><span class="fb filled">Property Maintenance</span></div>
+        <div class="fld new"><span class="fl">Specializes in</span><span class="fb filled">Electrical</span></div>
+        <div class="fld"><span class="fl">Technician name</span><span class="fb filled">Dave</span></div>
+        <div class="fld"><span class="fl">Phone</span><span class="fb filled">705 555 0177</span></div>
+        <div class="fld"><span class="fl">Email, Status</span><span class="fb filled">Active</span></div>
+        <div class="fld"><span class="fl">Notes and rules</span><span class="fb">&nbsp;</span></div>
+        <p class="drop"><b>Now you can ask the store "who is our plumber".</b> Specializes in becomes a property of the contractor, the way your sheet already keeps it.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The list to check</h2>
+    <p class="lede">
+      This is the part I need marked up. A tick means that department gets asked the
+      question when adding or editing a vendor. My reasoning is underneath.
+    </p>
 
     <div class="tbl-wrap">
       <table>
-        <caption>What each screen loads today. Eight places in the app ask for vendor details and no two ask for the same set.</caption>
+        <caption>Chip Stand follows Grocery, and Checkouts follows Others, unless you say otherwise.</caption>
         <thead>
           <tr>
-            <th scope="col">Screen</th>
-            <th scope="col">Ordering fields it loads</th>
+            <th scope="col">Question</th>
+            <th scope="col" class="rot">Dry Goods</th>
+            <th scope="col" class="rot">Hardware</th>
+            <th scope="col" class="rot">Grocery</th>
+            <th scope="col" class="rot">Property</th>
+            <th scope="col" class="rot">Bakery, Meat, Produce</th>
+            <th scope="col" class="rot">Payroll, Others</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td class="screen">Vendor page</td><td class="verdict">All four</td></tr>
-          <tr><td class="screen">Reorder list</td><td class="verdict">Three of four</td></tr>
-          <tr><td class="screen">Vendor directory</td><td class="verdict none">None</td></tr>
-          <tr><td class="screen">Ask the store</td><td class="verdict none">None</td></tr>
-          <tr><td class="screen">Reorder summary</td><td class="verdict none">None</td></tr>
+          <tr><td class="k">Vendor name</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td></tr>
+          <tr><td class="k">Department</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td></tr>
+          <tr><td class="k">Status</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td></tr>
+          <tr><td class="k">Phone and email</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td></tr>
+          <tr><td class="k">Notes and rules</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td></tr>
+          <tr><td class="k">Rep name</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td></tr>
+          <tr><td class="k">Payment terms</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td></tr>
+          <tr><td class="k">Products we carry</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td></tr>
+          <tr><td class="k">Minimum order</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td></tr>
+          <tr><td class="k">Reorder status and comments</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td></tr>
+          <tr><td class="k">Location of the order</td><td class="mark">&#10003;</td><td class="mark">&#10003;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td></tr>
+          <tr><td class="k">Summer order timeline</td><td class="mark">&#10003;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td></tr>
+          <tr><td class="k">Specializes in (new)</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td><td class="mark">&#10003;</td><td class="mark no">&#183;</td><td class="mark no">&#183;</td></tr>
         </tbody>
       </table>
     </div>
+
+    <h3>Why each line sits where it does</h3>
+    <ul class="plain">
+      <li><strong>Summer order timeline, Dry Goods only.</strong> It came from the bookings sheet, which is the gift and clothing side. Hardware buys garden stock seasonally too, so this is the line I am least sure about. Tell me if Hardware should have it.</li>
+      <li><strong>Location of the order, Dry Goods and Hardware.</strong> Gift shows and rep visits are how those two get bought. Grocery is delivery-route driven.</li>
+      <li><strong>Minimum order and reorder, the three merchandise departments.</strong> These are the ones where you place an order and a minimum can block it.</li>
+      <li><strong>Payment terms, not on the light form.</strong> Your Bakery and Meat tabs do not carry terms; Local Vendors does. If your meat supplier does have terms worth recording, tick it.</li>
+      <li><strong>Specializes in, Property Maintenance.</strong> New. Today it is recorded on each invoice, so there is no way to ask who your electrician is.</li>
+    </ul>
   </section>
 
   <section>
-    <h2>What I would like to build</h2>
-    <p class="lede">
-      One list of vendor questions, written down once, in your words. Each entry says what
-      the question is called on screen, whether the answer is a dollar figure, and what to
-      do when it is blank. Every screen then reads that one list instead of keeping its own.
-    </p>
-
+    <h2>What happens to what is already entered</h2>
     <div class="block gain">
-      <p class="block-head">What changes for you</p>
+      <p class="block-head">Nothing is deleted, ever</p>
       <ul class="plain">
-        <li><strong>Ask the store starts answering</strong> questions about minimums, timelines and reorders.</li>
-        <li><strong>The reorder summary can use them</strong> when it works out what to suggest.</li>
-        <li><strong>The vendor directory can show ordering facts</strong>, so you can scan for the January deadlines without opening every vendor.</li>
-        <li><strong>Every screen describes a vendor the same way</strong>, using the same words for the same thing.</li>
-        <li><strong>Adding a new vendor question later</strong> becomes one small change rather than five, so the next round of your feedback is quicker to build.</li>
+        <li>If a bakery vendor already has a summer order timeline saved from before, <strong>it stays saved and it still shows</strong> on the vendor page. A question that has an answer is never hidden.</li>
+        <li>The change is only about which questions get <strong>offered</strong> on a blank form.</li>
+        <li>No database change, no re-entering, and nothing to run.</li>
+        <li>There is an "add the other questions anyway" link on every vendor, for the odd case that breaks the rule.</li>
       </ul>
     </div>
-
-    <h3>What does not change</h3>
-    <ul class="plain">
-      <li>Nothing to re-enter. No change to the database and no data entry.</li>
-      <li>The fields, the wording and the rules you approved in July stay exactly as they are, including the minimum order that cannot be both an amount and "no minimum".</li>
-      <li>Blank answers stay hidden by default. A vendor nobody has been asked about still shows a clean page.</li>
-      <li>Staff still never see the minimum order, because it is a dollar figure.</li>
-    </ul>
   </section>
 
   <section>
-    <h2>The choice I need from you</h2>
+    <h2>The same list fixes a second thing</h2>
     <p class="lede">
-      Today a vendor question with no answer is invisible. That is right for a page you are
-      reading. It is unhelpful when you want to know how much is still blank across the
-      roughly 130 vendors. This fix makes the second option cheap, so it is worth deciding
-      now rather than later.
+      Writing the questions down once, per department, also fixes something you have not
+      reported yet but would have.
     </p>
-
-    <div class="choice">
-      <p class="opt"><strong>Option A. Leave it as it is.</strong> Blank questions stay hidden everywhere. Simplest, and nothing on screen changes for staff.</p>
-      <hr class="rule" />
-      <p class="opt"><strong>Option B. Add a "not answered yet" view.</strong> A list you can open showing which vendors are still missing a minimum order, a timeline, and so on, so the gaps can be filled a few at a time over the season.</p>
-    </div>
-
     <p>
-      My recommendation is B. The information is only useful once most vendors have it, and
-      right now there is no way to see how far along that is.
+      Right now if you ask the store "when do I place the summer order for Lawson", it says
+      that is not on file, even when it is. The page that answers questions was never told to
+      look at those fields, and neither was the reorder summary or the vendor directory. One
+      list, used everywhere, means a question that is asked on the form is a question the
+      whole app can answer.
     </p>
   </section>
 
   <section>
-    <h2>Cost and risk</h2>
-    <ul class="plain">
-      <li><strong>Effort.</strong> One build round. No database script for you to run and no downtime.</li>
-      <li><strong>Risk.</strong> Low. The rules that protect money and hide costs from staff are not being touched, only the list of what each screen loads.</li>
-      <li><strong>If you say no.</strong> Everything keeps working exactly as it does today. The three gaps above stay, and the Ask page keeps saying that ordering details are not on file.</li>
-    </ul>
+    <h2>The one question at the end</h2>
+    <p class="lede">
+      Today the minimum order must be answered every single time a vendor is saved, even when
+      you only opened the vendor to fix a phone number. You asked for that, back when the
+      field was new, so I am not changing it without asking.
+    </p>
+    <div class="choice">
+      <p class="opt"><strong>Option A. Keep it.</strong> You are asked every time. It does mean the minimum gets recorded rather than skipped forever, which was the original reason.</p>
+      <hr class="rule" />
+      <p class="opt"><strong>Option B. Only ask when the ordering questions are on screen.</strong> So a Dry Goods vendor still asks, a bakery never does, and correcting a phone number saves without an argument.</p>
+    </div>
+    <p>My recommendation is B, now that the questions are department specific anyway.</p>
   </section>
+
+  <div class="callout">
+    <h3>To answer this</h3>
+    <p>
+      Print the table and mark it up, or just tell me the changes in a voice note. "Hardware
+      should have the summer timeline" is a complete answer. Once the table is right I will
+      build it, and you will see it on the practice site before it reaches the store.
+    </p>
+  </div>
 
   <footer>
     <p>Prepared by Raviteja. Recorded in the requirements ledger as an open item awaiting your decision.</p>
-    <p>Reply with a yes or no and your pick of A or B, and I will get it built.</p>
   </footer>
 
 </div>
