@@ -125,6 +125,26 @@ QUEUED (agreed, not built):
 - Price-check activity list and notification (grocery).
 
 OPEN (waiting on the owner):
+- One vendor field list, so every screen shows the same vendor the same way (proposed
+  2026-08-11, owner note sent the same day). The ordering profile saves correctly, but each
+  screen was told separately which vendor columns to load and they disagree: the vendor page
+  loads all four, the Reorder list three, and the vendor directory, /api/ask and
+  /api/reorder none. The visible symptom is that Ask-the-store answers "not on file" for a
+  summer order timeline that IS on file, and the reorder summary cannot weigh the minimum
+  order. Proposal: a declarative field registry (src/lib/vendorFields.ts) holding label,
+  group, money flag, source columns, and a value() that returns null when there is nothing
+  to show, plus a derived vendorSelect() so the eight hand-written selects cannot drift
+  again. Same failure class the money-reviewer watches for on tax_mode. No migration, no
+  backfill, no schema change; the existing check constraints and canSeeMoney gating stay
+  exactly as they are. Rejected alternatives: a jsonb blob (loses the mutually-exclusive
+  minimum-order constraint, the numeric type on money, per-field money gating, and readable
+  export tabs) and probing which columns are non-null (collapses "never asked" into "does
+  not apply", and cannot know that order_location + order_location_other are one fact).
+  OWNER DECISION NEEDED: (a) go ahead yes or no, and (b) do blank answers stay hidden
+  everywhere, or is a "not answered yet" view wanted so the roughly 130 vendors can be
+  filled in a few at a time. Recommendation is yes and the "not answered yet" view. If a
+  genuinely open-ended per-vendor attribute is ever wanted, that is a vendor_attribute child
+  table with RLS through its parent, not a blob column.
 - Of the three 2026-07-10 voice notes ("most important"), the domain-email one is now
   resolved: it was about the store's own domain email plan (docs/DOMAIN_EMAIL.md). Still
   un-decoded: the 12:18 note ("deposit on the device"). Owner to type it or re-record in
