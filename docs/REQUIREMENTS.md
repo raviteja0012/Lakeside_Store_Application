@@ -125,6 +125,27 @@ QUEUED (agreed, not built):
 - Price-check activity list and notification (grocery).
 
 OPEN (waiting on the owner):
+- The vendor form asks every vendor for everything (owner complaint 2026-08-11, and the
+  same point he made on 2026-07-27). Adding a vendor presents about 13 field groups and 20
+  controls, including a seven-box location group, whatever the vendor is. His own workbook
+  has never worked that way: OWNER_NOTES.md line 367 records the 2026_Payments tab census
+  as "fields differ BY DEPARTMENT, the owner's core point", with Bakery, Meat and
+  StoreSupplies on a five-column "light form", LocalVendors adding invoice and payment
+  columns, Grocery carrying the full merchandise shape, Hardware that plus PO#, and
+  MaintenancePayments a different shape again (SpecilizedOn, TechName, Estimate#,
+  TypeOfWork). PROCESS FAILURE TO NOTE: that census was captured verbatim on 2026-07-27 and
+  never triaged into this file, so his core point was never work. Made worse by the
+  minimum-order rule, which is mandatory on every save on both the add path
+  (src/app/vendors/page.tsx:121) and the edit path (src/app/vendors/[id]/page.tsx:227), so
+  a phone-number correction cannot be saved without answering it; src/lib/vendorOrdering.ts
+  line 60 records that as deliberate and asked for, which is exactly why reversing it is the
+  owner's call and not a bug fix. Proposed direction: extend the field registry below with
+  department applicability and a required() predicate, and drive the FORM from it as well as
+  the display, so "what a vendor is" is defined once per department instead of once per
+  screen. Seed the department field sets from the workbook census for him to confirm rather
+  than asking him to specify them cold. OWNER DECISION NEEDED: department-shaped field sets
+  matching his tabs, or one shorter form for everyone with the rarely-used fields behind an
+  optional section, or both. Also: does the minimum order stop being mandatory.
 - One vendor field list, so every screen shows the same vendor the same way (proposed
   2026-08-11, owner note sent the same day). The ordering profile saves correctly, but each
   screen was told separately which vendor columns to load and they disagree: the vendor page
