@@ -154,14 +154,25 @@ address:
 
 ### 4. Email invoice intake (the queued feature, now concrete)
 Design (build when the owner says go):
-- Vendors send invoices to invoices@robinsonsgeneralstore.ca.
-- The mailbox forwards a copy to the app's inbound address (Resend Inbound or an IMAP
-  poll from a Vercel cron; credentials live in env, never in the repo).
+- Vendors send invoices to invoices@robinsonsgeneralstore.ca. That is the address on the
+  vendor's file and it never changes, whatever the app reads behind it.
+- The mailbox forwards a copy to the app's inbound address. Three ways to provide that
+  address, decided 2026-08-12:
+  - **AgentMail (preferred).** A programmatic inbox reached with a scoped API key.
+  - Resend Inbound. One fewer vendor, since Resend already sends the daily alert.
+  - An IMAP poll from a Vercel cron. **Least preferred:** it needs the Vianet mailbox
+    password in Vercel env, and that credential is worth more than this feature, since
+    the same panel holds the store's other mailboxes.
+  The API-key options win on that one point: a key scoped to one inbox can be rotated
+  without touching the store's mail, and it cannot read info@ or drygoods@ if it leaks.
+  Credentials live in env, never in the repo, whichever is chosen.
 - Each attachment runs through the existing Capture extraction with a "from email"
   badge and the usual human confirm; the sender address must match a configurable
   allowlist (the "configure which emails" ask from the first feedback round).
-This turns the full-mailbox problem into a workflow: the invoice inbox is drained into
-the app instead of rotting at 250MB.
+This turns invoice chasing into a workflow: the invoice inbox is drained into the app
+instead of sitting unread. (An earlier version of this line said "rotting at 250MB". That
+was the same quota error corrected above: the quota is 1000MB and no box is close to it.
+Storage was never the reason to build this; lost invoices are.)
 
 ### 5. Member logins on the domain (later, optional)
 When enforced-auth accounts are re-issued, use real addresses (owner@, manager@) instead
@@ -170,9 +181,11 @@ new addresses and updating app_user.email is the whole change.
 
 ## Who does what
 
-- Owner or Raviteja in the DOMAIN PANEL: clear the three full mailboxes; repoint or delete
-  stories@; archive joanne@; create invoices@ (and any of the suggested boxes); add the
-  Vercel CNAME and, when doing step 3, the Resend SPF/DKIM records.
+- Owner or Raviteja in the DOMAIN PANEL: repoint or delete stories@; archive joanne@;
+  create invoices@ (and any of the suggested boxes); and, when doing step 3, add the
+  Resend SPF/DKIM records. (Two items were removed from this line on 2026-08-12: "clear
+  the three full mailboxes", which was the corrected quota error and was never real work,
+  and the Vercel CNAME, which is done and live.)
 - Raviteja in VERCEL: add the custom domain; set ALERT_EMAIL_FROM after Resend verifies.
 - The app (Claude, next build rounds): the email-intake pipeline of step 4 once invoices@
   exists and forwarding is chosen; nothing else needs code.
