@@ -1,0 +1,270 @@
+// What a vendor IS, defined once, per department.
+//
+// Before this file, every screen decided for itself which vendor columns to load and which
+// to draw. Eight places queried the vendor table and no two asked for the same set, so
+// Ask-the-store told the owner a summer order timeline was "not on file" when it was, and
+// the add-vendor form asked a bakery about gift shows.
+//
+// The owner's point, recorded verbatim in docs/OWNER_NOTES.md line 367 on 2026-07-27:
+//
+//     "fields differ BY DEPARTMENT, the owner's core point"
+//
+// His own workbook has never used one shape. Bakery, Meat and Store Supplies run what that
+// note calls "the light form"; Grocery carries the full merchandise shape; Hardware is
+// Grocery plus a PO number; Maintenance Payments keeps who the contractor is and what they
+// specialize in.
+//
+// HOW TO CHANGE THE MAP. The `departments` line on each field below is DATA, not structure.
+// If the owner says Hardware should be asked for a summer order timeline, that is one edit
+// to one array and nothing else moves. The map here is derived from his workbook census and
+// is a starting position, not a claim to be right.
+//
+// TWO RULES THAT MAKE A WRONG GUESS SAFE:
+//   1. Hiding a question never hides an answer. `visibleFacts` returns anything with a value
+//      whatever the department map says, so a bakery vendor that already has a summer order
+//      timeline still shows it. Data never becomes unreachable because of a guess here.
+//   2. A department this file does not recognise gets EVERYTHING. Chip Stand and Checkouts
+//      match nothing in departments.ts and are real parts of the store; they must not lose
+//      fields for not being on a list.
+
+import type { Vendor } from "@/lib/types";
+import { canonicalDepartment } from "@/lib/departments";
+import { minimumOrderLabel, orderLocationLabel, REORDER_STATUS } from "@/lib/vendorOrdering";
+
+export type VendorFieldGroup = "identity" | "contact" | "trade" | "ordering" | "service";
+
+/** `"all"` means every department asks it. An array is the exact canonical labels. */
+export type DepartmentScope = "all" | string[];
+
+export type VendorField = {
+  key: string;
+  /** The owner's words. This is what appears on screen and in the AI's context. */
+  label: string;
+  group: VendorFieldGroup;
+  /** A dollar figure, so it hides from anyone who cannot see money. */
+  money: boolean;
+  /** Columns a select must fetch for `value` to work. Drives vendorSelect(). */
+  columns: string[];
+  departments: DepartmentScope;
+  /** The answer as one readable line, or null when nothing is on file. */
+  value: (v: any) => string | null;
+  /** A second line under the answer, for facts that are really two columns. */
+  detail?: (v: any) => string | null;
+  /** Shown even when blank, because its absence is itself information. */
+  alwaysShow?: boolean;
+};
+
+const MERCHANDISE = ["DryGoods & Lakeside", "Hardware", "Grocery"];
+const HAS_A_REP = ["DryGoods & Lakeside", "Hardware", "Grocery", "Property Maintenance"];
+
+function text(s: unknown): string | null {
+  const t = typeof s === "string" ? s.trim() : "";
+  return t ? t : null;
+}
+
+export const VENDOR_FIELDS: VendorField[] = [
+  {
+    key: "name",
+    label: "Company or vendor name",
+    group: "identity",
+    money: false,
+    columns: ["name"],
+    departments: "all",
+    value: (v) => text(v.name),
+    alwaysShow: true
+  },
+  {
+    key: "status",
+    label: "Status",
+    group: "identity",
+    money: false,
+    columns: ["status"],
+    departments: "all",
+    // Shown even when blank: "we stopped buying from them" is worth seeing on every vendor,
+    // and a bankrupt supplier is not a detail to leave off a light form.
+    value: (v) => text(v.status),
+    alwaysShow: true
+  },
+  {
+    key: "phone",
+    label: "Phone",
+    group: "contact",
+    money: false,
+    columns: ["phone"],
+    departments: "all",
+    value: (v) => text(v.phone)
+  },
+  {
+    key: "email",
+    label: "Email",
+    group: "contact",
+    money: false,
+    columns: ["email"],
+    departments: "all",
+    value: (v) => text(v.email)
+  },
+  {
+    key: "notes",
+    label: "Notes and rules",
+    group: "identity",
+    money: false,
+    columns: ["notes"],
+    departments: "all",
+    value: (v) => text(v.notes)
+  },
+  {
+    key: "rep_name",
+    // "Technician" on the maintenance side is the same column with a different word; the
+    // label follows the department in labelFor() below.
+    label: "Rep name",
+    group: "contact",
+    money: false,
+    columns: ["rep_name"],
+    departments: HAS_A_REP,
+    value: (v) => text(v.rep_name)
+  },
+  {
+    key: "default_terms",
+    label: "Payment terms",
+    group: "trade",
+    money: false,
+    // Terms appear on the owner's LocalVendors tab and on the merchandise tabs, not on the
+    // light form. This is a line to check with him: a meat supplier may well have terms.
+    columns: ["default_terms"],
+    departments: [...MERCHANDISE, "Property Maintenance"],
+    value: (v) => text(v.default_terms)
+  },
+  {
+    key: "products_we_carry",
+    // His Grocery tab calls this TypeOfGoods.
+    label: "Products we carry",
+    group: "trade",
+    money: false,
+    columns: ["products_we_carry"],
+    departments: MERCHANDISE,
+    value: (v) => text(v.products_we_carry)
+  },
+  {
+    key: "minimum_order",
+    label: "Minimum order",
+    group: "ordering",
+    money: true,
+    columns: ["minimum_order_amount", "no_minimum_order"],
+    departments: MERCHANDISE,
+    value: (v) => minimumOrderLabel(v)
+  },
+  {
+    key: "reorder",
+    label: "Reorder status",
+    group: "ordering",
+    money: false,
+    columns: ["reorder_status", "reorder_comments"],
+    departments: MERCHANDISE,
+    value: (v) =>
+      v.reorder_status
+        ? REORDER_STATUS.find((r) => r.value === v.reorder_status)?.label ?? text(v.reorder_status)
+        : null,
+    detail: (v) => (v.reorder_status ? text(v.reorder_comments) : null)
+  },
+  {
+    key: "order_location",
+    label: "Location of the order",
+    group: "ordering",
+    money: false,
+    // Two columns, one fact: the free text behind "Other" replaces the bare word.
+    columns: ["order_location", "order_location_other"],
+    departments: ["DryGoods & Lakeside", "Hardware"],
+    value: (v) => orderLocationLabel(v.order_location, v.order_location_other)
+  },
+  {
+    key: "summer_order_timeline",
+    label: "Summer order timeline",
+    group: "ordering",
+    money: false,
+    columns: ["summer_order_timeline"],
+    // From the bookings workbook, which is the gift and clothing side. The line I am least
+    // sure of: Hardware buys garden stock seasonally and may want it too.
+    departments: ["DryGoods & Lakeside"],
+    value: (v) => text(v.summer_order_timeline)
+  }
+];
+
+/** Maintenance calls the same person a technician, and specializes in a trade. */
+export function labelFor(field: VendorField, departmentName: string | null | undefined): string {
+  if (field.key === "rep_name" && canonicalDepartment(departmentName) === "Property Maintenance") {
+    return "Technician name";
+  }
+  return field.label;
+}
+
+function appliesTo(field: VendorField, departmentName: string | null | undefined): boolean {
+  if (field.departments === "all") return true;
+  const canon = canonicalDepartment(departmentName);
+  // Rule 2: an unrecognised department (Chip Stand, Checkouts, anything new) gets every
+  // question rather than silently losing them.
+  if (!canon) return true;
+  return field.departments.includes(canon);
+}
+
+/**
+ * The questions to ASK on a blank form for this department.
+ * Money fields drop out entirely for a role that cannot see money, because a required field
+ * nobody can see is a form that cannot be submitted.
+ */
+export function fieldsForEntry(
+  departmentName: string | null | undefined,
+  opts: { showMoney: boolean; group?: VendorFieldGroup }
+): VendorField[] {
+  return VENDOR_FIELDS.filter(
+    (f) =>
+      appliesTo(f, departmentName) &&
+      (!f.money || opts.showMoney) &&
+      (!opts.group || f.group === opts.group)
+  );
+}
+
+export type VendorFact = { field: VendorField; label: string; text: string; detail: string | null };
+
+/**
+ * The facts to SHOW for a saved vendor.
+ *
+ * Rule 1 lives here: a field carrying an answer is returned even when the department map
+ * says its department is not asked that question. Hiding a question must never hide an
+ * answer, or a vendor recorded before a map change would appear to have lost data.
+ */
+export function visibleFacts(
+  vendor: any,
+  opts: { showMoney: boolean; group?: VendorFieldGroup }
+): VendorFact[] {
+  const departmentName = vendor?.department?.name ?? null;
+  const out: VendorFact[] = [];
+  for (const f of VENDOR_FIELDS) {
+    if (opts.group && f.group !== opts.group) continue;
+    // The money gate is absolute and is checked before anything else: it is the one rule
+    // here that fails closed rather than open.
+    if (f.money && !opts.showMoney) continue;
+    const value = f.value(vendor);
+    if (value === null && !(f.alwaysShow && appliesTo(f, departmentName))) continue;
+    if (value === null) continue;
+    out.push({
+      field: f,
+      label: labelFor(f, departmentName),
+      text: value,
+      detail: f.detail?.(vendor) ?? null
+    });
+  }
+  return out;
+}
+
+/**
+ * The select string for the vendor table, derived from the registry.
+ *
+ * This is what stops the eight hand-written selects drifting apart again. It always fetches
+ * every field's columns regardless of department, because a vendor's department can be
+ * changed after the row is written and rule 1 needs the data present to honour it.
+ */
+export function vendorSelect(extra: string[] = []): string {
+  const cols = new Set<string>(["id", "store_id", "department_id", ...extra]);
+  for (const f of VENDOR_FIELDS) for (const c of f.columns) cols.add(c);
+  return [...cols].join(", ");
+}
