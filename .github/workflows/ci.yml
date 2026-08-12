@@ -29,20 +29,14 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ""
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ""
       # The automation's own rules, checked like any other code. These are the two
-      # decisions nothing else can catch: which changes may merge themselves, and when a
-      # closed ticket counts as work again.
+      # decisions nothing else can catch: which changes may merge themselves, and when the
+      # watchdog should speak rather than repeat itself.
       - name: Automation rules
         run: |
-          node .github/scripts/jira-find-work.test.mjs
-          node .github/scripts/raise-health-ticket.test.mjs
-          node .github/scripts/jira-transition.test.mjs
+          node .github/scripts/health-notify.test.mjs
           node --check .github/scripts/classify-change.mjs
-          node --check .github/scripts/jira-comment.mjs
           node --check .github/scripts/health-check.mjs
-          node --check .github/scripts/raise-health-ticket.mjs
-          node --check .github/scripts/jira-transition.mjs
-          node --check .github/scripts/jira-approved.mjs
-          node --check .github/scripts/resolve-health-ticket.mjs
+          node --check .github/scripts/health-notify.mjs
           # seed_dev.sql must never reach a real database through the migration workflow.
           # It is dev-only dummy data, and run-order.txt is the only list that runs.
           if grep -qE '^\s*seed' supabase/run-order.txt; then

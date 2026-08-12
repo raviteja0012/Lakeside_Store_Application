@@ -2,7 +2,32 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-08-12, on branch claude/pull-main-branches-atztoh (latest: the vendor field registry, below; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-08-12, on branch claude/pull-main-branches-atztoh (latest: Jira retired and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+
+Jira is retired, 2026-08-12:
+- The board and its autopilot are gone. The autopilot swept Jira every 15 minutes and started
+  a model on every sweep: 96 runs a day against a board the owner has never written to. His
+  requests arrive by phone and WhatsApp and were relayed by hand, so the intake loop was
+  paying to discover there was nothing to do.
+- Deleted: `.github/workflows/jira-autopilot.yml` and nine scripts. Nothing else in the repo
+  used them.
+- The health watchdog keeps its job and moves to Slack. It still asks /api/health after every
+  deploy and every two hours, and now posts when the answer CHANGES: once when the site goes
+  down, once when it recovers, nothing in between. The state used to be the ticket being open
+  or closed; it is now this workflow's own run history, one API call and no model. Set
+  `SLACK_WEBHOOK_URL` in Settings, Secrets and variables, Actions to turn it on. Without it
+  the step logs what it would have said and exits quietly, so nothing breaks meanwhile.
+- One thing is deliberately lost: the Jira version spoke up again when the list of failing
+  checks changed mid-outage. Slack has no such memory, and a run's history says pass or fail
+  and not what failed. While the site is down the run stays red and the failing checks are in
+  its log. Recorded in `health-notify.mjs` so the next person does not think it was missed.
+- Promotion to production was gated on moving a ticket to Approved. It is now the act of
+  running the promotion workflow by hand: Actions, Promote develop to production, Run
+  workflow. That is a worse place for approval to live than beside the request it approves,
+  and it is written down as such rather than dressed up. The part that matters is unchanged:
+  a person still says yes and no schedule can say it for them. Its half-hourly cron is gone
+  too, since there was no board left for it to read.
+- Going forward the working channel is Slack.
 
 The vendor form asks what the department asks, 2026-08-12:
 - The owner's complaint on 2026-08-11 was that the vendor entry form "has all column or

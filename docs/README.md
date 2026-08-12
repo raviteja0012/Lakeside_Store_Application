@@ -30,8 +30,7 @@ written for, and how current it is. Start here.
 |---|---|
 | [OWNER_NOTES.md](OWNER_NOTES.md) | The owner's feedback verbatim, round by round, Telugu translated. The raw input that REQUIREMENTS.md is triaged from |
 | [owner-notes/](owner-notes/) | Documents written **for** the owner rather than for the builder, plus the PDF renderer |
-| [LOOP_ENGINEERING.md](LOOP_ENGINEERING.md) | How the repo builds and ships itself from the Jira board, and why each limit exists. **Read before touching `.github/` or `.claude/`** |
-| [JIRA_AUTOPILOT.md](JIRA_AUTOPILOT.md) | The board, the statuses, and how a ticket becomes a build |
+| [LOOP_ENGINEERING.md](LOOP_ENGINEERING.md) | How the repo builds, ships and watches itself, and why each limit exists. **Read before touching `.github/` or `.claude/`** |
 
 ## The store's own data
 

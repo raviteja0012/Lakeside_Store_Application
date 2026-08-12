@@ -150,12 +150,13 @@ Exact color tokens, the one-meaning-per-hue status mapping, and the form and acc
 
 ## How this repo ships itself (read before touching .github or .claude)
 
-Since 2026-07-28 the repo builds and ships from the Jira board without a chat session. The
-full design and the reasoning for every limit is docs/LOOP_ENGINEERING.md; the short version
-you must not break:
+Since 2026-07-28 the repo carries its own build, ship and watch loops. The full design and
+the reasoning for every limit is docs/LOOP_ENGINEERING.md; the short version you must not
+break:
 
-- A ticket or a comment on the board becomes a build. A closed ticket counts too when
-  somebody comments on it after it was closed.
+- Work arrives by being asked for, in Slack. The Jira board and its autopilot were retired
+  on 2026-08-12: it ran 96 model-backed sweeps a day over a board the owner never wrote to.
+  Do not reintroduce a polling intake loop without a request actually arriving through it.
 - How far a change travels is decided by a SCRIPT reading the diff
   (.github/scripts/classify-change.mjs), never by the model's own judgement. Words only
   merge themselves; app changes wait for a person; money, access, the database, and the

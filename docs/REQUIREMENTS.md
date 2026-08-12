@@ -159,7 +159,17 @@ OPEN (waiting on the owner):
   workflow that was built for this on 2026-07-31 has never applied anything, because
   without the secret it exits quietly, which is why the script above is still a manual job.
   Instructions are at the top of docs/SUPABASE_SETUP.md.
-- Let the automation open its own pull requests: Settings, Actions, General, Workflow
+- DONE 2026-08-12: Jira is retired, at the developer's instruction ("we dont use jira
+  anymore", "remove if we are wasting credits in jira"). The autopilot was the only piece
+  spending model credits: 96 sweeps a day of a board the owner has never written to, while
+  his actual requests arrive by phone and WhatsApp. The board's two other jobs were free HTTP
+  and are re-homed: the health watchdog now posts to Slack when the site's answer changes,
+  and promotion to production is now a person running the promotion workflow rather than a
+  ticket moving to Approved. The working channel going forward is Slack. NEEDED to finish it:
+  SLACK_WEBHOOK_URL as a repository secret, or the watchdog logs what it would have said and
+  stays quiet.
+- Let the automation open its own pull requests (still worth doing for the promotion
+  workflow, which opens the develop-to-main pull request): Settings, Actions, General, Workflow
   permissions, "Allow GitHub Actions to create and approve pull requests". Today GitHub
   refuses createPullRequest from the autopilot's token, so a finished ticket ends as a
   pushed branch that somebody has to open by hand, and SCRUM-12 sat unopened for a day
