@@ -25,7 +25,42 @@ Return ONLY a JSON object, no prose and no code fences, in exactly this shape:
     }
   ]
 }
-Rules: amounts are in CAD as plain numbers with no currency symbol. retail_price_note is the retail price written by hand next to a line, or null if none. Set a low confidence on any field you are unsure about. If a value is missing use 0 for numbers and an empty string for text.`;
+Rules: amounts are in CAD as plain numbers with no currency symbol. retail_price_note is the retail price written by hand next to a line, or null if none. confidence is between 0 and 1; set it low on any field you are unsure about. If a value is missing use 0 for numbers and an empty string for text.`;
+
+// The same contract as the prompt, enforced by the API instead of asked for politely.
+// Structured outputs constrain the response to this schema, so "the model wrapped it in a
+// code fence" and "the model added a sentence before the JSON" stop being failure modes.
+//
+// Restrictions worth knowing before editing this (from the structured outputs docs):
+// no recursive schemas, no minimum/maximum, no minLength/maxLength, and additionalProperties
+// may only be false. That is why the 0-to-1 bound on confidence lives in the prompt above
+// rather than here: the schema cannot express it, and a schema the API rejects would fail
+// every capture rather than one.
+const OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    vendor: { type: "string" },
+    invoice_date: { type: "string" },
+    notes: { type: "string" },
+    line_items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          description: { type: "string" },
+          qty: { type: "number" },
+          unit_cost: { type: "number" },
+          retail_price_note: { anyOf: [{ type: "number" }, { type: "null" }] },
+          confidence: { type: "number" }
+        },
+        required: ["description", "qty", "unit_cost", "retail_price_note", "confidence"],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ["vendor", "invoice_date", "notes", "line_items"],
+  additionalProperties: false
+} as const;
 
 export async function POST(req: NextRequest) {
   try {
@@ -61,9 +96,13 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 2000,
+        // Was 2000, which a long delivery could exceed. Running out of room mid-answer
+        // truncates the JSON, and the store was then told "could not parse model output"
+        // for what was really a full invoice with too many lines to fit.
+        max_tokens: 8000,
         // No temperature override: current Claude models reject non-default sampling
         // params; the strict JSON contract in the prompt keeps extraction stable.
+        output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
         messages: [{ role: "user", content: [block, { type: "text", text: PROMPT }] }]
       })
     });
@@ -74,7 +113,33 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await resp.json();
+
+    // A refusal arrives as HTTP 200 with stop_reason "refusal" and no usable content, so
+    // code that reads the first content block unconditionally would fail here with something
+    // meaningless. The person holding the invoice is a seasonal employee at the receiving
+    // door, and the standing rule is that they are never asked to debug: tell them what to
+    // do next instead.
+    if (data.stop_reason === "refusal") {
+      return NextResponse.json(
+        { error: "The reader would not process this document. Enter the invoice by hand using Enter manually, and tell the owner which invoice it was." },
+        { status: 422 }
+      );
+    }
+
+    // Ran out of room. Distinguishing this from a parse failure matters: the invoice was
+    // read fine, there were just more lines than would fit, and saying so points at the
+    // real fix (capture it in two photos) rather than at a broken reader.
+    if (data.stop_reason === "max_tokens") {
+      return NextResponse.json(
+        { error: "This invoice is longer than the reader can return in one go. Photograph it in two halves and capture each, or enter it by hand." },
+        { status: 422 }
+      );
+    }
+
     const textPart = (data.content || []).find((c: any) => c.type === "text");
+    // Structured outputs should make the fence strip unnecessary, since the response is
+    // constrained to the schema. It stays because it costs nothing and this is the path a
+    // failed capture blocks the receiving door on.
     const raw = (textPart?.text || "").replace(/```json|```/g, "").trim();
 
     let parsed: any;

@@ -121,13 +121,27 @@ async function run(req: NextRequest) {
 
   const resp = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${resendKey}` },
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${resendKey}`,
+      // Resend rejects a request with no User-Agent as 403. A server runtime does not
+      // necessarily set one, and a 403 here looked exactly like every other failure
+      // because of the status bug fixed just below.
+      "user-agent": "robinsons-store/1.0 (+https://app.robinsonsgeneralstore.ca)"
+    },
     body: JSON.stringify({ from, to: to.split(",").map((s) => s.trim()), subject, text })
   });
 
   if (!resp.ok) {
     const detail = await resp.text();
-    return NextResponse.json({ sent: false, error: "resend call failed", detail });
+    // This used to return HTTP 200 with sent:false. The Vercel cron reads 200 as success,
+    // so the one daily push telling the owner what the store owes could stop arriving and
+    // nothing anywhere would say so. A failed send is now a failed request, which the cron
+    // records and the post-deploy watchdog can see.
+    return NextResponse.json(
+      { sent: false, error: "resend call failed", detail: detail.slice(0, 300) },
+      { status: 502 }
+    );
   }
 
   return NextResponse.json({ sent: true, counts: { overdue: overdue.length, dueSoon: dueSoon.length, owed } });
