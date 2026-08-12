@@ -6,6 +6,11 @@ import { invoiceTotal } from "@/lib/payments";
 import { minimumOrderLabel, orderLocationLabel } from "@/lib/vendorOrdering";
 
 export const runtime = "nodejs";
+// Run in Montreal, not the default iad1 (Washington DC). The Supabase project is in
+// Toronto, so this keeps the store's vendor, payment and staff data being processed in
+// Canada rather than crossing the border on every request, and it is the nearest region
+// to the database, which Vercel recommends for latency.
+export const preferredRegion = "yul1";
 
 // Ask-your-store: answers questions using only the store's own data as grounding.
 // At this scale (tens of vendors) we pass the data directly as context. pgvector is the

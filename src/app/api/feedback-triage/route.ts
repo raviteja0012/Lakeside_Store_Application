@@ -3,6 +3,11 @@ import { resolveMember } from "@/lib/serverMember";
 import { plainText } from "@/lib/aiText";
 
 export const runtime = "nodejs";
+// Run in Montreal, not the default iad1 (Washington DC). The Supabase project is in
+// Toronto, so this keeps the store's vendor, payment and staff data being processed in
+// Canada rather than crossing the border on every request, and it is the nearest region
+// to the database, which Vercel recommends for latency.
+export const preferredRegion = "yul1";
 
 // Reads an attached screenshot with the store's Anthropic key and writes a text
 // description onto the feedback row, so a picture-based request becomes searchable text

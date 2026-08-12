@@ -3,6 +3,11 @@ import * as XLSX from "xlsx";
 import { resolveMember } from "@/lib/serverMember";
 
 export const runtime = "nodejs";
+// Run in Montreal, not the default iad1 (Washington DC). The Supabase project is in
+// Toronto, so this keeps the store's vendor, payment and staff data being processed in
+// Canada rather than crossing the border on every request, and it is the nearest region
+// to the database, which Vercel recommends for latency.
+export const preferredRegion = "yul1";
 
 // Full-data export: one Excel workbook, one tab per table, every id column intact so the
 // relationships survive the trip (normalize, analyze, or re-import anywhere). Voided (deleted)

@@ -11,7 +11,8 @@ written for, and how current it is. Start here.
 | [STATUS.md](STATUS.md) | Builder | What is built right now, and the before-production checklist |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Builder | The stack, the data flow, the capture loop, the Mermaid diagrams |
 | [PLATFORM.md](PLATFORM.md) | Builder | Every service and plan in use, what is adopted, and what is deliberately declined with the reason. **Carries two open risks: the Vercel plan and database backups** |
-| [research/](research/) | Builder | The 2026-08-12 catalog of what all seven platforms can do, 477 capabilities fetched from the vendors' live docs. Reference, not a plan |
+| [CAPABILITIES.md](CAPABILITIES.md) | Builder | **The standing answer to "should we use X".** All 477 researched capabilities with a verdict each: 83 adopt now, 65 when needed, 329 declined with reasons. Ends with the sequenced build plan |
+| [research/](research/) | Builder | The 2026-08-12 catalog of what all seven platforms can do, fetched from the vendors' live docs. Raw reference behind CAPABILITIES.md |
 
 ## Operating it
 
