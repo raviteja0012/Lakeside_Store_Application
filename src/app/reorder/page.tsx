@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCAD } from "@/lib/format";
 import { minimumOrderLabel } from "@/lib/vendorOrdering";
+import { vendorSelect } from "@/lib/vendorFields";
 import { useActiveStore } from "@/lib/store";
 import { authHeader, canSeeMoney, useCurrentRole } from "@/lib/auth";
 
@@ -45,7 +46,7 @@ export default function Reorder() {
     if (!ready) return;
     setLoading(true);
     (async () => {
-      let vq = supabase.from("vendor").select("id, name, status, default_terms, notes, minimum_order_amount, no_minimum_order, summer_order_timeline, reorder_status, reorder_comments, department:department_id(name)").is("voided_at", null).order("name");
+      let vq = supabase.from("vendor").select(vendorSelect(["department:department_id(name)"])).is("voided_at", null).order("name");
       if (storeId) vq = vq.eq("store_id", storeId);
       const v = await vq;
       if (v.error) { setError(v.error.message); setLoading(false); return; }

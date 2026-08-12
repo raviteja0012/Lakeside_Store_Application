@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveMember, memberSeesMoney } from "@/lib/serverMember";
 import { plainText } from "@/lib/aiText";
 import { minimumOrderLabel, orderLocationLabel } from "@/lib/vendorOrdering";
+import { vendorSelect } from "@/lib/vendorFields";
 
 export const runtime = "nodejs";
 // Run in Montreal, not the default iad1 (Washington DC). The Supabase project is in
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
     // under a vendor's stated minimum, or miss that the summer order is already overdue.
     // No money gate is applied per field here: the route already returned 403 above for any
     // role that cannot see money, so everything past that point is money-visible.
-    const scopeVendor = db.from("vendor").select("name, status, default_terms, notes, minimum_order_amount, no_minimum_order, summer_order_timeline, order_location, order_location_other, reorder_status, reorder_comments, department:department_id(name)").is("voided_at", null);
+    const scopeVendor = db.from("vendor").select(vendorSelect(["department:department_id(name)"])).is("voided_at", null);
     const scopePo = db.from("purchase_order").select("vendor_id, order_amount, ship_date, season_year, status, vendor:vendor_id(name)").is("voided_at", null);
     const scopeNote = db.from("knowledge_note").select("topic, body, tags").is("voided_at", null);
     const [vendors, pos, notes] = await Promise.all([

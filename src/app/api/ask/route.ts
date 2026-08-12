@@ -4,6 +4,7 @@ import { plainText } from "@/lib/aiText";
 import { APP_GUIDE } from "@/lib/appGuide";
 import { invoiceTotal } from "@/lib/payments";
 import { minimumOrderLabel, orderLocationLabel } from "@/lib/vendorOrdering";
+import { vendorSelect } from "@/lib/vendorFields";
 
 export const runtime = "nodejs";
 // Run in Montreal, not the default iad1 (Washington DC). The Supabase project is in
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
     // for a summer order timeline that IS on file, because the columns were simply never
     // selected. minimum_order_amount is a dollar figure and rides the same money gate as the
     // invoice section below.
-    const scopeVendor = db.from("vendor").select("name, default_terms, status, notes, phone, minimum_order_amount, no_minimum_order, summer_order_timeline, order_location, order_location_other, reorder_status, reorder_comments, department:department_id(name)").is("voided_at", null);
+    const scopeVendor = db.from("vendor").select(vendorSelect(["department:department_id(name)"])).is("voided_at", null);
     const scopeInvoice = db.from("invoice").select("amount, hst_amount, freight_charges, tax_mode, due_date, status, terms, vendor:vendor_id(name)").is("voided_at", null);
     const [notes, vendors, invoices] = await Promise.all([
       storeId ? scopeNote.eq("store_id", storeId) : scopeNote,

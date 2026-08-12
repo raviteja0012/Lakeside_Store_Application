@@ -18,10 +18,14 @@ import {
 } from "@/lib/payments";
 import { FieldError, fieldInputClass, type FieldErrors } from "@/components/FieldError";
 import { VendorOrderingFields, EMPTY_ORDERING_PROFILE, type OrderingProfile } from "@/components/VendorOrderingFields";
+// orderLocationLabel and REORDER_STATUS are gone from here: the registry formats those two
+// now. minimumOrderLabel stays because the Add order form still quotes the minimum beside
+// the amount box, which is a different job from listing the vendor's facts.
 import {
-  OTHER_LOCATION, minimumOrderLabel, orderLocationLabel,
-  validateMinimumOrder, validateReorder, REORDER_STATUS
+  OTHER_LOCATION, minimumOrderLabel,
+  validateMinimumOrder, validateReorder
 } from "@/lib/vendorOrdering";
+import { vendorSelect, visibleFacts } from "@/lib/vendorFields";
 import type { Vendor, PurchaseOrder, Invoice, Payment, AppUser, CreditNote } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -139,7 +143,9 @@ export default function VendorDetail() {
   async function load() {
     const { data: v, error: ve } = await supabase
       .from("vendor")
-      .select("id, store_id, department_id, name, rep_name, phone, email, products_we_carry, default_terms, status, notes, minimum_order_amount, no_minimum_order, summer_order_timeline, order_location, order_location_other, reorder_status, reorder_comments, department:department_id(name, accent_color)")
+      // Derived from the field registry rather than hand-written, so this list cannot drift
+      // from what the screens actually draw. Adding a vendor field is one registry entry.
+      .select(vendorSelect(["department:department_id(name, accent_color)"]))
       .eq("id", id)
       .is("voided_at", null)
       .maybeSingle();
@@ -919,25 +925,29 @@ export default function VendorDetail() {
         </div>
         {vendor.products_we_carry && <div><div className="help">Products</div><div>{vendor.products_we_carry}</div></div>}
         {/* The ordering profile, between Products and Notes, where the owner asked for it.
-            Each line appears only once it has been answered: a row of "not set" labels on
-            130 vendors that have never been asked would be noise, not information. */}
-        {((showMoney && minimumOrderLabel(vendor)) || vendor.summer_order_timeline || orderLocationLabel(vendor.order_location, vendor.order_location_other) || vendor.reorder_status) && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-            {/* A dollar figure, so it obeys the money gate like every other one on this page. */}
-            {showMoney && minimumOrderLabel(vendor) && <div><div className="help">Minimum order</div><div>{minimumOrderLabel(vendor)}</div></div>}
-            {vendor.summer_order_timeline && <div><div className="help">Summer order timeline</div><div>{vendor.summer_order_timeline}</div></div>}
-            {orderLocationLabel(vendor.order_location, vendor.order_location_other) && (
-              <div><div className="help">Location of the order</div><div>{orderLocationLabel(vendor.order_location, vendor.order_location_other)}</div></div>
-            )}
-            {vendor.reorder_status && (
-              <div>
-                <div className="help">Reorder status</div>
-                <div>{REORDER_STATUS.find((r) => r.value === vendor.reorder_status)?.label || labelize(vendor.reorder_status)}</div>
-                {vendor.reorder_comments && <div className="help" style={{ marginTop: 2 }}>{vendor.reorder_comments}</div>}
-              </div>
-            )}
-          </div>
-        )}
+            Drawn from the field registry now, so this screen, the AI routes and the entry
+            form all answer "what is a vendor" the same way.
+
+            Two behaviours come from the registry rather than from here. A line still appears
+            only once it has been answered, because a row of "not set" labels across 130
+            vendors would be noise. And a saved answer shows even when this vendor's
+            department is no longer asked that question, so changing the department map never
+            looks like deleting data. */}
+        {(() => {
+          const facts = visibleFacts(vendor, { showMoney, group: "ordering" });
+          if (!facts.length) return null;
+          return (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+              {facts.map((f) => (
+                <div key={f.field.key}>
+                  <div className="help">{f.label}</div>
+                  <div>{f.text}</div>
+                  {f.detail && <div className="help" style={{ marginTop: 2 }}>{f.detail}</div>}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {vendor.notes && <div><div className="help">Notes and rules</div><div>{vendor.notes}</div></div>}
         {!editVendor && canEdit(role) && (
           <div style={{ display: "flex", gap: 8 }}>
