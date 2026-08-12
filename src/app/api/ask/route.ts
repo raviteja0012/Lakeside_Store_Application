@@ -3,6 +3,7 @@ import { resolveMember, memberSeesMoney } from "@/lib/serverMember";
 import { plainText } from "@/lib/aiText";
 import { APP_GUIDE } from "@/lib/appGuide";
 import { invoiceTotal } from "@/lib/payments";
+import { minimumOrderLabel, orderLocationLabel } from "@/lib/vendorOrdering";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,11 @@ export async function POST(req: NextRequest) {
     }
 
     const scopeNote = db.from("knowledge_note").select("topic, body, tags, department:department_id(name)").is("voided_at", null);
-    const scopeVendor = db.from("vendor").select("name, default_terms, status, notes, phone, department:department_id(name)").is("voided_at", null);
+    // The ordering profile is fetched here too. Without it this route answered "not on file"
+    // for a summer order timeline that IS on file, because the columns were simply never
+    // selected. minimum_order_amount is a dollar figure and rides the same money gate as the
+    // invoice section below.
+    const scopeVendor = db.from("vendor").select("name, default_terms, status, notes, phone, minimum_order_amount, no_minimum_order, summer_order_timeline, order_location, order_location_other, reorder_status, reorder_comments, department:department_id(name)").is("voided_at", null);
     const scopeInvoice = db.from("invoice").select("amount, hst_amount, freight_charges, tax_mode, due_date, status, terms, vendor:vendor_id(name)").is("voided_at", null);
     const [notes, vendors, invoices] = await Promise.all([
       storeId ? scopeNote.eq("store_id", storeId) : scopeNote,
@@ -54,7 +59,20 @@ export async function POST(req: NextRequest) {
 
     lines.push("\nVENDORS:");
     for (const v of (vendors.data as any[]) || []) {
-      lines.push(`- ${v.name} [${v.department?.name || ""}], terms ${v.default_terms || "n/a"}, status ${v.status}${v.phone ? ", phone " + v.phone : ""}${v.notes ? ", note: " + v.notes : ""}`);
+      // The ordering profile, appended only where an answer exists. minimumOrderLabel and
+      // orderLocationLabel are the same pure helpers the vendor screens use, so the wording
+      // here cannot drift from what the owner sees on the page. Both return null when
+      // nothing is on file, which is the third state: not "no minimum", just never asked.
+      const ordering: string[] = [];
+      const minimum = includeMoney ? minimumOrderLabel(v) : null;
+      if (minimum) ordering.push(minimum);
+      if (v.summer_order_timeline) ordering.push(`summer order: ${v.summer_order_timeline}`);
+      const where = orderLocationLabel(v.order_location, v.order_location_other);
+      if (where) ordering.push(`ordered via ${where}`);
+      if (v.reorder_status) {
+        ordering.push(`reorder: ${v.reorder_status === "reordered" ? "reordered this year" : "no reorder"}${v.reorder_comments ? " (" + v.reorder_comments + ")" : ""}`);
+      }
+      lines.push(`- ${v.name} [${v.department?.name || ""}], terms ${v.default_terms || "n/a"}, status ${v.status}${v.phone ? ", phone " + v.phone : ""}${v.notes ? ", note: " + v.notes : ""}${ordering.length ? ", " + ordering.join(", ") : ""}`);
     }
 
     if (includeMoney) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveMember, memberSeesMoney } from "@/lib/serverMember";
 import { plainText } from "@/lib/aiText";
+import { minimumOrderLabel, orderLocationLabel } from "@/lib/vendorOrdering";
 
 export const runtime = "nodejs";
 
@@ -29,7 +30,12 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
     const storeId: string | null = member?.store_id || body?.store_id || null;
-    const scopeVendor = db.from("vendor").select("name, status, default_terms, notes, department:department_id(name)").is("voided_at", null);
+    // The ordering profile is what the buyer needs before placing an order, so the summary
+    // that suggests orders has to see it. Without these columns it could suggest an order
+    // under a vendor's stated minimum, or miss that the summer order is already overdue.
+    // No money gate is applied per field here: the route already returned 403 above for any
+    // role that cannot see money, so everything past that point is money-visible.
+    const scopeVendor = db.from("vendor").select("name, status, default_terms, notes, minimum_order_amount, no_minimum_order, summer_order_timeline, order_location, order_location_other, reorder_status, reorder_comments, department:department_id(name)").is("voided_at", null);
     const scopePo = db.from("purchase_order").select("vendor_id, order_amount, ship_date, season_year, status, vendor:vendor_id(name)").is("voided_at", null);
     const scopeNote = db.from("knowledge_note").select("topic, body, tags").is("voided_at", null);
     const [vendors, pos, notes] = await Promise.all([
@@ -43,7 +49,18 @@ export async function POST(req: NextRequest) {
 
     lines.push("\nVENDORS:");
     for (const v of (vendors.data as any[]) || []) {
-      lines.push(`- ${v.name} [${v.department?.name || ""}], status ${v.status}, terms ${v.default_terms || "n/a"}${v.notes ? ", note: " + v.notes : ""}`);
+      // Same helpers the vendor screens use, so the wording cannot drift. Both return null
+      // when nothing is on file, and a blank stays blank rather than reading as "no minimum".
+      const ordering: string[] = [];
+      const minimum = minimumOrderLabel(v);
+      if (minimum) ordering.push(minimum);
+      if (v.summer_order_timeline) ordering.push(`summer order: ${v.summer_order_timeline}`);
+      const where = orderLocationLabel(v.order_location, v.order_location_other);
+      if (where) ordering.push(`ordered via ${where}`);
+      if (v.reorder_status) {
+        ordering.push(`reorder: ${v.reorder_status === "reordered" ? "reordered this year" : "no reorder"}${v.reorder_comments ? " (" + v.reorder_comments + ")" : ""}`);
+      }
+      lines.push(`- ${v.name} [${v.department?.name || ""}], status ${v.status}, terms ${v.default_terms || "n/a"}${v.notes ? ", note: " + v.notes : ""}${ordering.length ? ", " + ordering.join(", ") : ""}`);
     }
 
     lines.push("\nORDERS (vendor, season, amount, ship date, status):");
