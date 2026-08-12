@@ -8,18 +8,14 @@ import { sortDepartments } from "@/lib/departments";
 import { useActiveStore } from "@/lib/store";
 import { REQUIRE_AUTH, authHeader, canSeeMoney, useEffectiveActor } from "@/lib/auth";
 import type { AppUser, Department, Draft, LineItem } from "@/lib/types";
+import { prepareForExtraction, readableSize } from "@/lib/imagePrep";
 
 type VendorLite = { id: string; name: string; department_id: string | null; default_terms: string | null };
 type POLite = { vendor_id: string | null; order_amount: number | null };
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(String(r.result).split(",")[1]);
-    r.onerror = () => rej(new Error("could not read file"));
-    r.readAsDataURL(file);
-  });
-}
+// Reading the file for the model now lives in lib/imagePrep, which shrinks the COPY sent for
+// extraction when a phone photo is too big to send. The original still goes to Storage at
+// full size: that upload is the store's six-year record of the invoice.
 
 const LOW_CONFIDENCE = 0.7;
 
@@ -36,6 +32,8 @@ export default function Capture() {
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  // Set when the copy sent for reading was shrunk, so the screen can say so quietly.
+  const [reduced, setReduced] = useState<{ from: number; to: number } | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [manual, setManual] = useState(false);
   const [ack, setAck] = useState(false);
@@ -87,6 +85,7 @@ export default function Capture() {
     setManual(false);
     setAck(false);
     setLowAck(false);
+    setReduced(null);
     setFile(f);
     if (preview) URL.revokeObjectURL(preview);
     setPreview(f && f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
@@ -98,6 +97,7 @@ export default function Capture() {
     setError(null);
     setSaved(false);
     setFile(null);
+    setReduced(null);
     if (preview) URL.revokeObjectURL(preview);
     setPreview(null);
     setAck(false);
@@ -111,11 +111,15 @@ export default function Capture() {
     setExtracting(true);
     setError(null);
     try {
-      const imageBase64 = await fileToBase64(file);
+      // Shrinks a large phone photo before sending, automatically. Nobody is asked to do
+      // anything: a 12 megapixel picture would otherwise exceed the request body limit and
+      // fail at the receiving door. The file itself is untouched and is what gets stored.
+      const prepared = await prepareForExtraction(file);
+      setReduced(prepared.reduced ? { from: prepared.originalBytes, to: prepared.sentBytes } : null);
       const resp = await fetch("/api/extract", {
         method: "POST",
         headers: { "content-type": "application/json", ...(await authHeader()) },
-        body: JSON.stringify({ imageBase64, mediaType: file.type })
+        body: JSON.stringify({ imageBase64: prepared.base64, mediaType: prepared.mediaType })
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || data.error || "extraction failed");
@@ -302,6 +306,16 @@ export default function Capture() {
           )}
           <input ref={inputRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => pickFile(e.target.files?.[0] || null)} />
         </div>
+
+        {/* Said once, quietly, and only when it happened. Staff took a big photo and it
+            worked; they do not need to change anything. The line exists so that a person
+            comparing the crisp original on the vendor page against the copy that was read
+            is not left wondering, not to ask anybody to do something. */}
+        {reduced && (
+          <p className="help" style={{ margin: 0 }}>
+            Large photo, so a smaller copy was sent to be read ({readableSize(reduced.from)} to {readableSize(reduced.to)}). Your original is saved at full size.
+          </p>
+        )}
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button className="btn-primary" style={{ flex: "1 1 180px", minWidth: 160 }} onClick={extract} disabled={!file || extracting}>

@@ -24,6 +24,21 @@ const ORDER: { label: string; match: RegExp }[] = [
 // itself rather than a sort.
 export const DEPARTMENT_ORDER = ORDER.map((o) => o.label);
 
+// The canonical label a department name matches, or null when it matches nothing. Used by
+// anything that needs to key behaviour off a department rather than just sort by it, so
+// that "Dry Goods", "DryGoods & Lakeside" and "lakeside" all resolve to one answer instead
+// of each caller inventing its own string comparison.
+//
+// Null is meaningful and callers must handle it: Chip Stand and Checkouts match nothing
+// here and still exist in the store. Anything keying off this should fail OPEN for null,
+// never hide something because a department was not on a list.
+export function canonicalDepartment(name: string | null | undefined): string | null {
+  const n = (name || "").trim();
+  if (!n) return null;
+  const hit = ORDER.find((o) => o.match.test(n));
+  return hit ? hit.label : null;
+}
+
 // Where a department sits in the owner's sequence. Unlisted departments share the last
 // rank, so the comparator falls through to their name.
 export function departmentRank(name: string | null | undefined): number {

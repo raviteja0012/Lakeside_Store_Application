@@ -108,6 +108,20 @@ SHIPPED (see VERIFICATION.md for sign-off):
   migration anybody forgot. The watchdog puts the sentence in the ticket it raises, so a
   missing migration becomes a job somebody can finish instead of a check name they cannot act
   on. The code was never wrong in that failure; the ticket just never said what to do.
+- Vendor field registry (src/lib/vendorFields.ts, 2026-08-12): what a vendor IS, defined once
+  per department, and now driving the display, the AI routes and the entry form. Twelve
+  fields carrying label, group, money flag, source columns, department scope and a value()
+  that returns null when nothing is on file; a derived vendorSelect() replaced the eight
+  hand-written selects that had drifted. Three safety rules hold whatever the department map
+  says: hiding a question never hides an answer (a bakery vendor with a saved summer timeline
+  still shows it), an unrecognised department is asked everything (Chip Stand and Checkouts
+  are real and are on no list), and the money gate fails closed on both the form and the
+  display. One predicate, asksFor(), is used by both the rendering and the save path, so a
+  department cannot be left with a mandatory field it is never shown. Both vendor forms carry
+  one "Add the other questions" button that puts every question back, because the map is a
+  best guess and a guess must never be why somebody cannot record something true; pressing it
+  reveals a question without making it mandatory. No schema change, no migration, no backfill.
+  Checks: scripts/vendorfields-check (30 assertions).
 
 QUEUED (agreed, not built):
 - Department photo tiles and knowledge-note photo attachments, sourced from the owner's
@@ -133,10 +147,14 @@ QUEUED (agreed, not built):
 - Price-check activity list and notification (grocery).
 
 OPEN (waiting on the owner):
-- Run supabase/vendor_ordering_fields.sql in the Supabase SQL editor (step 7 in
-  docs/SUPABASE_SETUP.md). It adds the seven vendor ordering columns; until it runs, the
-  vendor ordering fields cannot save and the live site fails its own health check after
-  every deploy (SCRUM-12, failing since 2026-08-06).
+- DONE, verified 2026-08-11: run supabase/vendor_ordering_fields.sql. This was recorded as
+  failing since 2026-08-06, with the vendor ordering fields unable to save. The live health
+  check now answers ok:true with "vendor columns present" passing, so the script has been
+  run and the columns are there. Left in place rather than deleted because it is the second
+  stale OPEN item found this way (the first was the custom domain in docs/DOMAIN_EMAIL.md):
+  this file records what somebody believed on the day they wrote it, and a line that says
+  "still broken" outlives the fix unless something checks. /api/health is the check for this
+  one, so read it before repeating anything in this section.
 - Add SUPABASE_DB_URL as a repository secret so merged scripts apply themselves. The
   workflow that was built for this on 2026-07-31 has never applied anything, because
   without the secret it exits quietly, which is why the script above is still a manual job.
@@ -147,6 +165,53 @@ OPEN (waiting on the owner):
   pushed branch that somebody has to open by hand, and SCRUM-12 sat unopened for a day
   because of it. Merging stays human either way: the tier is decided by
   .github/scripts/classify-change.mjs reading the diff, and this setting does not touch it.
+- The vendor form asks every vendor for everything (owner complaint 2026-08-11, and the
+  same point he made on 2026-07-27). Adding a vendor presents about 13 field groups and 20
+  controls, including a seven-box location group, whatever the vendor is. His own workbook
+  has never worked that way: OWNER_NOTES.md line 367 records the 2026_Payments tab census
+  as "fields differ BY DEPARTMENT, the owner's core point", with Bakery, Meat and
+  StoreSupplies on a five-column "light form", LocalVendors adding invoice and payment
+  columns, Grocery carrying the full merchandise shape, Hardware that plus PO#, and
+  MaintenancePayments a different shape again (SpecilizedOn, TechName, Estimate#,
+  TypeOfWork). PROCESS FAILURE TO NOTE: that census was captured verbatim on 2026-07-27 and
+  never triaged into this file, so his core point was never work. BUILT 2026-08-12 (see the
+  field registry entry under SHIPPED): both vendor forms now ask what the department asks.
+  A bakery is down from about 13 field groups to five (name, status, phone, email, notes)
+  with the other seven behind one button, and Dry Goods still gets everything. The map was
+  seeded from the workbook census rather than asking him to specify it cold, and the
+  `departments` line on each field is data, so moving a question between departments is a
+  one-array edit. The minimum-order rule was mandatory on every save on both paths, so a
+  phone-number correction could not be saved without answering it; it is now demanded only
+  where the department is asked for it, or where somebody has answered it. That narrows the
+  problem without reversing his rule, which src/lib/vendorOrdering.ts line 60 records as
+  deliberate and asked for. OWNER DECISION STILL NEEDED, and neither blocks anything now:
+  (a) confirm or correct the department map, which is a starting position and not a claim to
+  be right; the two lines I am least sure of are whether Bakery, Meat and Produce suppliers
+  have payment terms, and whether Hardware wants the summer order timeline for garden stock.
+  (b) Does the minimum order stop being mandatory for the merchandise departments too, on an
+  edit that only meant to fix a phone number.
+- One vendor field list, so every screen shows the same vendor the same way (proposed
+  2026-08-11, owner note sent the same day). The ordering profile saves correctly, but each
+  screen was told separately which vendor columns to load and they disagree: the vendor page
+  loads all four, the Reorder list three, and the vendor directory, /api/ask and
+  /api/reorder none. The visible symptom is that Ask-the-store answers "not on file" for a
+  summer order timeline that IS on file, and the reorder summary cannot weigh the minimum
+  order. Proposal: a declarative field registry (src/lib/vendorFields.ts) holding label,
+  group, money flag, source columns, and a value() that returns null when there is nothing
+  to show, plus a derived vendorSelect() so the eight hand-written selects cannot drift
+  again. Same failure class the money-reviewer watches for on tax_mode. No migration, no
+  backfill, no schema change; the existing check constraints and canSeeMoney gating stay
+  exactly as they are. Rejected alternatives: a jsonb blob (loses the mutually-exclusive
+  minimum-order constraint, the numeric type on money, per-field money gating, and readable
+  export tabs) and probing which columns are non-null (collapses "never asked" into "does
+  not apply", and cannot know that order_location + order_location_other are one fact).
+  BUILT 2026-08-12; the "not on file" symptom is gone, both AI routes now select through
+  vendorSelect(). OWNER DECISION STILL NEEDED: do blank answers stay hidden everywhere, or
+  is a "not answered yet" view wanted so the roughly 130 vendors can be filled in a few at a
+  time. Recommendation is the "not answered yet" view. The registry already carries the
+  alwaysShow flag that such a view needs, so it is a screen and not a rework. If a genuinely
+  open-ended per-vendor attribute is ever wanted, that is a vendor_attribute child table with
+  RLS through its parent, not a blob column.
 - Of the three 2026-07-10 voice notes ("most important"), the domain-email one is now
   resolved: it was about the store's own domain email plan (docs/DOMAIN_EMAIL.md). Still
   un-decoded: the 12:18 note ("deposit on the device"). Owner to type it or re-record in

@@ -58,3 +58,30 @@ How it maps to the schema:
 ## How to use the documents for testing
 
 To test the capture loop with a real invoice, use any vendor booking or invoice PDF from the Drive (for example an Orgill or Windsor Salt booking sheet) as the upload on `/capture`. The vision model reads it; staff confirm; it posts to the feed. This needs the Supabase env values and an Anthropic API key set. The Drive files are not committed to the repo; they stay in Drive and are uploaded at capture time.
+
+## Getting at these files from a tool
+
+Merged in from docs/SOURCES.md on 2026-08-12, which duplicated the folder catalog above.
+
+Direct links, private to the owner's Google account:
+
+- StoreApplication, root: https://drive.google.com/drive/folders/1liGWxXw_dgQygF9NhNGiuBFObdrhmBz8
+- Bookings, the 2026 vendor and order ledger, the schema and seed source: https://drive.google.com/drive/folders/19aGReT42XHVaQhGAf1p9CFOwodshyQcJ
+- Orgill, the richest hardware vendor folder: invoices, statements, SKUs, planogram, returns, future orders, and the Ontario pesticide vendor licence: https://drive.google.com/drive/folders/1uadEQ_vzfr_a4oTZSpOnh-RyTbYqOa1X
+
+**What can actually read them.** The claude.ai Google Drive connector opens Google Docs
+directly, but returns nothing for binary files (xlsx, pdf, docx), which come back as "only
+Google Docs are supported". Folder names, structure and links are visible through it; the
+binary contents are not. A build container has no Drive connector at all and cannot open
+these links.
+
+**So to work with the real files, download them into the repo.** Keep them out of git; the
+contents are sensitive.
+
+1. Create `source_data/` in the repo root. It is already in `.gitignore`.
+2. Download into it:
+   - the 2026 bookings spreadsheet (xlsx), for schema validation and vendor seeding,
+   - two or three real Orgill or ABBOT invoices (pdf or image), to test the capture loop,
+   - the Ontario pesticide vendor licence (pdf), to fill the licence row,
+   - a few GardenCenter price-sign files (docx), for the price-sign generator.
+3. Point the tool at `source_data/` when seeding vendors or testing extraction.

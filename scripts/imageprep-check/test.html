@@ -1,0 +1,109 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>imagePrep test</title></head>
+<body>
+<pre id="out">running…</pre>
+<script type="module">
+import { prepareForExtraction, readableSize } from "./imagePrep.js";
+
+const results = [];
+const log = (name, pass, detail) => results.push({ name, pass, detail });
+
+// Build a realistic "phone photo of an invoice": large, with text-like detail so JPEG
+// cannot cheat by compressing a flat colour to nothing.
+function makePhoto(w, h, { transparent = false } = {}) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const x = c.getContext("2d");
+  if (!transparent) { x.fillStyle = "#f2efe6"; x.fillRect(0, 0, w, h); }
+  // Noise + lines so the encoder has real work to do, like a photographed page.
+  for (let i = 0; i < 4000; i++) {
+    x.fillStyle = `rgb(${(i*37)%255},${(i*91)%255},${(i*53)%255})`;
+    x.fillRect((i*137)%w, (i*211)%h, 14, 6);
+  }
+  x.fillStyle = "#111";
+  x.font = "28px sans-serif";
+  for (let r = 0; r < h; r += 60) x.fillText("ORGILL  12 x WIDGET  $24.99  HST 13%", 40, r + 40);
+  return c;
+}
+
+async function canvasToFile(canvas, type, name) {
+  const blob = await new Promise(r => canvas.toBlob(r, type, type === "image/jpeg" ? 0.95 : undefined));
+  return new File([blob], name, { type });
+}
+
+try {
+  // ---- 1. A big phone photo must come back reduced and under the send budget ----
+  const bigCanvas = makePhoto(4032, 3024);            // 12 MP, a normal phone
+  const big = await canvasToFile(bigCanvas, "image/jpeg", "invoice.jpg");
+  const r1 = await prepareForExtraction(big);
+  const sentBytes = Math.ceil(r1.base64.length * 3 / 4);
+  log("12MP photo is reduced", r1.reduced === true, `original ${readableSize(big.size)}`);
+  log("sent copy is under the 3.2 MB budget", r1.sentBytes <= 3_200_000,
+      `${readableSize(r1.sentBytes)} (base64 ≈ ${readableSize(sentBytes)})`);
+  log("base64 body fits Vercel's 4.5 MB limit", sentBytes < 4_500_000, readableSize(sentBytes));
+  log("re-encoded as jpeg", r1.mediaType === "image/jpeg", r1.mediaType);
+
+  // Long edge must be capped at Sonnet 5's 2576.
+  const decoded = await createImageBitmap(await (await fetch("data:image/jpeg;base64," + r1.base64)).blob());
+  const longEdge = Math.max(decoded.width, decoded.height);
+  log("long edge capped at 2576", longEdge <= 2576, `${decoded.width}x${decoded.height}`);
+  log("aspect ratio preserved", Math.abs((decoded.width/decoded.height) - (4032/3024)) < 0.01,
+      (decoded.width/decoded.height).toFixed(3));
+
+  // ---- 2. A small image must pass through untouched ----
+  const smallCanvas = makePhoto(800, 600);
+  const small = await canvasToFile(smallCanvas, "image/jpeg", "small.jpg");
+  const r2 = await prepareForExtraction(small);
+  log("small photo is NOT reduced", r2.reduced === false, readableSize(small.size));
+  log("small photo bytes unchanged", r2.sentBytes === small.size, `${r2.sentBytes} vs ${small.size}`);
+
+  // ---- 3. Transparent PNG must flatten to WHITE, not black ----
+  const tCanvas = makePhoto(3200, 2400, { transparent: true });
+  // Punch a region that is definitely transparent. The noise loop draws its first rect at
+  // (0,0) in rgb(0,0,0), so without this the sample point is opaque black by construction
+  // and the test would fail for a reason that has nothing to do with the code.
+  tCanvas.getContext("2d").clearRect(0, 0, 300, 300);
+  const tFile = await canvasToFile(tCanvas, "image/png", "scan.png");
+  const r3 = await prepareForExtraction(tFile);
+  const tImg = await createImageBitmap(await (await fetch("data:image/jpeg;base64," + r3.base64)).blob());
+  const probe = document.createElement("canvas");
+  probe.width = tImg.width; probe.height = tImg.height;
+  probe.getContext("2d").drawImage(tImg, 0, 0);
+  // Sample a corner, which in the source was fully transparent.
+  const px = probe.getContext("2d").getImageData(2, 2, 1, 1).data;
+  log("transparent areas flatten to white not black", px[0] > 200 && px[1] > 200 && px[2] > 200,
+      `rgb(${px[0]},${px[1]},${px[2]})`);
+
+  // ---- 3b. Under the pixel cap but over the byte budget: the size-driven path ----
+  // The 12MP case above triggers on dimensions. This one is small enough in pixels that only
+  // the byte budget can catch it, which is the branch a big PNG scan would take.
+  const heavy = makePhoto(2400, 1800);
+  const heavyFile = await canvasToFile(heavy, "image/png", "scan-heavy.png");
+  const r3b = await prepareForExtraction(heavyFile);
+  log("oversized but in-spec image is handled",
+      heavyFile.size <= 3_200_000 ? r3b.reduced === false : (r3b.reduced === true && r3b.sentBytes <= 3_200_000),
+      `png ${readableSize(heavyFile.size)} -> ${readableSize(r3b.sentBytes)}, reduced=${r3b.reduced}`);
+
+  // ---- 4. An oversized PDF must fail with a message a person can act on ----
+  const fakePdf = new File([new Uint8Array(4_000_000)], "big.pdf", { type: "application/pdf" });
+  let pdfMsg = "";
+  try { await prepareForExtraction(fakePdf); } catch (e) { pdfMsg = e.message; }
+  log("oversized PDF explains what to do", /photograph/i.test(pdfMsg), pdfMsg.slice(0, 60));
+
+  // ---- 5. A small PDF must pass through ----
+  const smallPdf = new File([new Uint8Array(50_000)], "ok.pdf", { type: "application/pdf" });
+  const r5 = await prepareForExtraction(smallPdf);
+  log("small PDF passes through untouched", r5.reduced === false && r5.mediaType === "application/pdf", r5.mediaType);
+} catch (e) {
+  log("HARNESS ERROR", false, String(e && e.stack || e));
+}
+
+document.getElementById("out").textContent =
+  results.map(r => `${r.pass ? "PASS" : "FAIL"}  ${r.name}  [${r.detail}]`).join("\n") +
+  `\n\n${results.filter(r=>r.pass).length}/${results.length} passed`;
+document.title = results.every(r => r.pass) ? "ALLPASS" : "HASFAIL";
+await fetch("/result", { method: "POST", body: document.getElementById("out").textContent });
+</script>
+</body>
+</html>

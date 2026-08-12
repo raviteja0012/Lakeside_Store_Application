@@ -4,14 +4,14 @@ Recorded 2026-07-27 from the owner's screenshots of the domain control panel (me
 2026-07-21). This resolves the July 10 voice notes: they were about the store's own domain
 and its email costs.
 
-## Where this stands (2026-07-31)
+## Where this stands (DNS lines re-checked 2026-08-11; the rest is the 2026-07-31 snapshot)
 
 | Thing | State |
 |---|---|
 | Domain robinsonsgeneralstore.ca | Owned. Auto-renew CONFIRMED ON by the owner. Expires 2026-10-16 |
-| app.robinsonsgeneralstore.ca | Added in Vercel, showing "Invalid Configuration". Waiting on one DNS record |
-| That DNS record | BLOCKED: Vianet has no self-serve zone editor, so it must be requested from Vianet hosting |
-| robinsons-store.vercel.app | Live and working. Keeps working after the custom domain lands |
+| app.robinsonsgeneralstore.ca | RESOLVED 2026-08-11. Live, valid certificate, serving the app |
+| That DNS record | DONE. The CNAME to cname.vercel-dns.com exists and resolves |
+| robinsons-store.vercel.app | Live and working. Keeps working alongside the custom domain |
 | Mailboxes | 5 of 10 used, none full (1000MB each), plan decided below |
 | stories@ alias | STILL forwarding store mail to the previous owners' personal Hotmail |
 | invoices@ | Not created yet. This is what blocks the email-intake feature |
@@ -81,28 +81,36 @@ personal Hotmail. Repoint it at info@ or delete it, unless that is deliberate.
 
 ## Integration plan (in order)
 
-### 1. The app on the store's own domain (blocked on Vianet)
-Target: **app.robinsonsgeneralstore.ca** pointing at the Vercel app.
+### 1. The app on the store's own domain (DONE, confirmed 2026-08-11)
+**app.robinsonsgeneralstore.ca** is live and serving the Vercel app.
 
-- In Vercel: project robinsons-store, Settings, Domains, Add Existing,
-  app.robinsonsgeneralstore.ca. DONE on 2026-07-31; it sits at "Invalid Configuration"
-  until the DNS record exists, which is expected.
-- The DNS record needed is a CNAME: `app` -> `cname.vercel-dns.com`.
+Verified 2026-08-11 from outside the network:
 
-**The blocker:** Vianet's self-serve panel has no DNS or zone editor. Domain management
-there offers mailboxes and aliases only, and the page itself says to phone the hosting
-department for anything else:
+```
+getent hosts app.robinsonsgeneralstore.ca
+  76.76.21.98   cname.vercel-dns.com app.robinsonsgeneralstore.ca
+  66.33.60.67   cname.vercel-dns.com app.robinsonsgeneralstore.ca
 
-> **Vianet hosting: 1-800-788-0363 ext 5214, Monday to Friday 8:30am to 5:00pm**
+curl -sSI https://app.robinsonsgeneralstore.ca
+  200, certificate verifies, <title>Robinsons General Store</title>
+```
 
-So this record is a phone call, not a form. Ask them to add a CNAME for the host `app`
-pointing to `cname.vercel-dns.com`, and say explicitly that nothing else in the zone should
-change, because the MX records for the five mailboxes live there.
+The CNAME `app` -> `cname.vercel-dns.com` exists, Vercel has issued the certificate, and
+robinsons-store.vercel.app keeps working alongside it.
 
-The alternative, if they will not add single records, is to move DNS to a provider with a
-zone editor (Cloudflare's free tier is the usual choice) and recreate the MX records there.
-That is a bigger job with real risk to the mail, and it is not worth it for one CNAME.
-Only consider it if the store wants a public website on the apex later.
+**History, kept because it explains the gap.** From 2026-07-31 to some point before
+2026-08-11 this sat at "Invalid Configuration" waiting on that one record, and this page
+recorded it as blocked on Vianet, whose self-serve panel has no zone editor (hosting:
+1-800-788-0363 ext 5214). Somebody added the record in that window without it being noted
+here, and a document written from this page on 2026-08-11 repeated the stale "waiting"
+state to the owner, who corrected it. Two lessons: DNS state belongs to the network, not to
+a file, so re-check it rather than reading it; and a dated snapshot needs its date read as
+hard as its content.
+
+Not done, and only worth doing if the store wants a public website on the apex later:
+`robinsonsgeneralstore.ca` itself still serves the old Vianet site, and its HTTPS
+certificate does not cover that name, so the apex over https shows a browser warning. It is
+untouched by anything here and is a separate decision.
 
 robinsons-store.vercel.app keeps working either way. No code change is needed for any of it.
 
@@ -146,14 +154,25 @@ address:
 
 ### 4. Email invoice intake (the queued feature, now concrete)
 Design (build when the owner says go):
-- Vendors send invoices to invoices@robinsonsgeneralstore.ca.
-- The mailbox forwards a copy to the app's inbound address (Resend Inbound or an IMAP
-  poll from a Vercel cron; credentials live in env, never in the repo).
+- Vendors send invoices to invoices@robinsonsgeneralstore.ca. That is the address on the
+  vendor's file and it never changes, whatever the app reads behind it.
+- The mailbox forwards a copy to the app's inbound address. Three ways to provide that
+  address, decided 2026-08-12:
+  - **AgentMail (preferred).** A programmatic inbox reached with a scoped API key.
+  - Resend Inbound. One fewer vendor, since Resend already sends the daily alert.
+  - An IMAP poll from a Vercel cron. **Least preferred:** it needs the Vianet mailbox
+    password in Vercel env, and that credential is worth more than this feature, since
+    the same panel holds the store's other mailboxes.
+  The API-key options win on that one point: a key scoped to one inbox can be rotated
+  without touching the store's mail, and it cannot read info@ or drygoods@ if it leaks.
+  Credentials live in env, never in the repo, whichever is chosen.
 - Each attachment runs through the existing Capture extraction with a "from email"
   badge and the usual human confirm; the sender address must match a configurable
   allowlist (the "configure which emails" ask from the first feedback round).
-This turns the full-mailbox problem into a workflow: the invoice inbox is drained into
-the app instead of rotting at 250MB.
+This turns invoice chasing into a workflow: the invoice inbox is drained into the app
+instead of sitting unread. (An earlier version of this line said "rotting at 250MB". That
+was the same quota error corrected above: the quota is 1000MB and no box is close to it.
+Storage was never the reason to build this; lost invoices are.)
 
 ### 5. Member logins on the domain (later, optional)
 When enforced-auth accounts are re-issued, use real addresses (owner@, manager@) instead
@@ -162,9 +181,11 @@ new addresses and updating app_user.email is the whole change.
 
 ## Who does what
 
-- Owner or Raviteja in the DOMAIN PANEL: clear the three full mailboxes; repoint or delete
-  stories@; archive joanne@; create invoices@ (and any of the suggested boxes); add the
-  Vercel CNAME and, when doing step 3, the Resend SPF/DKIM records.
+- Owner or Raviteja in the DOMAIN PANEL: repoint or delete stories@; archive joanne@;
+  create invoices@ (and any of the suggested boxes); and, when doing step 3, add the
+  Resend SPF/DKIM records. (Two items were removed from this line on 2026-08-12: "clear
+  the three full mailboxes", which was the corrected quota error and was never real work,
+  and the Vercel CNAME, which is done and live.)
 - Raviteja in VERCEL: add the custom domain; set ALERT_EMAIL_FROM after Resend verifies.
 - The app (Claude, next build rounds): the email-intake pipeline of step 4 once invoices@
   exists and forwarding is chosen; nothing else needs code.

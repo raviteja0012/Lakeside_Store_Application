@@ -11,6 +11,7 @@ import { canEdit, voidRow } from "@/lib/edit";
 import { FieldError, fieldInputClass, type FieldErrors } from "@/components/FieldError";
 import { VendorOrderingFields, type OrderingProfile } from "@/components/VendorOrderingFields";
 import { OTHER_LOCATION, validateMinimumOrder, validateReorder } from "@/lib/vendorOrdering";
+import { asksFor, hiddenFieldCount, labelForKey } from "@/lib/vendorFields";
 import type { Vendor, Department, AppUser } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -43,6 +44,10 @@ export default function Vendors() {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  // The escape hatch. The department decides which questions this form asks, and that map is
+  // the owner's best guess; when it is wrong for one vendor, this puts every question back
+  // rather than leaving somebody unable to record something true.
+  const [showAllFields, setShowAllFields] = useState(false);
   // Validation messages sit under the field they are about, not in a card at the top.
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
@@ -73,6 +78,7 @@ export default function Vendors() {
     setAdding(false);
     setForm({ ...EMPTY_FORM });
     setFieldErrors({});
+    setShowAllFields(false);
     (async () => {
       await load();
       let dq = supabase.from("department").select("id, name, accent_color, parent_department_id").order("name");
@@ -105,6 +111,7 @@ export default function Vendors() {
     // department is how a vendor ends up filed in the wrong place.
     setForm({ ...EMPTY_FORM });
     setFieldErrors({});
+    setShowAllFields(false);
   }
 
   async function save() {
@@ -116,9 +123,16 @@ export default function Vendors() {
     // stopping at the first: fixing one problem only to be told about the next is the
     // thing that makes a long form feel like an argument.
     const errs: FieldErrors = {};
-    // Only asked of people who can see money, because only they are shown the field. A
-    // required field nobody can see is a form that cannot be submitted.
-    const minErr = showMoney ? validateMinimumOrder(form.minimum_order_amount, form.no_minimum_order) : null;
+    // The minimum order is the only rule here that demands an answer where none was given, so
+    // it is the only one that has to agree with what the form actually asked. Two ways in:
+    // the department is asked for a minimum, or somebody answered anyway through the button
+    // that puts the other questions back. The two rules below only fire on an answer already
+    // given, so they need no gate and must keep running whatever the department map says.
+    const answeredMinimum = !!form.minimum_order_amount.trim() || form.no_minimum_order;
+    // The money gate is inside asksFor and repeated on the second branch: a required field
+    // nobody can see is a form that cannot be submitted, so it fails closed on both paths.
+    const askMinimum = asksFor(entryDeptName, "minimum_order", { showMoney }) || (showMoney && answeredMinimum);
+    const minErr = askMinimum ? validateMinimumOrder(form.minimum_order_amount, form.no_minimum_order) : null;
     if (minErr) errs.minimum_order_amount = minErr;
     const reErr = validateReorder(form.reorder_status, form.reorder_comments);
     if (reErr) errs.reorder_comments = reErr;
@@ -161,6 +175,7 @@ export default function Vendors() {
       if (effectiveActorId) await supabase.from("activity_log").insert({ actor_id: effectiveActorId, action: "vendor_added", entity: "vendor", entity_id: r.data.id as string });
       setForm({ ...EMPTY_FORM });
       setFieldErrors({});
+      setShowAllFields(false);
       setAdding(false);
       await load();
     } catch (e: any) {
@@ -194,6 +209,24 @@ export default function Vendors() {
       return (p as string | null) || id;
     };
   }, [departments]);
+
+  // The department this new vendor is being filed under, as the TOP-LEVEL name, because that
+  // is what the field registry keys on. Inside a department that is the open card; from All
+  // vendors it is the picker, which can name a section such as Gifts whose questions belong
+  // to its parent. Null when no department is chosen yet, which asks everything.
+  const entryDeptName = useMemo(() => {
+    const id = open && open !== ALL && open !== NONE ? open : form.department_id || null;
+    const top = topOf(id);
+    return top ? departments.find((d) => d.id === top)?.name ?? null : null;
+  }, [open, form.department_id, topOf, departments]);
+
+  // What the form DRAWS. Pressing the button below passes null, and null is the
+  // unrecognised-department case, which already means ask everything. Validation deliberately
+  // keeps using entryDeptName: putting a question back on the screen should not make it
+  // mandatory, or the button would punish the person who pressed it.
+  const askDept = showAllFields ? null : entryDeptName;
+  const asks = (key: string) => asksFor(askDept, key, { showMoney });
+  const hiddenCount = hiddenFieldCount(entryDeptName, { showMoney });
 
   // Which card a vendor belongs to. A vendor filed under a department that did not load
   // falls into NONE rather than vanishing: every vendor is reachable from the list.
@@ -354,10 +387,14 @@ export default function Vendors() {
                     </select>
                   </div>
                 )}
-                <div><label className="label">Rep name</label><input className="input" value={form.rep_name} onChange={(e) => setForm({ ...form, rep_name: e.target.value })} /></div>
+                {asks("rep_name") && (
+                  <div><label className="label">{labelForKey("rep_name", entryDeptName)}</label><input className="input" value={form.rep_name} onChange={(e) => setForm({ ...form, rep_name: e.target.value })} /></div>
+                )}
                 <div><label className="label">Phone</label><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
                 <div><label className="label">Email</label><input className="input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-                <div><label className="label">Payment terms</label><input className="input" placeholder="Net 30" value={form.default_terms} onChange={(e) => setForm({ ...form, default_terms: e.target.value })} /></div>
+                {asks("default_terms") && (
+                  <div><label className="label">Payment terms</label><input className="input" placeholder="Net 30" value={form.default_terms} onChange={(e) => setForm({ ...form, default_terms: e.target.value })} /></div>
+                )}
                 <div><label className="label">Status</label>
                   <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                     {["active", "skip", "discontinue", "bankrupt"].map((s) => <option key={s} value={s}>{s}</option>)}
@@ -371,15 +408,33 @@ export default function Vendors() {
                   </div>
                 )}
               </div>
-              <div><label className="label">Products we carry</label><input className="input" placeholder="Mugs, wallets, everyday gifts (comma-separated)" value={form.products_we_carry} onChange={(e) => setForm({ ...form, products_we_carry: e.target.value })} /></div>
+              {asks("products_we_carry") && (
+                <div><label className="label">{labelForKey("products_we_carry", entryDeptName)}</label><input className="input" placeholder="Mugs, wallets, everyday gifts (comma-separated)" value={form.products_we_carry} onChange={(e) => setForm({ ...form, products_we_carry: e.target.value })} /></div>
+              )}
               {/* Below Products, above Notes: the owner's placement. */}
               <VendorOrderingFields
                 value={form as OrderingProfile}
                 onChange={(patch) => setForm({ ...form, ...patch })}
                 errors={fieldErrors}
                 showMoney={showMoney}
+                departmentName={askDept}
               />
               <div><label className="label">Notes and rules (optional)</label><input className="input" placeholder="Rep visits in summer, order by March" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
+              {/* The way out when the department map is wrong for one vendor. Nothing typed is
+                  ever thrown away by pressing it either way: hiding a question hides the box,
+                  not the answer, and the answer still saves and still shows on the vendor. */}
+              {hiddenCount > 0 && (
+                <div>
+                  <button type="button" className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => setShowAllFields((v) => !v)}>
+                    {showAllFields ? "Hide the extra questions" : `Add the other questions (${hiddenCount})`}
+                  </button>
+                  <p className="help" style={{ margin: "4px 0 0" }}>
+                    {showAllFields
+                      ? "Every question is showing. Leave blank anything this vendor does not need."
+                      : `${entryDeptName || "This department"} is not usually asked these. Add them if this vendor needs them.`}
+                  </p>
+                </div>
+              )}
               <div><button className="btn-primary" onClick={save} disabled={busy}>{busy ? "Saving." : "Save vendor"}</button></div>
             </div>
           )}
