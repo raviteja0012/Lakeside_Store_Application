@@ -7,7 +7,11 @@ feature.
 
 Read before building:
 - .claude/skills/robinsons-store/SKILL.md — the invariants; follow them on every change.
+- docs/README.md — the index to all twenty docs and which one to open.
 - docs/REQUIREMENTS.md — the living requirements ledger (asks, states, open items).
+- docs/PLATFORM.md — every service and plan in use, what is adopted and what is declined
+  and why. Carries two open risks: the Vercel plan does not license commercial use, and
+  Supabase Free takes no backups. Check it before adding any service.
 - docs/STATUS.md and docs/VERIFICATION.md — build state and sign-off; update both in the
   same PR as the work.
 - docs/OWNER_NOTES.md — the owner's feedback verbatim (Telugu translated), round by round.
