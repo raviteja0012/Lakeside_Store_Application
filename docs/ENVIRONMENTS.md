@@ -38,7 +38,8 @@ To Do -> In Progress -> In Review -> QA -> Approved -> Done
 Why not overload Done: because Done would then mean "approved to ship" in one place and
 "finished" in another, and six months later nobody remembers which. Why not a comment:
 because approval belongs on the board where it is visible at a glance, not buried in a
-thread. A status costs five minutes of Jira admin once and removes an ambiguity forever.
+thread. Since 2026-08-12 approval is the act of running the promotion workflow: a person
+starts it, and nothing on a schedule can start it for them.
 
 **You add these two statuses** (Project settings, Workflows). Until they exist the
 promotion workflow stays inert and everything behaves as it does today.
@@ -98,9 +99,7 @@ The design above was written first and the code came after. All of it now exists
 | Piece | Where |
 |---|---|
 | Scripts apply to dev on a push to `develop`, to production on a push to `main` | `.github/workflows/migrate.yml` |
-| The autopilot opens its pull requests into `develop` when that branch exists | `.github/workflows/jira-autopilot.yml` |
-| A finished change parks the ticket in QA | `.github/scripts/jira-transition.mjs` |
-| Approved on the board opens and merges a `develop` to `main` pull request | `.github/workflows/promote.yml`, `.github/scripts/jira-approved.mjs` |
+| Running the promotion workflow opens and merges a `develop` to `main` pull request | `.github/workflows/promote.yml` |
 | Dev dummy data, built from the shapes that have actually broken this code | `supabase/seed_dev.sql` |
 
 Every piece is inert until its secret, branch or status exists, and that is deliberate: the
@@ -125,7 +124,7 @@ and nothing breaks half-configured.
 | Create a second Vercel project from the same repo, set its production branch to `develop` | vercel.com | The dev site |
 | Point that project's env vars at the DEV Supabase | Vercel, dev project, Environments | So the dev site never reads the real database. Check this twice |
 | Add repository variable `DEV_URL` with the dev site address | GitHub, Settings, Variables | So the ticket comment can link to it |
-| Add the QA and Approved statuses to the board workflow | Jira project settings | The promotion gate |
+| Add `SLACK_WEBHOOK_URL` as a repository secret | Settings, Secrets and variables, Actions | The health watchdog can tell somebody |
 
 ## What could still go wrong, honestly
 

@@ -18,7 +18,7 @@ engineering is not in the model, it is in two things:
 1. **What enters the context**, because accuracy decays as a context fills with noise. This
    is why the project rules live in CLAUDE.md and a skill rather than in whoever's memory,
    why searching is delegated to subagents that return a conclusion instead of a file dump,
-   and why each automated run works exactly one ticket and then exits.
+   and why each automated run does one thing and then exits.
 2. **What the loop checks itself against**, because a model asked "is this right?" will
    usually say yes. The checks here are the three gates, the health endpoint, and the tier
    classifier. None of them involve asking a model to grade its own homework.
@@ -27,14 +27,18 @@ engineering is not in the model, it is in two things:
 
 ### 1. Intake: a request becomes work
 
-`.github/workflows/jira-autopilot.yml`, every 15 minutes. Picks the oldest open ticket that
-is not already waiting on a person, and hands it to a build. Comments count as requests:
-replying on a ticket puts it back in the queue, which is how a follow-up ("not quite, make
-the button say X") re-enters the loop without anyone opening a terminal.
+**Retired 2026-08-12.** This was `.github/workflows/jira-autopilot.yml`, which read the Jira
+board every 15 minutes and handed the oldest waiting ticket to a build.
 
-The autopilot marks its own comments with `[autopilot]`. A ticket whose newest comment
-carries that marker is waiting on a human and is skipped, so the loop cannot spin on the
-same ticket forever.
+It is gone because of what it cost. Ninety-six runs a day, each one starting a model, and the
+board was quiet for most of them: the loop spent its budget discovering there was nothing to
+do. An intake loop is only worth its price when requests actually arrive through it, and the
+owner's requests arrive by phone and by WhatsApp, are relayed by the developer, and never
+touched the board at all.
+
+Intake is now a person asking in Slack. That is slower and it is honest about being slower.
+The four loops below are unchanged, and they are the ones that made unattended shipping
+defensible in the first place: the intake half was never the part doing the checking.
 
 ### 2. Build: implement, then prove it
 
@@ -88,14 +92,22 @@ the things a green build cannot see:
   detector, and it is the one that catches a genuinely broken money change: if the total is
   wrong, statuses stop matching their allocations.
 
-A failure raises a bug on the board, which the intake loop then picks up. That is what makes
-it a loop rather than a pipeline: the output of the watch is the input of the build.
+A failure posts to Slack and fails its own run, so it is visible in two places at once.
+Until 2026-08-12 it raised a bug on the Jira board that the intake loop then picked up, which
+is what made this a loop rather than a pipeline. With intake retired the last step is a
+person reading the message. That is the honest description: the machine still finds the
+problem within minutes, and a human now starts the fix.
 
-**And it closes what it opens.** When the site is well again the watchdog comments what
-recovered and moves its own ticket to Done. That half was missing until 2026-08-09, and its
-absence was not cosmetic: SCRUM-12 stayed open through its own recovery, and a board that
-goes on saying the site is broken is one where the next real incident arrives as a comment
-on a stale ticket named after the last one. Raising is the easy half of monitoring.
+**And it stands down what it raises.** When the site is well again it says so, once. That
+half was missing until 2026-08-09 and its absence was not cosmetic: SCRUM-12 stayed open
+through its own recovery, and an alarm that goes on saying the site is broken is one where
+the next real incident arrives as noise people have learned to scroll past. Raising is the
+easy half of monitoring.
+
+The state that used to live in the ticket now comes from this workflow's own run history, one
+API call, no model. One deliberate loss in the swap, recorded in `health-notify.mjs`: the
+Jira version spoke up again when the list of failing checks CHANGED mid-outage, and this one
+does not, because a run's history says pass or fail and not what failed.
 
 It never reports a dollar figure, so the endpoint is safe to call from anywhere.
 

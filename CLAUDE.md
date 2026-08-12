@@ -7,7 +7,7 @@ feature.
 
 Read before building:
 - .claude/skills/robinsons-store/SKILL.md — the invariants; follow them on every change.
-- docs/README.md — the index to all twenty docs and which one to open.
+- docs/README.md — the index to all eighteen docs and which one to open.
 - docs/REQUIREMENTS.md — the living requirements ledger (asks, states, open items).
 - docs/PLATFORM.md — every service and plan in use, what is adopted and what is declined
   and why. Carries two open risks: the Vercel plan does not license commercial use, and
