@@ -25,7 +25,7 @@ import {
   OTHER_LOCATION, minimumOrderLabel,
   validateMinimumOrder, validateReorder
 } from "@/lib/vendorOrdering";
-import { vendorSelect, visibleFacts } from "@/lib/vendorFields";
+import { asksFor, hiddenFieldCount, labelForKey, vendorSelect, visibleFacts } from "@/lib/vendorFields";
 import type { Vendor, PurchaseOrder, Invoice, Payment, AppUser, CreditNote } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -67,6 +67,9 @@ export default function VendorDetail() {
     setFieldErrors((prev) => (prev[name] ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== name)) : prev));
 
   const [editVendor, setEditVendor] = useState(false);
+  // The escape hatch, same as the add form: one press puts every question back when the
+  // department map is wrong for this particular vendor.
+  const [showAllFields, setShowAllFields] = useState(false);
   const [vForm, setVForm] = useState({ rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active", notes: "", ...EMPTY_ORDERING_PROFILE });
   const [showPO, setShowPO] = useState(false);
   // The order fields the owner asked for, in his order: status, amount, where the
@@ -124,6 +127,18 @@ export default function VendorDetail() {
   const isFinance = isFinanceDept(vendor?.department?.name);
   // Hardware invoices carry the purchase order number.
   const isHardware = isHardwareDept(vendor?.department?.name);
+
+  // Which questions this vendor's department is asked. The joined name is used as it stands:
+  // a vendor filed under a SECTION (Gifts, say, rather than DryGoods) matches nothing in
+  // departments.ts and so is asked everything, which is the direction that never loses a
+  // field. That is also exactly how visibleFacts reads this page, so the display above and
+  // the form below cannot disagree about one vendor.
+  const vendorDeptName = vendor?.department?.name ?? null;
+  // What the form DRAWS. Null puts every question back. Validation keeps using the real
+  // department name, so revealing a question does not make it mandatory.
+  const askDept = showAllFields ? null : vendorDeptName;
+  const asks = (key: string) => asksFor(askDept, key, { showMoney });
+  const hiddenCount = hiddenFieldCount(vendorDeptName, { showMoney });
 
   // What the tax select stores in hst_amount: "none" is a no-tax vendor (0), "refer to the
   // actual invoice" stores blank so the report shows it as unstated, and both "separate"
@@ -223,14 +238,24 @@ export default function VendorDetail() {
       reorder_comments: vendor.reorder_comments || ""
     });
     setFieldErrors({});
+    setShowAllFields(false);
     setEditVendor(true);
   }
 
   async function saveVendor() {
     if (!vendor) return;
     const errs: FieldErrors = {};
-    // Only asked of people who can see money, because only they are shown the field.
-    const minErr = showMoney ? validateMinimumOrder(vForm.minimum_order_amount, vForm.no_minimum_order) : null;
+    // Same rule as the add form, and for the same reason: the minimum order is the only check
+    // that demands an answer where none was given, so it is the only one that has to agree
+    // with what this department was asked. It still runs on an answer already given, which is
+    // what keeps a value typed through the "add the other questions" button checked.
+    //
+    // Nothing below writes null over a hidden answer: vForm is seeded from the vendor row in
+    // startEditVendor, so a field this department no longer asks round-trips its saved value
+    // untouched. That is rule 1 in vendorFields.ts holding on the save path.
+    const answeredMinimum = !!vForm.minimum_order_amount.trim() || vForm.no_minimum_order;
+    const askMinimum = asksFor(vendorDeptName, "minimum_order", { showMoney }) || (showMoney && answeredMinimum);
+    const minErr = askMinimum ? validateMinimumOrder(vForm.minimum_order_amount, vForm.no_minimum_order) : null;
     if (minErr) errs.minimum_order_amount = minErr;
     const reErr = validateReorder(vForm.reorder_status, vForm.reorder_comments);
     if (reErr) errs.reorder_comments = reErr;
@@ -959,7 +984,9 @@ export default function VendorDetail() {
         {editVendor && (
           <div style={{ display: "grid", gap: 10, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div><label className="label">Rep name</label><input className="input" value={vForm.rep_name} onChange={(e) => setVForm({ ...vForm, rep_name: e.target.value })} /></div>
+              {asks("rep_name") && (
+                <div><label className="label">{labelForKey("rep_name", vendorDeptName)}</label><input className="input" value={vForm.rep_name} onChange={(e) => setVForm({ ...vForm, rep_name: e.target.value })} /></div>
+              )}
               <div><label className="label">Phone</label><input className="input" value={vForm.phone} onChange={(e) => setVForm({ ...vForm, phone: e.target.value })} /></div>
               <div><label className="label">Email</label><input className="input" value={vForm.email} onChange={(e) => setVForm({ ...vForm, email: e.target.value })} /></div>
               <div><label className="label">Status</label>
@@ -967,16 +994,35 @@ export default function VendorDetail() {
                   {["active", "skip", "discontinue", "bankrupt"].map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
-              <div><label className="label">Payment terms</label><input className="input" value={vForm.default_terms} onChange={(e) => setVForm({ ...vForm, default_terms: e.target.value })} /></div>
-              <div><label className="label">Products</label><input className="input" value={vForm.products_we_carry} onChange={(e) => setVForm({ ...vForm, products_we_carry: e.target.value })} /></div>
+              {asks("default_terms") && (
+                <div><label className="label">Payment terms</label><input className="input" value={vForm.default_terms} onChange={(e) => setVForm({ ...vForm, default_terms: e.target.value })} /></div>
+              )}
+              {asks("products_we_carry") && (
+                <div><label className="label">Products</label><input className="input" value={vForm.products_we_carry} onChange={(e) => setVForm({ ...vForm, products_we_carry: e.target.value })} /></div>
+              )}
             </div>
             <VendorOrderingFields
               value={vForm as OrderingProfile}
               onChange={(patch) => setVForm({ ...vForm, ...patch })}
               errors={fieldErrors}
               showMoney={showMoney}
+              departmentName={askDept}
             />
             <div><label className="label">Notes and rules</label><textarea className="input" rows={2} value={vForm.notes} onChange={(e) => setVForm({ ...vForm, notes: e.target.value })} /></div>
+            {/* A question hidden here is not an answer deleted: the saved value rides through
+                the update untouched, and the facts above this form still show it. */}
+            {hiddenCount > 0 && (
+              <div>
+                <button type="button" className="btn-ghost" style={{ padding: "4px 10px" }} onClick={() => setShowAllFields((v) => !v)}>
+                  {showAllFields ? "Hide the extra questions" : `Add the other questions (${hiddenCount})`}
+                </button>
+                <p className="help" style={{ margin: "4px 0 0" }}>
+                  {showAllFields
+                    ? "Every question is showing. Leave blank anything this vendor does not need."
+                    : `${vendorDeptName || "This department"} is not usually asked these. Add them if this vendor needs them.`}
+                </p>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn-primary" onClick={saveVendor} disabled={busy}>{busy ? "Saving." : "Save vendor"}</button>
               <button className="btn-ghost" onClick={() => setEditVendor(false)}>Cancel</button>

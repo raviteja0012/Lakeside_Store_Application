@@ -49,5 +49,74 @@ t("vendorSelect carries every ordering column",
    "order_location_other", "reorder_status", "reorder_comments"].every(c => sel.includes(c)),
   `${sel.split(",").length} columns`);
 
+// alwaysShow: the blank is the information. Status is the case that matters, because "we
+// stopped buying from them" is worth seeing on every vendor. The flag used to be dead code.
+const blankStatus = { name: "X", status: null, department: { name: "Grocery" } };
+const blankFacts = R.visibleFacts(blankStatus, { showMoney: true, group: "identity" });
+const statusFact = blankFacts.find(f => f.field.key === "status");
+t("alwaysShow: a blank status still appears", !!statusFact, blankFacts.map(f => f.field.key).join(","));
+t("alwaysShow: it reads as not on file rather than blank", statusFact && statusFact.text === R.NOT_ON_FILE,
+  statusFact && statusFact.text);
+t("a blank ordinary field is still left out",
+  !blankFacts.some(f => f.field.key === "notes"), "notes is not alwaysShow");
+
+// asksFor is the predicate the entry FORM draws with and the SAVE path validates with. If
+// those two ever answer differently, a department becomes unsaveable: the form hides the
+// minimum order, the save still demands one, and the error points at a box that is not on
+// the screen. This asserts they are the same answer for every field and every department.
+const DEPTS = [null, "Bakery", "Meat", "Produce", "Grocery", "Hardware", "DryGoods & Lakeside",
+               "Property Maintenance", "Payrolls & Taxes", "Others", "Chip Stand"];
+for (const money of [true, false]) {
+  let agree = true, where = "";
+  for (const d of DEPTS) {
+    const drawn = new Set(R.fieldsForEntry(d, { showMoney: money }).map(f => f.key));
+    for (const f of R.VENDOR_FIELDS) {
+      if (R.asksFor(d, f.key, { showMoney: money }) !== drawn.has(f.key)) {
+        agree = false; where = `${d}/${f.key}`;
+      }
+    }
+  }
+  t(`asksFor matches fieldsForEntry everywhere (money=${money})`, agree, where || "all match");
+}
+t("asksFor on an unknown key is false, not a crash", R.asksFor("Grocery", "nonsense", { showMoney: true }) === false);
+
+// The bakery is the case the owner reported and the one that could have been made
+// unsaveable. The minimum order is mandatory whenever it is asked, so not asking it is what
+// lets a bakery vendor be saved at all.
+t("a bakery is not asked for a minimum order, so it can be saved",
+  R.asksFor("Bakery", "minimum_order", { showMoney: true }) === false);
+t("dry goods is still asked for a minimum order",
+  R.asksFor("DryGoods & Lakeside", "minimum_order", { showMoney: true }) === true);
+
+// The escape hatch: the form passes null to put every question back. It must reveal the
+// question WITHOUT the save path then demanding an answer, so the button cannot punish the
+// person who pressed it. That split is exactly null-for-drawing, real-name-for-validating.
+t("escape hatch reveals the minimum order for a bakery",
+  R.asksFor(null, "minimum_order", { showMoney: true }) === true);
+t("escape hatch does not make it mandatory (validation still asks the real department)",
+  R.asksFor("Bakery", "minimum_order", { showMoney: true }) === false);
+t("escape hatch never reopens a money field for staff",
+  R.asksFor(null, "minimum_order", { showMoney: false }) === false);
+
+// The count on the button. It has to be the number of questions actually put back, or the
+// button lies about what pressing it does.
+const bakeryHidden = R.hiddenFieldCount("Bakery", { showMoney: true });
+t("hidden count equals what the hatch puts back",
+  bakeryHidden === R.fieldsForEntry(null, { showMoney: true }).length - R.fieldsForEntry("Bakery", { showMoney: true }).length,
+  `bakery hides ${bakeryHidden}`);
+t("a department asked everything offers no button",
+  R.hiddenFieldCount("DryGoods & Lakeside", { showMoney: true }) === 0);
+t("an unrecognised department offers no button either",
+  R.hiddenFieldCount("Chip Stand", { showMoney: true }) === 0);
+t("the money gate is not counted as a hidden question",
+  R.hiddenFieldCount("DryGoods & Lakeside", { showMoney: false }) === 0, "staff on a full department");
+
+// The form draws its labels from a key, before it has a field in hand.
+t("labelForKey speaks about technicians on maintenance",
+  R.labelForKey("rep_name", "Property Maintenance") === "Technician name");
+t("labelForKey falls back to the plain label", R.labelForKey("rep_name", "Grocery") === "Rep name");
+t("labelForKey on an unknown key returns the key rather than crashing",
+  R.labelForKey("nonsense", "Grocery") === "nonsense");
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

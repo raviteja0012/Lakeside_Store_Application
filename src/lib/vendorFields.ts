@@ -197,6 +197,18 @@ export function labelFor(field: VendorField, departmentName: string | null | und
   return field.label;
 }
 
+/**
+ * The label for one field key in this department.
+ *
+ * A form draws a label before it has a VendorField in hand, and the alternative is each form
+ * hard-coding "Technician name" for maintenance, which is how the two vendor screens started
+ * disagreeing in the first place.
+ */
+export function labelForKey(key: string, departmentName: string | null | undefined): string {
+  const field = VENDOR_FIELDS.find((f) => f.key === key);
+  return field ? labelFor(field, departmentName) : key;
+}
+
 function appliesTo(field: VendorField, departmentName: string | null | undefined): boolean {
   if (field.departments === "all") return true;
   const canon = canonicalDepartment(departmentName);
@@ -223,7 +235,49 @@ export function fieldsForEntry(
   );
 }
 
+/**
+ * How many questions this department is not asked.
+ *
+ * The number on the button that puts them back. The map below is the owner's best guess at
+ * what each department needs, and a guess must never be the reason somebody cannot record a
+ * true thing about a real vendor: every form that hides a question also offers it.
+ *
+ * Money-gated fields are not counted, because a field hidden by the role is not one any
+ * button should offer.
+ */
+export function hiddenFieldCount(
+  departmentName: string | null | undefined,
+  opts: { showMoney: boolean }
+): number {
+  return fieldsForEntry(null, opts).length - fieldsForEntry(departmentName, opts).length;
+}
+
+/**
+ * Is this department asked this question on a blank form?
+ *
+ * Rendering and validation MUST both go through this. If a form hides the minimum order for
+ * a bakery while the save path still demands one, that bakery can never be saved, and the
+ * person at the counter gets an error pointing at a box that is not on their screen. One
+ * predicate, used by both, is what stops those two answers drifting apart.
+ *
+ * Passing null for the department is how a form offers every question at once: null is the
+ * unrecognised-department case from rule 2, which already means "ask everything".
+ */
+export function asksFor(
+  departmentName: string | null | undefined,
+  key: string,
+  opts: { showMoney: boolean }
+): boolean {
+  const field = VENDOR_FIELDS.find((f) => f.key === key);
+  if (!field) return false;
+  if (field.money && !opts.showMoney) return false;
+  return appliesTo(field, departmentName);
+}
+
 export type VendorFact = { field: VendorField; label: string; text: string; detail: string | null };
+
+/** What a field marked alwaysShow reads as before anybody has answered it. */
+export const NOT_ON_FILE = "Not on file";
 
 /**
  * The facts to SHOW for a saved vendor.
@@ -244,12 +298,18 @@ export function visibleFacts(
     // here that fails closed rather than open.
     if (f.money && !opts.showMoney) continue;
     const value = f.value(vendor);
+    // alwaysShow means the blank itself is information: a vendor with no status recorded is
+    // worth seeing as blank rather than dropped off the list. It still obeys the department
+    // map, so an unasked question never appears as an empty row. Everything else waits until
+    // it has an answer, because a column of "not on file" across 130 vendors is just noise.
+    //
+    // The second half of this used to be `if (value === null) continue`, which made the flag
+    // do nothing at all. No screen had noticed because no ordering field sets it.
     if (value === null && !(f.alwaysShow && appliesTo(f, departmentName))) continue;
-    if (value === null) continue;
     out.push({
       field: f,
       label: labelFor(f, departmentName),
-      text: value,
+      text: value ?? NOT_ON_FILE,
       detail: f.detail?.(vendor) ?? null
     });
   }

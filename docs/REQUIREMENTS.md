@@ -108,6 +108,20 @@ SHIPPED (see VERIFICATION.md for sign-off):
   migration anybody forgot. The watchdog puts the sentence in the ticket it raises, so a
   missing migration becomes a job somebody can finish instead of a check name they cannot act
   on. The code was never wrong in that failure; the ticket just never said what to do.
+- Vendor field registry (src/lib/vendorFields.ts, 2026-08-12): what a vendor IS, defined once
+  per department, and now driving the display, the AI routes and the entry form. Twelve
+  fields carrying label, group, money flag, source columns, department scope and a value()
+  that returns null when nothing is on file; a derived vendorSelect() replaced the eight
+  hand-written selects that had drifted. Three safety rules hold whatever the department map
+  says: hiding a question never hides an answer (a bakery vendor with a saved summer timeline
+  still shows it), an unrecognised department is asked everything (Chip Stand and Checkouts
+  are real and are on no list), and the money gate fails closed on both the form and the
+  display. One predicate, asksFor(), is used by both the rendering and the save path, so a
+  department cannot be left with a mandatory field it is never shown. Both vendor forms carry
+  one "Add the other questions" button that puts every question back, because the map is a
+  best guess and a guess must never be why somebody cannot record something true; pressing it
+  reveals a question without making it mandatory. No schema change, no migration, no backfill.
+  Checks: scripts/vendorfields-check (30 assertions).
 
 QUEUED (agreed, not built):
 - Department photo tiles and knowledge-note photo attachments, sourced from the owner's
@@ -160,18 +174,22 @@ OPEN (waiting on the owner):
   columns, Grocery carrying the full merchandise shape, Hardware that plus PO#, and
   MaintenancePayments a different shape again (SpecilizedOn, TechName, Estimate#,
   TypeOfWork). PROCESS FAILURE TO NOTE: that census was captured verbatim on 2026-07-27 and
-  never triaged into this file, so his core point was never work. Made worse by the
-  minimum-order rule, which is mandatory on every save on both the add path
-  (src/app/vendors/page.tsx:121) and the edit path (src/app/vendors/[id]/page.tsx:227), so
-  a phone-number correction cannot be saved without answering it; src/lib/vendorOrdering.ts
-  line 60 records that as deliberate and asked for, which is exactly why reversing it is the
-  owner's call and not a bug fix. Proposed direction: extend the field registry below with
-  department applicability and a required() predicate, and drive the FORM from it as well as
-  the display, so "what a vendor is" is defined once per department instead of once per
-  screen. Seed the department field sets from the workbook census for him to confirm rather
-  than asking him to specify them cold. OWNER DECISION NEEDED: department-shaped field sets
-  matching his tabs, or one shorter form for everyone with the rarely-used fields behind an
-  optional section, or both. Also: does the minimum order stop being mandatory.
+  never triaged into this file, so his core point was never work. BUILT 2026-08-12 (see the
+  field registry entry under SHIPPED): both vendor forms now ask what the department asks.
+  A bakery is down from about 13 field groups to five (name, status, phone, email, notes)
+  with the other seven behind one button, and Dry Goods still gets everything. The map was
+  seeded from the workbook census rather than asking him to specify it cold, and the
+  `departments` line on each field is data, so moving a question between departments is a
+  one-array edit. The minimum-order rule was mandatory on every save on both paths, so a
+  phone-number correction could not be saved without answering it; it is now demanded only
+  where the department is asked for it, or where somebody has answered it. That narrows the
+  problem without reversing his rule, which src/lib/vendorOrdering.ts line 60 records as
+  deliberate and asked for. OWNER DECISION STILL NEEDED, and neither blocks anything now:
+  (a) confirm or correct the department map, which is a starting position and not a claim to
+  be right; the two lines I am least sure of are whether Bakery, Meat and Produce suppliers
+  have payment terms, and whether Hardware wants the summer order timeline for garden stock.
+  (b) Does the minimum order stop being mandatory for the merchandise departments too, on an
+  edit that only meant to fix a phone number.
 - One vendor field list, so every screen shows the same vendor the same way (proposed
   2026-08-11, owner note sent the same day). The ordering profile saves correctly, but each
   screen was told separately which vendor columns to load and they disagree: the vendor page
@@ -187,11 +205,13 @@ OPEN (waiting on the owner):
   minimum-order constraint, the numeric type on money, per-field money gating, and readable
   export tabs) and probing which columns are non-null (collapses "never asked" into "does
   not apply", and cannot know that order_location + order_location_other are one fact).
-  OWNER DECISION NEEDED: (a) go ahead yes or no, and (b) do blank answers stay hidden
-  everywhere, or is a "not answered yet" view wanted so the roughly 130 vendors can be
-  filled in a few at a time. Recommendation is yes and the "not answered yet" view. If a
-  genuinely open-ended per-vendor attribute is ever wanted, that is a vendor_attribute child
-  table with RLS through its parent, not a blob column.
+  BUILT 2026-08-12; the "not on file" symptom is gone, both AI routes now select through
+  vendorSelect(). OWNER DECISION STILL NEEDED: do blank answers stay hidden everywhere, or
+  is a "not answered yet" view wanted so the roughly 130 vendors can be filled in a few at a
+  time. Recommendation is the "not answered yet" view. The registry already carries the
+  alwaysShow flag that such a view needs, so it is a screen and not a rework. If a genuinely
+  open-ended per-vendor attribute is ever wanted, that is a vendor_attribute child table with
+  RLS through its parent, not a blob column.
 - Of the three 2026-07-10 voice notes ("most important"), the domain-email one is now
   resolved: it was about the store's own domain email plan (docs/DOMAIN_EMAIL.md). Still
   un-decoded: the 12:18 note ("deposit on the device"). Owner to type it or re-record in

@@ -43,6 +43,33 @@ minimum order on the entry form AND does not see one that is already saved. Rule
 fail open on purpose; this one does not, and the check covers both directions because the
 display path is the easier one to forget.
 
+## The coupling it protects
+
+`asksFor` is the one predicate the entry form draws with and the save path validates with.
+They must never answer differently. If the form hides the minimum order for a bakery while
+the save still demands one, that bakery can never be saved and the person at the counter
+gets an error pointing at a box that is not on their screen.
+
+The check asserts `asksFor` and `fieldsForEntry` agree for every field across eleven
+departments in both money roles, so the two entry points cannot drift.
+
+## The escape hatch
+
+Both vendor forms carry one button: "Add the other questions". The department map is the
+owner's best guess, and a guess must never be why somebody cannot record something true
+about a real vendor.
+
+It works by passing `null` as the department, which is already rule 2's "ask everything".
+The split that makes it safe is that the form DRAWS with `null` while the save path keeps
+VALIDATING against the real department name: pressing the button puts the minimum order box
+back on a bakery, but does not then refuse to save until it is filled in. The check covers
+both halves, and that the button never reopens a money field for a role that cannot see
+money.
+
+`hiddenFieldCount` is the number on the button, asserted to equal the number of questions
+the press actually puts back. Departments asked everything (Dry Goods, and any department
+the app does not recognise) show no button at all.
+
 ## Also covered
 
 - The bakery form really is the light form, and Dry Goods really does keep the full ordering

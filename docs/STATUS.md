@@ -2,7 +2,42 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-08-07, on branch claude/auto-SCRUM-12 (latest: the health check names its own fix, below; before it owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-08-12, on branch claude/pull-main-branches-atztoh (latest: the vendor field registry, below; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+
+The vendor form asks what the department asks, 2026-08-12:
+- The owner's complaint on 2026-08-11 was that the vendor entry form "has all column or
+  elements listed even though we mentioned only few for some of them". He had made the same
+  point on 2026-07-27, and docs/OWNER_NOTES.md line 367 recorded it verbatim as "fields
+  differ BY DEPARTMENT, the owner's core point". It was never triaged into a requirement, so
+  for sixteen days his core point was not work. That is the process failure worth naming
+  here, more than the code.
+- src/lib/vendorFields.ts now defines what a vendor IS, once, per department: twelve fields
+  with a label, a group, a money flag, the columns they read, and the departments that are
+  asked them. The display, both AI routes and both entry forms read from it. Before this,
+  eight screens each decided for themselves which vendor columns to load and no two agreed,
+  which is why Ask-the-store answered "not on file" for a summer order timeline that was on
+  file.
+- What changes on screen: adding a bakery vendor asks five questions (name, status, phone,
+  email, notes) instead of about thirteen field groups and twenty controls. Dry Goods still
+  gets everything. Property Maintenance asks for a technician rather than a rep, which is
+  the word the owner's own tab uses.
+- The minimum order was mandatory on every save, so a phone-number correction could not be
+  saved without answering it. It is now demanded only where the department is asked for it,
+  or where somebody has answered it anyway. His rule is not reversed; the question simply is
+  not put to departments that never had one.
+- Every form that hides a question also offers it back, in one button that says how many.
+  The map is seeded from his workbook census, which makes it a best guess, and a guess must
+  never be the reason somebody at the counter cannot record something true about a real
+  vendor. Pressing the button reveals a question without making it mandatory, so it cannot
+  punish the person who pressed it.
+- Nothing can be lost by a wrong guess. A saved answer still shows even when the department
+  is no longer asked that question, and the edit form writes a hidden field's existing value
+  back untouched rather than nulling it. A department the app does not recognise (Chip Stand,
+  Checkouts) is asked everything. 30 assertions in scripts/vendorfields-check hold those
+  rules whatever the map says.
+- What the owner still decides: whether the map is right. The two lines least certain are
+  whether Bakery, Meat and Produce suppliers have payment terms, and whether Hardware wants
+  the summer order timeline for garden stock. Each is a one-array edit in the registry.
 
 The health check names its own fix (SCRUM-12), 2026-08-07:
 - The live site has failed its post-deploy health check on "vendor columns present" after

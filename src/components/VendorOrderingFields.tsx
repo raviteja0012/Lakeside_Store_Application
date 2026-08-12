@@ -16,6 +16,7 @@ import {
   toggleOrderLocation
 } from "@/lib/vendorOrdering";
 import { FieldError, fieldInputClass, type FieldErrors } from "@/components/FieldError";
+import { asksFor } from "@/lib/vendorFields";
 
 export type OrderingProfile = {
   minimum_order_amount: string;
@@ -38,7 +39,7 @@ export const EMPTY_ORDERING_PROFILE: OrderingProfile = {
 };
 
 export function VendorOrderingFields({
-  value, onChange, errors, showMoney
+  value, onChange, errors, showMoney, departmentName
 }: {
   value: OrderingProfile;
   onChange: (patch: Partial<OrderingProfile>) => void;
@@ -47,7 +48,22 @@ export function VendorOrderingFields({
   // hidden from anyone who cannot see money, and not required of them either. The other
   // three fields carry no money and stay visible to whoever is doing the ordering.
   showMoney: boolean;
+  // The department decides which of these four are asked at all. The owner's own workbook
+  // has never used one shape: a bakery has no gift show and no summer order. Pass the
+  // TOP-LEVEL department name; null or an unrecognised one asks everything, so nothing is
+  // ever lost by a department this app does not know about yet.
+  //
+  // Null is also how the page's "add the other questions" button works: it passes null and
+  // every question comes back. The button belongs to the page rather than to this block so
+  // that one press restores the whole form, not just the four fields below.
+  departmentName?: string | null;
 }) {
+  const asks = (key: string) => asksFor(departmentName, key, { showMoney });
+  // Nothing in this block applies to this department, so the heading would sit above an
+  // empty space.
+  if (!asks("minimum_order") && !asks("summer_order_timeline") && !asks("order_location") && !asks("reorder")) {
+    return null;
+  }
   const reordered = value.reorder_status === "reordered";
   // A note written when the vendor was marked Reordered, still on file after the status
   // moved on. It is not thrown away silently: the owner asked for that explicitly, so it
@@ -59,7 +75,7 @@ export function VendorOrderingFields({
       <div className="help" style={{ fontWeight: 600 }}>Ordering</div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-        {showMoney && (
+        {asks("minimum_order") && (
         <div>
           <label className="label" htmlFor="minimum_order_amount">Minimum order amount</label>
           <input
@@ -87,6 +103,7 @@ export function VendorOrderingFields({
         </div>
         )}
 
+        {asks("summer_order_timeline") && (
         <div>
           <label className="label" htmlFor="summer_order_timeline">Summer order timeline</label>
           <input
@@ -100,7 +117,9 @@ export function VendorOrderingFields({
           <p className="help" style={{ margin: "4px 0 0" }}>When the summer order should go in, in your own words.</p>
           <FieldError errors={errors} name="summer_order_timeline" />
         </div>
+        )}
 
+        {asks("order_location") && (
         <div>
           <span className="label">Location of the order</span>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
@@ -136,7 +155,9 @@ export function VendorOrderingFields({
             </div>
           )}
         </div>
+        )}
 
+        {asks("reorder") && (
         <div>
           <label className="label" htmlFor="reorder_status">Reorder status</label>
           <select
@@ -163,9 +184,10 @@ export function VendorOrderingFields({
             </p>
           )}
         </div>
+        )}
       </div>
 
-      {reordered && (
+      {asks("reorder") && reordered && (
         <div>
           <label className="label" htmlFor="reorder_comments">Reorder comments</label>
           <textarea
