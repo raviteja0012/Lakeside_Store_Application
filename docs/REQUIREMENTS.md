@@ -159,8 +159,10 @@ OPEN (waiting on the owner):
   workflow that was built for this on 2026-07-31 has never applied anything, because
   without the secret it exits quietly, which is why the script above is still a manual job.
   Instructions are at the top of docs/SUPABASE_SETUP.md.
-- DONE 2026-08-12: Jira is retired, at the developer's instruction ("we dont use jira
-  anymore", "remove if we are wasting credits in jira"). The autopilot was the only piece
+- DONE 2026-08-12: Jira is switched off, at the developer's instruction ("we dont use jira
+  anymore", "remove if we are wasting credits in jira"), and the autopilot is PARKED rather
+  than deleted at his follow-up ("we mighgt use new acount in future and we still would like
+  to have that setuyp inplace as placehoilder.. just not cativated now"). The autopilot was the only piece
   spending model credits: 96 sweeps a day of a board the owner has never written to, while
   his actual requests arrive by phone and WhatsApp. The board's two other jobs were free HTTP
   and are re-homed: the health watchdog now posts to Slack when the site's answer changes,

@@ -37,6 +37,14 @@ jobs:
           node --check .github/scripts/classify-change.mjs
           node --check .github/scripts/health-check.mjs
           node --check .github/scripts/health-notify.mjs
+          # The Jira autopilot is parked, not deleted: a future board can wake it up. Its
+          # tests and syntax checks keep running so it cannot rot into something that no
+          # longer works by the time somebody needs it.
+          node .github/scripts/jira-find-work.test.mjs
+          node .github/scripts/jira-transition.test.mjs
+          node --check .github/scripts/jira-comment.mjs
+          node --check .github/scripts/jira-find-work.mjs
+          node --check .github/scripts/jira-transition.mjs
           # seed_dev.sql must never reach a real database through the migration workflow.
           # It is dev-only dummy data, and run-order.txt is the only list that runs.
           if grep -qE '^\s*seed' supabase/run-order.txt; then

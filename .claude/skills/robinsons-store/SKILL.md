@@ -154,9 +154,11 @@ Since 2026-07-28 the repo carries its own build, ship and watch loops. The full 
 the reasoning for every limit is docs/LOOP_ENGINEERING.md; the short version you must not
 break:
 
-- Work arrives by being asked for, in Slack. The Jira board and its autopilot were retired
-  on 2026-08-12: it ran 96 model-backed sweeps a day over a board the owner never wrote to.
-  Do not reintroduce a polling intake loop without a request actually arriving through it.
+- Work arrives by being asked for, in Slack. The Jira autopilot was PARKED on 2026-08-12,
+  not deleted: it ran 96 model-backed sweeps a day over a board the owner never wrote to.
+  It sits in .github/workflows/jira-autopilot.yml with its schedule commented out and can be
+  woken for a future board. Do not re-enable that schedule, or add any polling intake loop,
+  without requests actually arriving through it.
 - How far a change travels is decided by a SCRIPT reading the diff
   (.github/scripts/classify-change.mjs), never by the model's own judgement. Words only
   merge themselves; app changes wait for a person; money, access, the database, and the
