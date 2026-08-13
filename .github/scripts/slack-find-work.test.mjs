@@ -5,7 +5,7 @@
 // somebody's request sits in the channel forever while the machine reports nothing to do.
 // Both failures look like silence from the outside.
 
-import { pickWork, PICKED_UP, DONE } from "./slack-find-work.mjs";
+import { pickWork, PICKED_UP, DONE, STOPPED, CLAIMED } from "./slack-find-work.mjs";
 
 let pass = 0, fail = 0;
 const t = (name, ok, detail = "") => {
@@ -30,6 +30,18 @@ t("skips a request already finished",
   pick([msg({ reactions: [{ name: DONE }] })]) === null);
 t("an unrelated reaction does not count as claimed",
   pick([msg({ reactions: [{ name: "thumbsup" }] })])?.text === "add a column for the rep phone");
+
+// THE RETRY LOOP. This is not hypothetical: the first real run failed, the card set a
+// warning on the message, and with only eyes and tick in the skip list the next sweep would
+// have rebuilt the same failing request every thirty minutes forever, burning a model run
+// each time.
+t("skips a request that stopped and needs a person",
+  pick([msg({ reactions: [{ name: STOPPED }] })]) === null);
+t("every reaction the card can set counts as claimed",
+  CLAIMED.every((r) => pick([msg({ reactions: [{ name: r }] })]) === null),
+  CLAIMED.join(","));
+t("taking the reaction off is how a person retries one",
+  pick([msg({ reactions: [] })])?.text === "add a column for the rep phone");
 
 // The circle-breaker. The bot posts its own progress into this channel, and reading that
 // back as a request is how an intake loop eats itself.
