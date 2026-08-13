@@ -76,7 +76,7 @@ jobs:
         id: what
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
+          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL || secrets.SLACK_REQUEST_CHANNEL }}
           EVENT: ${{ github.event_name }}
           BRANCH: ${{ github.event.pull_request.head.ref || github.event.workflow_run.head_branch }}
           PR_MERGED: ${{ github.event.pull_request.merged }}
@@ -95,7 +95,7 @@ jobs:
         if: steps.what.outputs.report == 'true'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
+          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL || secrets.SLACK_REQUEST_CHANNEL }}
           THREAD_TS: ${{ steps.what.outputs.thread_ts }}
           STAGE: ${{ steps.what.outputs.stage }}
           NOTE: ${{ steps.what.outputs.note }}
