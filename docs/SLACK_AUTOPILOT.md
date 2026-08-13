@@ -73,6 +73,25 @@ treating each comment as a new build turns one conversation into ten pull reques
 
 Oldest first, so whoever asked first is served first.
 
+## How you ask it for something
+
+**Name the bot in your message.** `@<the app's name> add a phone number column to the vendor form`.
+
+That is required by default, and it matters because this watches a channel people actually
+talk in. Without it, "Hello Robinson Tech Team" is a build request and the automation opens a
+pull request for it. Naming the bot is the Slack-native way to address something, it cannot
+be typed by accident, and it means the channel stays a channel.
+
+The bot's name is stripped before the request reaches the model, so it reads what you asked
+and not how you addressed it.
+
+If it ever cannot work out its own name, **nothing** counts as a request. Failing closed is
+the only safe direction here: the alternative is building every message in the channel
+because one API call did not answer.
+
+If you make a channel that exists solely for requests, set the variable
+`SLACK_REQUIRE_MENTION` to `false` and plain messages count.
+
 ## What it will not do
 
 - **Merge.** It opens a draft pull request and stops. A person merges.
@@ -112,10 +131,24 @@ In **Settings, Secrets and variables, Actions**:
 |---|---|---|
 | `ANTHROPIC_API_KEY` | secret | Already set; the same key the app's AI features use |
 | `SLACK_BOT_TOKEN` | secret | A bot token, starting `xoxb-` |
-| `SLACK_REQUEST_CHANNEL` | **variable** | The channel ID, e.g. `C0BPV2BKE66` |
+| `SLACK_REQUEST_CHANNEL` | **variable** | The channel ID to watch |
+| `SLACK_REQUIRE_MENTION` | **variable**, optional | Defaults to requiring the bot to be named. `false` only for a requests-only channel |
 
-**The bot token is not the incoming webhook.** The webhook the health watchdog uses can only
-write. This has to read the channel, which needs a real bot token with these scopes:
+**The bot token is not the incoming webhook, and it is not a refresh token.** Two different
+things get mistaken for it:
+
+- The **incoming webhook** the health watchdog uses can only write. This has to read.
+- A **refresh token** (`xoxe-1-...`) cannot call the Web API at all. Slack's own
+  documentation is explicit: it exists only to be exchanged for an access token through
+  `oauth.v2.access`. Paste one here and every call fails.
+
+What you want is under **OAuth & Permissions**, labelled **Bot User OAuth Token**, starting
+`xoxb-`. If yours starts `xoxe.xoxb-` instead, token rotation is switched on for that app,
+which means the token expires every twelve hours and cannot be used from a stored secret.
+Rotation cannot be turned off once enabled, so in that case make a separate app for this and
+leave rotation off.
+
+The scopes it needs:
 
 - `channels:history` (read the messages)
 - `chat:write` (reply in the thread)

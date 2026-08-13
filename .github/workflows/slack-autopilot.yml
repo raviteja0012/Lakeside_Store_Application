@@ -32,8 +32,16 @@ name: Slack autopilot
 #                            webhook can only write, and this has to read the channel.
 #                            Scopes: channels:history, chat:write, reactions:read,
 #                            reactions:write. Invite the bot to the channel.
-#   SLACK_REQUEST_CHANNEL    variable. The channel ID to watch, e.g. C0BPV2BKE66.
-# Until those exist it exits quietly, so it is safe to merge before they are set.
+#   SLACK_REQUEST_CHANNEL    variable. The channel ID to watch.
+#   SLACK_REQUIRE_MENTION    variable, optional. Defaults to requiring the bot to be named.
+#                            Only set to "false" for a channel that exists solely for
+#                            requests, where every message is meant for the automation.
+# Until the first three exist it exits quietly, so it is safe to merge before they are set.
+#
+# THE TOKEN IS NOT THE WEBHOOK, AND IT IS NOT A REFRESH TOKEN. The health watchdog's incoming
+# webhook can only write. A refresh token (xoxe-1-...) cannot call the API at all; it exists
+# only to be exchanged for an access token. What goes here is a bot token, xoxb-..., from
+# OAuth and Permissions.
 
 on:
   schedule:
@@ -85,6 +93,7 @@ jobs:
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
+          SLACK_REQUIRE_MENTION: ${{ vars.SLACK_REQUIRE_MENTION }}
           ONE_MESSAGE_TS: ${{ inputs.message_ts }}
         run: node .github/scripts/slack-find-work.mjs
 

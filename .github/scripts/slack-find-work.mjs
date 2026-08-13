@@ -10,6 +10,12 @@
 // rewritten, and it costs no storage. A message carrying either reaction is already spoken
 // for and is skipped, which is what stops the loop working the same request forever.
 //
+// WHAT IS WORK: a message that NAMES THE BOT. The channel this watches is the store's
+// ordinary channel, where people say hello and talk about the weekend, so an unaddressed
+// message is not a request. Without that rule "Hello Robinson Tech Team" becomes a pull
+// request. Naming the bot is the Slack-native way to address something and cannot be typed
+// by accident. A channel that exists only for requests can set SLACK_REQUIRE_MENTION=false.
+//
 // WHAT IS NOT WORK: anything the bot itself said, anything from another app, and thread
 // replies. Replies are skipped on purpose for now: a thread under a finished request is
 // usually people talking about it, and treating every comment as a new build is how an
@@ -21,6 +27,9 @@
 const TOKEN = (process.env.SLACK_BOT_TOKEN || "").trim();
 const CHANNEL = (process.env.SLACK_REQUEST_CHANNEL || "").trim();
 const ONE_TS = (process.env.ONE_MESSAGE_TS || "").trim();
+// Default ON. This watches the store's ordinary channel, so silence is the safe answer to
+// "was this meant for me". Only set false for a channel that exists solely for requests.
+const REQUIRE_MENTION = (process.env.SLACK_REQUIRE_MENTION || "true").trim() !== "false";
 const HOW_MANY = 25;
 
 /** Reactions that mean somebody, or something, already has this one. */
@@ -35,7 +44,15 @@ export const DONE = "white_check_mark";
  * ignoring somebody's request forever, or building the same one on a loop.
  */
 export function pickWork(messages, opts = {}) {
-  const { onlyTs = "" } = opts;
+  const { onlyTs = "", requireMention = true, botUserId = "" } = opts;
+  // The channel this watches is the store's ordinary channel, where people say hello and
+  // talk about the weekend. Without an explicit signal, "Hello Robinson Tech Team" is a
+  // build request, and the automation would open a pull request for it.
+  //
+  // So a message only counts when it names the bot. That is the Slack-native way to address
+  // something, it cannot be typed by accident, and it means the channel stays a channel.
+  // A dedicated requests channel can turn this off with SLACK_REQUIRE_MENTION=false.
+  const mention = botUserId ? `<@${botUserId}>` : "";
   // conversations.history returns newest first. Oldest-first means the person who asked
   // first is served first, which is the behaviour anybody would expect of a queue.
   const oldestFirst = [...(messages || [])].reverse();
@@ -49,7 +66,15 @@ export function pickWork(messages, opts = {}) {
     const reactions = (m.reactions || []).map((r) => r.name);
     if (reactions.includes(PICKED_UP) || reactions.includes(DONE)) continue;
     if (onlyTs && m.ts !== onlyTs) continue;
-    return m;
+    // Fails CLOSED: asked to require a mention but given no bot id, nothing is work. The
+    // alternative is treating every message in the store's channel as a build request
+    // because one API call did not answer.
+    if (requireMention && (!mention || !m.text.includes(mention))) continue;
+    // The bot's name is addressing, not part of the request. "@bot add a phone column"
+    // should reach the model as "add a phone column".
+    const text = mention ? m.text.split(mention).join(" ").replace(/\s+/g, " ").trim() : m.text.trim();
+    if (!text) continue;
+    return { ...m, text };
   }
   return null;
 }
@@ -80,8 +105,15 @@ async function main() {
     out("found", "false");
     return;
   }
+  // Who the bot is, so it can tell when it is being spoken to. One free call per sweep.
+  let botUserId = "";
+  try {
+    botUserId = (await slack("auth.test", {})).user_id || "";
+  } catch (e) {
+    console.log(`Could not work out who I am: ${e.message}`);
+  }
   const history = await slack("conversations.history", { channel: CHANNEL, limit: String(HOW_MANY) });
-  const work = pickWork(history.messages, { onlyTs: ONE_TS });
+  const work = pickWork(history.messages, { onlyTs: ONE_TS, requireMention: REQUIRE_MENTION, botUserId });
   if (!work) {
     console.log("Nothing waiting.");
     out("found", "false");
