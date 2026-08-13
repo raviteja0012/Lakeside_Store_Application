@@ -1,0 +1,89 @@
+name: Slack lifecycle
+
+# Keeps the status card under a Slack request up to date for the whole life of the work:
+# ready to review, checks passed or failed, merged, live on the store's site.
+#
+# The autopilot only knows the beginning. Everything after it happens in GitHub minutes or
+# hours later, in workflows the autopilot has long since exited. Without this, somebody asks
+# for something, sees "working on it", and never learns whether it shipped.
+#
+# HOW IT KNOWS WHICH REQUEST. The branch is named claude/slack-<slack timestamp>, and that
+# timestamp is the Slack thread. So a pull request event carries, in its branch name alone,
+# everything needed to find the conversation that asked for it. Nothing is stored between the
+# workflows and there is nothing to fall out of step.
+#
+# Anything not built from a Slack request has no such branch name, so tsFromBranch returns
+# null and every job here skips. Ordinary work is unaffected.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  # Fired by the deploy watch once the store's site is confirmed serving the change.
+  workflow_dispatch:
+    inputs:
+      thread_ts:
+        description: "Slack timestamp of the request"
+        required: true
+        type: string
+      stage:
+        description: "picked_up, built, checks_passed, checks_failed, merged, live, stopped"
+        required: true
+        type: string
+      note:
+        description: "One plain sentence for the person who asked"
+        required: false
+        type: string
+      link:
+        description: "Where to look"
+        required: false
+        type: string
+
+concurrency:
+  # Per request, so two events on the same thread cannot both edit the card at once and
+  # leave it showing the older of the two.
+  group: slack-lifecycle-${{ github.event.pull_request.head.ref || github.event.workflow_run.head_branch || inputs.thread_ts }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out which request this is, and what to say
+        id: what
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
+          EVENT: ${{ github.event_name }}
+          BRANCH: ${{ github.event.pull_request.head.ref || github.event.workflow_run.head_branch }}
+          PR_MERGED: ${{ github.event.pull_request.merged }}
+          PR_STATE: ${{ github.event.action }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          CI_RESULT: ${{ github.event.workflow_run.conclusion }}
+          CI_URL: ${{ github.event.workflow_run.html_url }}
+          IN_TS: ${{ inputs.thread_ts }}
+          IN_STAGE: ${{ inputs.stage }}
+          IN_NOTE: ${{ inputs.note }}
+          IN_LINK: ${{ inputs.link }}
+        run: node .github/scripts/slack-lifecycle-stage.mjs
+
+      - name: Update the card
+        if: steps.what.outputs.report == 'true'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
+          THREAD_TS: ${{ steps.what.outputs.thread_ts }}
+          STAGE: ${{ steps.what.outputs.stage }}
+          NOTE: ${{ steps.what.outputs.note }}
+          LINK: ${{ steps.what.outputs.link }}
+        run: node .github/scripts/slack-status.mjs

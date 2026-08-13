@@ -6,22 +6,63 @@ draft pull request, with a reply in the thread under your own message saying wha
 This is the intake loop the Jira board used to be, moved to where the work is actually asked
 for. Nobody was writing to the board; people do write in Slack.
 
-## How it reads the channel
+## The whole life of a request
 
-State is a **reaction**, not a database:
+Two things track it, and neither needs anything stored anywhere.
+
+**A reaction on your message**, so the channel reads at a glance without opening threads:
 
 | What you see | What it means |
 |---|---|
 | no reaction | waiting, nobody has started it |
-| 👀 | picked up, being built now |
-| ✅ | finished, there is a draft pull request |
+| 👀 | being worked on |
+| ⚠️ | stopped, or the checks failed: needs a person |
+| ✅ | merged, and on its way to the store's site |
 
-That choice is deliberate. The state of every request is visible to anyone scrolling the
-channel, it survives the scripts being rewritten, and it costs no storage. It is also what
-stops the loop building the same request forever: a message carrying either reaction is
-skipped.
+**A status card in the thread under your message**, which edits itself as things move:
 
-The claim goes on **before** the build starts. A run that dies halfway leaves 👀 with no
+| Card | When |
+|---|---|
+| 👀 Working on it | picked up |
+| 📝 Ready for someone to look | the draft pull request exists |
+| ☑️ Checks passed, waiting to be merged | the automatic checks went green |
+| 🔴 Checks failed | they did not |
+| 🚀 Merged, going out to the store | somebody merged it |
+| 🟢 Live on the store's site | the deploy is confirmed serving it |
+| ✋ Stopped, this one needs a person | it refused to guess, or the build failed |
+
+One card that updates, rather than six messages. The alternative buries the answer under its
+own notifications.
+
+**How the card finds itself hours later, with no database.** Your message's Slack timestamp
+IS the thread id, and the autopilot puts that timestamp in the branch name
+(`claude/slack-<ts>`). So a pull-request event carries, in its branch name alone, everything
+needed to find the conversation that asked for it. Inside the thread the card is found by
+asking `conversations.replies` for the bot's own message carrying a marker. Nothing is passed
+between workflows, so nothing can fall out of step.
+
+Anything not built from a Slack request has no such branch name, so the lifecycle workflow
+skips it entirely. Ordinary work is unaffected.
+
+### Slack details this gets right, because the alternatives fail quietly
+
+- **`text` is always sent with `blocks`.** Slack uses it for the notification and for screen
+  readers. Blocks with no fallback text arrive as an empty ping.
+- **Updates always resend blocks.** `chat.update` with `text` alone deletes the blocks, so a
+  lazy update would silently flatten the card to plain text.
+- **A failed update falls back to posting.** `edit_window_closed` and `message_not_found` are
+  real; losing the update is worse than one extra message.
+- **429 is honoured with its `Retry-After`.** Slack allows one message per second per channel.
+- **Nothing here ever fails a run.** The build either happened or it did not, and a Slack
+  outage must not turn finished work into a red run somebody re-runs.
+
+## Why a reaction rather than a database
+
+The state of every request is visible to anyone scrolling the channel, it survives these
+scripts being rewritten, and it costs no storage. It is also what stops the loop building the
+same request forever: a message already carrying 👀 or ✅ is skipped.
+
+The 👀 claim goes on **before** the build starts. A run that dies halfway leaves 👀 with no
 reply, which is the safe direction: a person sees it and knows to look. The other way round,
 an unclaimed request gets built twice.
 

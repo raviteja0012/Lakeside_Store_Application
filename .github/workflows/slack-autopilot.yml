@@ -88,14 +88,18 @@ jobs:
           ONE_MESSAGE_TS: ${{ inputs.message_ts }}
         run: node .github/scripts/slack-find-work.mjs
 
+      # The first draw of the status card. Everything after this point, including workflows
+      # that run hours later, edits this same card rather than adding messages.
       - name: Say it has been picked up
         if: steps.find.outputs.found == 'true'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
-          MESSAGE_TS: ${{ steps.find.outputs.ts }}
-          TEXT: "Picked this up, working on it now. I will reply here when there is something to look at."
-        run: node .github/scripts/slack-reply.mjs
+          THREAD_TS: ${{ steps.find.outputs.ts }}
+          STAGE: picked_up
+          REQUEST: ${{ steps.find.outputs.request }}
+          NOTE: "I am working on this now. This message will keep itself up to date."
+        run: node .github/scripts/slack-status.mjs
 
       - uses: actions/setup-node@v4
         if: steps.find.outputs.found == 'true'
@@ -153,17 +157,22 @@ jobs:
                owner would understand, saying what you did or why you stopped. No markdown
                headers, no em dashes. That paragraph goes back to Slack as the reply.
 
+      # A failed build still updates the card. A request that goes silent is worse than one
+      # that says it did not work, because only one of them tells the person to ask again.
+      #
+      # On success this says only that the build finished. The card is moved on to "ready for
+      # someone to look" by the lifecycle workflow when the pull request actually appears,
+      # because that is the moment it is true.
       - name: Say what happened
         if: always() && steps.find.outputs.found == 'true'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
-          MESSAGE_TS: ${{ steps.find.outputs.ts }}
-          OUTCOME: ${{ steps.build.outcome == 'success' && 'done' || 'stopped' }}
-          # A failed build still gets a reply. A request that goes silent is worse than one
-          # that comes back saying it did not work, because only one of them tells the
-          # person to ask again.
-          TEXT: ${{ steps.build.outcome == 'success'
-            && 'Finished. There is a draft pull request to look over.'
-            || format('I could not finish this one. The run is at {0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
-        run: node .github/scripts/slack-reply.mjs
+          THREAD_TS: ${{ steps.find.outputs.ts }}
+          REQUEST: ${{ steps.find.outputs.request }}
+          STAGE: ${{ steps.build.outcome == 'success' && 'built' || 'stopped' }}
+          NOTE: ${{ steps.build.outcome == 'success'
+            && 'Finished building. The pull request will appear here in a moment.'
+            || 'I could not finish this one, so nothing has changed. It needs a person to look.' }}
+          LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node .github/scripts/slack-status.mjs
