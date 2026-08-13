@@ -2,8 +2,15 @@
 
 > **PARKED since 2026-08-12. It does not run on its own.** The workflow, its scripts and
 > this page are all kept whole so a future Jira account can pick it up without rebuilding
-> anything. It was parked, not deleted, because the schedule cost 96 model runs a day
-> against a board the owner never wrote to, not because the design was wrong.
+> anything. It was parked, not deleted, because it swept a board the owner never wrote to 96
+> times a day, not because the design was wrong.
+>
+> Corrected 2026-08-13: that cost was first written down as "96 model runs a day", which was
+> wrong. The model step below is gated behind having found a ticket, so an empty board
+> started no model. The waste was Actions minutes, because the sweep ran checkout and
+> `npm ci` before checking: about 2,880 minutes a month against a 2,000-minute allowance.
+> If this is ever woken up, move the find-work step above the install first, the way
+> `.github/workflows/slack-autopilot.yml` does.
 >
 > **To wake it up:** uncomment the two schedule lines in
 > `.github/workflows/jira-autopilot.yml`, then set the four secrets listed there. Without

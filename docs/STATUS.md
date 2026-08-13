@@ -8,10 +8,16 @@ Jira is switched off, 2026-08-12:
 - The board is out of use and its autopilot is PARKED, not deleted. The workflow, its
   scripts and docs/JIRA_AUTOPILOT.md are all still here with the schedule commented out, so
   a future Jira account can wake it up instead of rebuilding it. CI still runs its tests, so
-  it cannot quietly rot while parked. The autopilot swept Jira every 15 minutes and started
-  a model on every sweep: 96 runs a day against a board the owner has never written to. His
-  requests arrive by phone and WhatsApp and were relayed by hand, so the intake loop was
-  paying to discover there was nothing to do.
+  it cannot quietly rot while parked. The autopilot swept Jira every 15 minutes against a
+  board the owner has never written to, so the intake loop was paying to discover there was
+  nothing to do.
+- CORRECTION, 2026-08-13. This was first recorded here, and told to the developer, as "96
+  model runs a day". That was wrong. The model step was correctly gated behind having found
+  a ticket, so an empty board started no model and cost no tokens. The real waste was
+  GitHub Actions minutes: every sweep ran actions/checkout and npm ci BEFORE checking, about
+  a minute each, which is roughly 2,880 minutes a month against a 2,000-minute free
+  allowance. The decision to switch it off stands; the reason given for it did not. The
+  Slack loop that replaces it puts the cheap check first, so an idle sweep costs seconds.
 - Parked: `.github/workflows/jira-autopilot.yml` and the three scripts it calls. Still
   deleted, because the Slack watchdog and the manual promotion replaced them outright:
   raise-health-ticket.mjs, resolve-health-ticket.mjs and jira-approved.mjs. Those are one

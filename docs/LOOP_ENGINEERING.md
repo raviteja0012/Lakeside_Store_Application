@@ -33,15 +33,22 @@ workflow and its scripts are still in the repo with the schedule commented out, 
 board can wake it up without rebuilding it, and CI still runs its tests so it cannot rot
 while it sleeps.
 
-It is gone because of what it cost. Ninety-six runs a day, each one starting a model, and the
-board was quiet for most of them: the loop spent its budget discovering there was nothing to
-do. An intake loop is only worth its price when requests actually arrive through it, and the
+It is parked because of what it cost, though not for the reason first recorded here. Its
+model step was gated behind having found a ticket, so a quiet board started no model and
+cost no tokens. What it did do was run `actions/checkout` and `npm ci` on every one of its 96
+daily sweeps BEFORE checking whether there was anything to check: about a minute each, near
+2,880 Actions minutes a month against a 2,000-minute allowance. The loop spent its budget
+getting ready to discover there was nothing to do.
+
+That distinction is the whole design lesson, and it is why the Slack loop that replaces it
+asks the cheap question first. See docs/SLACK_AUTOPILOT.md. An intake loop is only worth its price when requests actually arrive through it, and the
 owner's requests arrive by phone and by WhatsApp, are relayed by the developer, and never
 touched the board at all.
 
-Intake is now a person asking in Slack. That is slower and it is honest about being slower.
-The four loops below are unchanged, and they are the ones that made unattended shipping
-defensible in the first place: the intake half was never the part doing the checking.
+Intake is now `.github/workflows/slack-autopilot.yml`: somebody types a request in the store's
+Slack channel and it becomes a draft pull request, with a reply in the thread under their own
+message. State lives in reactions on the message (none, then eyes, then a tick), so the queue
+is readable by anyone scrolling the channel.
 
 ### 2. Build: implement, then prove it
 
