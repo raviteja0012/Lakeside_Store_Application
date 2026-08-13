@@ -31,6 +31,7 @@ written for, and how current it is. Start here.
 | [OWNER_NOTES.md](OWNER_NOTES.md) | The owner's feedback verbatim, round by round, Telugu translated. The raw input that REQUIREMENTS.md is triaged from |
 | [owner-notes/](owner-notes/) | Documents written **for** the owner rather than for the builder, plus the PDF renderer |
 | [LOOP_ENGINEERING.md](LOOP_ENGINEERING.md) | How the repo builds, ships and watches itself, and why each limit exists. **Read before touching `.github/` or `.claude/`** |
+| [SLACK_AUTOPILOT.md](SLACK_AUTOPILOT.md) | How a message in the Slack requests channel becomes a draft pull request, what it will not do, and what it costs |
 | [JIRA_AUTOPILOT.md](JIRA_AUTOPILOT.md) | The board loop, **parked since 2026-08-12**: kept whole and switched off, with how to wake it |
 
 ## The store's own data
