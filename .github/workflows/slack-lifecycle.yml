@@ -53,6 +53,20 @@ permissions:
 
 jobs:
   report:
+    # Decided BEFORE a runner is allocated, so an event that has nothing to do with a Slack
+    # request costs nothing at all. CI finishes on every push and every pull request in this
+    # repository, and without this line each one would start a job, check out the code, and
+    # exit having learned it was not wanted. That is roughly twenty seconds of Actions time
+    # per push to discover there is nothing to say, which is precisely the mistake that ran
+    # the Jira loop's allowance dry. See docs/SLACK_AUTOPILOT.md.
+    #
+    # The branch prefix is checked here and the full timestamp is parsed later in
+    # slack-lifecycle-stage.mjs, which is the piece with tests. This is a cheap gate, not the
+    # decision.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.pull_request.head.ref, 'claude/slack-') ||
+      startsWith(github.event.workflow_run.head_branch, 'claude/slack-')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
