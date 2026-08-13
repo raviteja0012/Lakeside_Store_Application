@@ -142,8 +142,16 @@ things get mistaken for it:
   documentation is explicit: it exists only to be exchanged for an access token through
   `oauth.v2.access`. Paste one here and every call fails.
 
-What you want is under **OAuth & Permissions**, labelled **Bot User OAuth Token**, starting
-`xoxb-`. If yours starts `xoxe.xoxb-` instead, token rotation is switched on for that app,
+**Make the app from the manifest in `docs/slack-app-manifest.yml`.** At
+api.slack.com/apps, Create New App, choose **From a manifest**, and paste it. That sets the
+name, the four scopes, and `token_rotation_enabled: false` in one go, which is the setting
+that decides whether the token you get lasts forever or twelve hours. The other three
+templates are wrong for this: **AI agent** and **Starter app** add slash commands and event
+listeners that need a public HTTPS endpoint this has no use for, and **Blank app** means
+clicking the scopes in by hand with rotation left to chance.
+
+What you want is then under **OAuth & Permissions**, labelled **Bot User OAuth Token**,
+starting `xoxb-`. If yours starts `xoxe.xoxb-` instead, token rotation is switched on for that app,
 which means the token expires every twelve hours and cannot be used from a stored secret.
 Rotation cannot be turned off once enabled, so in that case make a separate app for this and
 leave rotation off.

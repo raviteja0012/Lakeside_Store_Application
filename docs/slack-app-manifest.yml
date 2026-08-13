@@ -1,0 +1,57 @@
+# The Slack app the autopilot uses. Paste this into api.slack.com/apps, Create New App,
+# From a manifest.
+#
+# Kept in the repo so the app can be rebuilt exactly, by somebody who was not here when it was
+# first made. Every line below is load bearing:
+#
+#   token_rotation_enabled: false   THE IMPORTANT ONE. With rotation on, the access token
+#                                   expires every twelve hours and each refresh replaces the
+#                                   refresh token too, so no stored secret survives. Slack
+#                                   will not let rotation be turned off once it is on, so
+#                                   getting this wrong means making another app.
+#   socket_mode_enabled: false      The autopilot asks Slack for messages on a schedule. It
+#                                   does not hold a socket open or receive events.
+#   no event_subscriptions          Events need a public HTTPS endpoint to receive them. There
+#                                   is none, and adding one would mean running a server just
+#                                   to hear about messages we can simply ask for.
+#   no slash commands               Same reason.
+#
+# Scopes, and why each one is here:
+#   channels:history   read the requests in a PUBLIC channel. For a private channel this has
+#                      to be groups:history instead, and the bot must be invited to it.
+#   chat:write         post the status card in the thread, and update it.
+#   reactions:write    put the eyes on a claimed request and the tick on a finished one.
+#   reactions:read     see which requests are already claimed, so the same one is not built
+#                      twice.
+#
+# Nothing here can post as a person, read a direct message, or see any other channel.
+
+_metadata:
+  major_version: 2
+  minor_version: 1
+
+display_information:
+  name: Store autopilot
+  description: Turns a request in the store's Slack channel into a draft pull request
+  long_description: Watches one channel for messages that name it, builds what is asked on a branch, opens a draft pull request for a person to review, and keeps a status card in the thread up to date until the change is live on the store's site. It never merges anything and never touches payments, logins, or the database on its own.
+  background_color: "#2b4a3f"
+
+features:
+  bot_user:
+    display_name: Store autopilot
+    # It is a scheduled job, not somebody sitting at a desk. Saying otherwise would be a
+    # small lie told to everyone in the channel, all day.
+    always_online: false
+
+oauth_config:
+  scopes:
+    bot:
+      - channels:history
+      - chat:write
+      - reactions:read
+      - reactions:write
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
