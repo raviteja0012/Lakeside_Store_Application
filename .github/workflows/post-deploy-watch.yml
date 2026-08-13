@@ -21,6 +21,11 @@ on:
   schedule:
     - cron: "23 */2 * * *"
   workflow_dispatch:
+    inputs:
+      test_slack:
+        description: "Post a test message to Slack, to prove alerts can reach the channel"
+        type: boolean
+        default: false
 
 concurrency:
   group: post-deploy-watch
@@ -62,6 +67,8 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Empty on schedules and post-deploy runs, so only a deliberate hand-run can test.
+          TEST: ${{ inputs.test_slack }}
           HEALTHY: ${{ steps.health.outputs.healthy }}
           SUMMARY: ${{ steps.health.outputs.summary }}
           SITE: ${{ vars.PRODUCTION_URL || 'https://robinsons-store.vercel.app' }}

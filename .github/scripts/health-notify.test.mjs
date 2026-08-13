@@ -28,6 +28,15 @@ for (const healthy of [true, true, false, false, false, false, false, true, true
 }
 t("a five-run outage posts exactly twice, down and back up", posts === 2, `${posts} posts`);
 
+// The test button must not be reachable by accident. A scheduled or post-deploy run leaves
+// the input empty, and an empty string must never read as "yes, post a test message to the
+// store's alert channel".
+const testEnabled = (v) => (v || "").trim() === "true";
+t("the test button is off when the input is empty", !testEnabled(""));
+t("the test button is off when the input is missing", !testEnabled(undefined));
+t("the test button is off for the string false", !testEnabled("false"));
+t("the test button is on only for the string true", testEnabled("true"));
+
 // An unreadable run history must not swallow an outage. Erring toward a duplicate alert is
 // the safe direction; erring toward silence is not.
 const failing = { ok: false, status: 500, json: async () => ({}) };
