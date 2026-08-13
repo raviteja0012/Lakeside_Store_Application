@@ -2,15 +2,20 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-08-12, on branch claude/pull-main-branches-atztoh (latest: Jira retired and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-08-12, on branch claude/pull-main-branches-atztoh (latest: Jira switched off with its autopilot parked and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
 
-Jira is retired, 2026-08-12:
-- The board and its autopilot are gone. The autopilot swept Jira every 15 minutes and started
+Jira is switched off, 2026-08-12:
+- The board is out of use and its autopilot is PARKED, not deleted. The workflow, its
+  scripts and docs/JIRA_AUTOPILOT.md are all still here with the schedule commented out, so
+  a future Jira account can wake it up instead of rebuilding it. CI still runs its tests, so
+  it cannot quietly rot while parked. The autopilot swept Jira every 15 minutes and started
   a model on every sweep: 96 runs a day against a board the owner has never written to. His
   requests arrive by phone and WhatsApp and were relayed by hand, so the intake loop was
   paying to discover there was nothing to do.
-- Deleted: `.github/workflows/jira-autopilot.yml` and nine scripts. Nothing else in the repo
-  used them.
+- Parked: `.github/workflows/jira-autopilot.yml` and the three scripts it calls. Still
+  deleted, because the Slack watchdog and the manual promotion replaced them outright:
+  raise-health-ticket.mjs, resolve-health-ticket.mjs and jira-approved.mjs. Those are one
+  command away if ever wanted: `git checkout 8d91514 -- .github/scripts/<name>.mjs`.
 - The health watchdog keeps its job and moves to Slack. It still asks /api/health after every
   deploy and every two hours, and now posts when the answer CHANGES: once when the site goes
   down, once when it recovers, nothing in between. The state used to be the ticket being open

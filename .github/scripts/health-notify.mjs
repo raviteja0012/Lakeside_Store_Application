@@ -24,6 +24,9 @@
 
 const WEBHOOK = (process.env.SLACK_WEBHOOK_URL || "").trim();
 const HEALTHY = (process.env.HEALTHY || "").trim() === "true";
+// Set only by running the workflow by hand with "Post a test message" ticked. Scheduled and
+// post-deploy runs leave it empty.
+const TEST = (process.env.TEST || "").trim() === "true";
 const SUMMARY = (process.env.SUMMARY || "unspecified").trim();
 const RUN_URL = (process.env.RUN_URL || "").trim();
 const SITE = (process.env.SITE || "").trim();
@@ -89,30 +92,54 @@ function message(verdict) {
   ].filter(Boolean).join("\n");
 }
 
-async function main() {
-  const verdict = decide({ healthy: HEALTHY, previousFailed: await previousRunFailed() });
-  if (verdict === "none") {
-    console.log(HEALTHY ? "Healthy, and it was healthy last time. Nothing to say." : "Still failing. Already said so.");
-    return;
-  }
+async function post(text, label) {
   if (!WEBHOOK) {
-    console.log(`Would have posted "${verdict}" to Slack, but SLACK_WEBHOOK_URL is not set.`);
+    console.log(`Would have posted "${label}" to Slack, but SLACK_WEBHOOK_URL is not set.`);
     console.log("Add it in Settings, Secrets and variables, Actions, to turn this on.");
     return;
   }
   const res = await fetch(WEBHOOK, {
     method: "POST",
     headers: { "content-type": "application/json", "user-agent": "robinsons-store-watchdog" },
-    body: JSON.stringify({ text: message(verdict) })
+    body: JSON.stringify({ text })
   });
   if (!res.ok) {
     // Never fail the run over the notification. When the site is down the run is already
     // red for the right reason, and a red run caused by Slack would point at the wrong
-    // thing entirely.
-    console.log(`::warning::Slack rejected the message (${res.status}).`);
+    // thing entirely. A warning is visible without being misleading.
+    console.log(`::warning::Slack rejected the message (${res.status}). The webhook may be wrong or revoked.`);
     return;
   }
-  console.log(`Posted "${verdict}" to Slack.`);
+  console.log(`Posted "${label}" to Slack.`);
+}
+
+async function main() {
+  // The test button. A watchdog that has never spoken is indistinguishable from one that
+  // cannot: the site being healthy is exactly when this code path never runs, so without a
+  // way to force it, the first proof the webhook works would be an outage that goes
+  // unreported. This sends one real message through the real webhook on demand.
+  //
+  // It is also how to re-check the wiring after rotating the webhook, without waiting for
+  // something to break.
+  if (TEST) {
+    await post(
+      [
+        "Test message from the store's health watchdog. Nothing is wrong.",
+        "",
+        "Somebody ran this by hand to check that alerts can reach this channel.",
+        "If you can read this, they can.",
+        RUN_URL ? `Run: ${RUN_URL}` : ""
+      ].filter(Boolean).join("\n"),
+      "test"
+    );
+    return;
+  }
+  const verdict = decide({ healthy: HEALTHY, previousFailed: await previousRunFailed() });
+  if (verdict === "none") {
+    console.log(HEALTHY ? "Healthy, and it was healthy last time. Nothing to say." : "Still failing. Already said so.");
+    return;
+  }
+  await post(message(verdict), verdict);
 }
 
 // Only run when invoked directly, so the test can import the rules without posting anything.

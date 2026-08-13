@@ -27,8 +27,11 @@ engineering is not in the model, it is in two things:
 
 ### 1. Intake: a request becomes work
 
-**Retired 2026-08-12.** This was `.github/workflows/jira-autopilot.yml`, which read the Jira
-board every 15 minutes and handed the oldest waiting ticket to a build.
+**Parked 2026-08-12, not deleted.** This is `.github/workflows/jira-autopilot.yml`, which
+read the Jira board every 15 minutes and handed the oldest waiting ticket to a build. The
+workflow and its scripts are still in the repo with the schedule commented out, so a future
+board can wake it up without rebuilding it, and CI still runs its tests so it cannot rot
+while it sleeps.
 
 It is gone because of what it cost. Ninety-six runs a day, each one starting a model, and the
 board was quiet for most of them: the loop spent its budget discovering there was nothing to
