@@ -5,10 +5,11 @@
 // nobody has started yet and hands it to a build.
 //
 // STATE IS A REACTION, not a database and not a marker buried in text. The bot adds :eyes:
-// when it picks a message up and :white_check_mark: when it finishes. That means the state of
-// every request is visible to a human scrolling the channel, it survives this script being
-// rewritten, and it costs no storage. A message carrying either reaction is already spoken
-// for and is skipped, which is what stops the loop working the same request forever.
+// when it picks a message up, :white_check_mark: when it finishes, and :warning: when it
+// stops and needs a person. The state of every request is therefore visible to anyone
+// scrolling the channel, it survives this script being rewritten, and it costs no storage.
+// A message carrying ANY of those three is spoken for and is skipped, which is what stops
+// the loop working the same request forever. See CLAIMED below: all three, not two.
 //
 // WHAT IS WORK: a message that NAMES THE BOT. The channel this watches is the store's
 // ordinary channel, where people say hello and talk about the weekend, so an unaddressed
@@ -35,6 +36,22 @@ const HOW_MANY = 25;
 /** Reactions that mean somebody, or something, already has this one. */
 export const PICKED_UP = "eyes";
 export const DONE = "white_check_mark";
+/** Tried, and it needs a person. Set by the status card when a build stops or fails. */
+export const STOPPED = "warning";
+
+/**
+ * Every reaction that means "this has been seen". ALL of them must be skipped.
+ *
+ * The first real run proved why this is a list and not two constants. A build failed, the
+ * card correctly set a warning on the message, and the warning was not in the skip list, so
+ * the next sweep would have picked the same request up, failed the same way, and done it
+ * again every thirty minutes forever. A request that stopped needs a person, not a retry
+ * loop: re-running it unattended just fails again, and each failure costs a model run.
+ *
+ * To retry one on purpose, take the reaction off the message. That is a deliberate act by
+ * somebody who has looked at why it stopped.
+ */
+export const CLAIMED = [PICKED_UP, DONE, STOPPED];
 
 /**
  * The oldest message that is a request nobody has started, or null.
@@ -64,7 +81,7 @@ export function pickWork(messages, opts = {}) {
     // A reply inside a thread. thread_ts equals ts on the parent message itself.
     if (m.thread_ts && m.thread_ts !== m.ts) continue;
     const reactions = (m.reactions || []).map((r) => r.name);
-    if (reactions.includes(PICKED_UP) || reactions.includes(DONE)) continue;
+    if (reactions.some((r) => CLAIMED.includes(r))) continue;
     if (onlyTs && m.ts !== onlyTs) continue;
     // Fails CLOSED: asked to require a mention but given no bot id, nothing is work. The
     // alternative is treating every message in the store's channel as a build request

@@ -127,7 +127,17 @@ jobs:
           # not an input this action accepts, so it was ignored with only a warning: Claude
           # ran for six minutes with no way to edit a file, changed nothing, and the run went
           # green. Five tickets were "worked" that way before anyone read the warning.
-          claude_args: '--allowedTools "Bash,Read,Write,Edit,Glob,Grep" --max-turns 60'
+          # PIN THE MODEL. Left unset, the action chose claude-opus-5[1m], the million-token
+          # context variant, and the first real run died in 349ms with is_error:true, one turn
+          # and zero cost: an outright API rejection, not a failed build. The key is fine, and
+          # the proof is that the app's own extract and ask routes run on claude-sonnet-5 with
+          # the same key every day. So name the model the key is known to have rather than
+          # letting a default decide.
+          #
+          # sonnet-5 is also what CLAUDE.md sets as this project's model, so the autopilot and
+          # the app now agree, and it is the cheaper choice for work that gets reviewed by a
+          # person anyway.
+          claude_args: '--model claude-sonnet-5 --allowedTools "Bash,Read,Write,Edit,Glob,Grep" --max-turns 60'
           prompt: |
             You are building one ticket for Robinson's General Store. Read CLAUDE.md and
             .claude/skills/robinsons-store/SKILL.md FIRST and follow every invariant there.
