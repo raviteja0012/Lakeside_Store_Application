@@ -32,7 +32,10 @@ name: Slack autopilot
 #                            webhook can only write, and this has to read the channel.
 #                            Scopes: channels:history, chat:write, reactions:read,
 #                            reactions:write. Invite the bot to the channel.
-#   SLACK_REQUEST_CHANNEL    variable. The channel ID to watch.
+#   SLACK_REQUEST_CHANNEL    the channel ID to watch. EITHER TAB WORKS, variable or secret:
+#                            a channel id appears in the URL of every message in it, so it is
+#                            not a secret, and being fussy about which tab it was typed into
+#                            only costs somebody a second trip to the settings page.
 #   SLACK_REQUIRE_MENTION    variable, optional. Defaults to requiring the bot to be named.
 #                            Only set to "false" for a channel that exists solely for
 #                            requests, where every message is meant for the automation.
@@ -71,7 +74,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
+          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL || secrets.SLACK_REQUEST_CHANNEL }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ] || [ -z "$SLACK_BOT_TOKEN" ] || [ -z "$SLACK_REQUEST_CHANNEL" ]; then
             echo "Slack autopilot is not configured yet. See docs/SLACK_AUTOPILOT.md."
@@ -92,8 +95,8 @@ jobs:
         if: steps.gate.outputs.ready == 'true'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
-          SLACK_REQUIRE_MENTION: ${{ vars.SLACK_REQUIRE_MENTION }}
+          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL || secrets.SLACK_REQUEST_CHANNEL }}
+          SLACK_REQUIRE_MENTION: ${{ vars.SLACK_REQUIRE_MENTION || secrets.SLACK_REQUIRE_MENTION }}
           ONE_MESSAGE_TS: ${{ inputs.message_ts }}
         run: node .github/scripts/slack-find-work.mjs
 
@@ -103,7 +106,7 @@ jobs:
         if: steps.find.outputs.found == 'true'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
+          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL || secrets.SLACK_REQUEST_CHANNEL }}
           THREAD_TS: ${{ steps.find.outputs.ts }}
           STAGE: picked_up
           REQUEST: ${{ steps.find.outputs.request }}
@@ -176,7 +179,7 @@ jobs:
         if: always() && steps.find.outputs.found == 'true'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL }}
+          SLACK_REQUEST_CHANNEL: ${{ vars.SLACK_REQUEST_CHANNEL || secrets.SLACK_REQUEST_CHANNEL }}
           THREAD_TS: ${{ steps.find.outputs.ts }}
           REQUEST: ${{ steps.find.outputs.request }}
           STAGE: ${{ steps.build.outcome == 'success' && 'built' || 'stopped' }}
