@@ -21,4 +21,5 @@ payout_fields.sql
 order_invoice_fields.sql
 filing_locations.sql
 vendor_ordering_fields.sql
+vendor_specializes_in.sql
 edit_delete.sql

@@ -108,6 +108,14 @@ Run in this order; skip nothing (each is safe to re-run):
    vendor.reorder_status with vendor.reorder_comments. Every column is optional, so the 130
    vendors already on file stay valid and blank until somebody edits them.
    **The vendor forms will not save until this has run**, because they write these columns.
+
+8. `vendor_specializes_in.sql` — one column on vendor, `specializes_in`, for the trade a
+   maintenance contractor does. The owner ticked this on 2026-08-13 when he marked up the
+   vendor questions table; it is the only genuinely new question on that list. Until now the
+   trade lived on each invoice and never against the person, so there was no way to answer
+   "who is our electrician", which is what you ask when a freezer fails on a Saturday. Adds a
+   column and nothing else, leaves every existing row null, and is safe to run twice.
+
 8. `edit_delete.sql` — soft-delete columns and the inventory line notes (older databases
    only; harmless if already applied).
 9. `auth_setup.sql` — ONLY if enforced login is on. Always re-run it LAST after any script

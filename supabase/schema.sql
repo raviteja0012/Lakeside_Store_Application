@@ -52,6 +52,9 @@ create table vendor (
   order_location_other text,            -- the free text behind "Other"
   reorder_status text check (reorder_status is null or reorder_status in ('reordered','no_reorder')),
   reorder_comments text,
+  -- Property Maintenance only: the trade this contractor does, from the owner's
+  -- MaintenancePayments tab. Mirrors supabase/vendor_specializes_in.sql for a live database.
+  specializes_in text,
   -- An amount and "no minimum" are mutually exclusive: a row claiming both is not a state
   -- anyone can act on, so the database refuses it rather than trusting the form.
   constraint vendor_minimum_order_check check (

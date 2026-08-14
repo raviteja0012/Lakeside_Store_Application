@@ -60,6 +60,10 @@ export type Vendor = {
   order_location_other?: string | null; // the free text behind "Other"
   reorder_status?: string | null; // reordered | no_reorder
   reorder_comments?: string | null; // required when reordered: date, quantity, why
+  // Property Maintenance only. The trade this contractor does, from the owner's
+  // MaintenancePayments tab ("SpecilizedOn"). Same vocabulary as invoice.service_category,
+  // so the person and the payment describe the trade the same way.
+  specializes_in?: string | null;
   department?: { name: string; accent_color: string | null } | null;
 };
 

@@ -198,11 +198,18 @@ OPEN (waiting on the owner):
   where the department is asked for it, or where somebody has answered it. That narrows the
   problem without reversing his rule, which src/lib/vendorOrdering.ts line 60 records as
   deliberate and asked for. OWNER DECISION STILL NEEDED, and neither blocks anything now:
-  (a) confirm or correct the department map, which is a starting position and not a claim to
-  be right; the two lines I am least sure of are whether Bakery, Meat and Produce suppliers
-  have payment terms, and whether Hardware wants the summer order timeline for garden stock.
-  (b) Does the minimum order stop being mandatory for the merchandise departments too, on an
-  edit that only meant to fix a phone number.
+  (a) ANSWERED 2026-08-13. He marked up the table in the vendor questions document and
+  confirmed every line, including the two I flagged as least certain: Bakery, Meat and
+  Produce do NOT carry payment terms, and Hardware does NOT get the summer order timeline.
+  The map already matched, so nothing changed there. He added one new question, "Specializes
+  in" for Property Maintenance, and let stand that Chip Stand follows Grocery and Checkouts
+  follows Others. Both built; his table is now asserted field by field in
+  scripts/vendorfields-check so a later edit cannot quietly depart from what he said.
+  (b) STILL OPEN. Does the minimum order stop being mandatory for the merchandise
+  departments too, on an edit that only meant to fix a phone number. The document offered him
+  Option A (keep asking every time) and Option B (only ask where the ordering questions are
+  on screen) and recommended B. He answered the table and did not answer this. Worth noting
+  that B is what is currently built, so nothing is broken either way, but he has not said so.
 - One vendor field list, so every screen shows the same vendor the same way (proposed
   2026-08-11, owner note sent the same day). The ordering profile saves correctly, but each
   screen was told separately which vendor columns to load and they disagree: the vendor page

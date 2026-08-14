@@ -70,7 +70,7 @@ export default function VendorDetail() {
   // The escape hatch, same as the add form: one press puts every question back when the
   // department map is wrong for this particular vendor.
   const [showAllFields, setShowAllFields] = useState(false);
-  const [vForm, setVForm] = useState({ rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active", notes: "", ...EMPTY_ORDERING_PROFILE });
+  const [vForm, setVForm] = useState({ rep_name: "", phone: "", email: "", products_we_carry: "", default_terms: "", status: "active", notes: "", specializes_in: "", ...EMPTY_ORDERING_PROFILE });
   const [showPO, setShowPO] = useState(false);
   // The order fields the owner asked for, in his order: status, amount, where the
   // confirmation is filed, ship date, comments. The season year is not asked for; it
@@ -227,6 +227,7 @@ export default function VendorDetail() {
       email: vendor.email || "",
       products_we_carry: vendor.products_we_carry || "",
       default_terms: vendor.default_terms || "",
+      specializes_in: vendor.specializes_in || "",
       status: vendor.status || "active",
       notes: vendor.notes || "",
       minimum_order_amount: vendor.minimum_order_amount != null ? String(vendor.minimum_order_amount) : "",
@@ -273,6 +274,7 @@ export default function VendorDetail() {
         email: vForm.email || null,
         products_we_carry: vForm.products_we_carry || null,
         default_terms: vForm.default_terms || null,
+        specializes_in: vForm.specializes_in || null,
         status: vForm.status,
         // Blank is null, never 0: the check constraint refuses a zero minimum.
         minimum_order_amount: vForm.no_minimum_order || !vForm.minimum_order_amount.trim() ? null : Number(vForm.minimum_order_amount),
@@ -996,6 +998,14 @@ export default function VendorDetail() {
               </div>
               {asks("default_terms") && (
                 <div><label className="label">Payment terms</label><input className="input" value={vForm.default_terms} onChange={(e) => setVForm({ ...vForm, default_terms: e.target.value })} /></div>
+              )}
+              {asks("specializes_in") && (
+                <div><label className="label">{labelForKey("specializes_in", vendorDeptName)}</label>
+                  <select className="input" value={vForm.specializes_in} onChange={(e) => setVForm({ ...vForm, specializes_in: e.target.value })}>
+                    <option value="">Not said</option>
+                    {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
               )}
               {asks("products_we_carry") && (
                 <div><label className="label">Products</label><input className="input" value={vForm.products_we_carry} onChange={(e) => setVForm({ ...vForm, products_we_carry: e.target.value })} /></div>

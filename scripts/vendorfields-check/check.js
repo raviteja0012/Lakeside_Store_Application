@@ -24,9 +24,13 @@ t("RULE 1: bakery still SHOWS a saved summer timeline", facts.includes("summer_o
 t("RULE 1: bakery still SHOWS a saved minimum order", facts.includes("minimum_order"));
 
 // RULE 2: a department this file does not recognise loses nothing.
-const chip = R.fieldsForEntry("Chip Stand", { showMoney: true }).map(f => f.key);
+//
+// Chip Stand used to be the example here. On 2026-08-13 the owner said it follows Grocery,
+// so it is recognised now and correctly gets Grocery's shorter list. The rule still needs a
+// genuinely unknown department to prove itself against.
+const unknown = R.fieldsForEntry("Garden Centre", { showMoney: true }).map(f => f.key);
 t("RULE 2: unrecognised department gets every question",
-  chip.length === R.VENDOR_FIELDS.length, `chip=${chip.length} of ${R.VENDOR_FIELDS.length}`);
+  unknown.length === R.VENDOR_FIELDS.length, `${unknown.length} of ${R.VENDOR_FIELDS.length}`);
 
 // The money gate fails closed on both paths.
 const staffEntry = R.fieldsForEntry("DryGoods & Lakeside", { showMoney: false }).map(f => f.key);
@@ -104,12 +108,24 @@ const bakeryHidden = R.hiddenFieldCount("Bakery", { showMoney: true });
 t("hidden count equals what the hatch puts back",
   bakeryHidden === R.fieldsForEntry(null, { showMoney: true }).length - R.fieldsForEntry("Bakery", { showMoney: true }).length,
   `bakery hides ${bakeryHidden}`);
-t("a department asked everything offers no button",
-  R.hiddenFieldCount("DryGoods & Lakeside", { showMoney: true }) === 0);
-t("an unrecognised department offers no button either",
-  R.hiddenFieldCount("Chip Stand", { showMoney: true }) === 0);
-t("the money gate is not counted as a hidden question",
-  R.hiddenFieldCount("DryGoods & Lakeside", { showMoney: false }) === 0, "staff on a full department");
+// Since "Specializes in" arrived, NO department is asked every question: it belongs to
+// Property Maintenance alone, so even Dry Goods now has one question it is not asked and
+// will offer it behind the button. Only a department the app does not recognise gets the
+// full set, and only that one has nothing left to offer.
+t("an unrecognised department offers no button, because it already has everything",
+  R.hiddenFieldCount("Garden Centre", { showMoney: true }) === 0);
+t("Dry Goods now hides exactly one question, the maintenance trade",
+  R.hiddenFieldCount("DryGoods & Lakeside", { showMoney: true }) === 1);
+t("Property Maintenance hides the merchandise questions",
+  R.hiddenFieldCount("Property Maintenance", { showMoney: true }) ===
+    R.fieldsForEntry(null, { showMoney: true }).length - R.fieldsForEntry("Property Maintenance", { showMoney: true }).length);
+// The money gate removes the minimum order from BOTH sides of the subtraction, so the number
+// on the button is the same whoever is looking. A staff member must never see a button
+// offering to put a dollar field back.
+t("the money gate does not change the count",
+  R.hiddenFieldCount("DryGoods & Lakeside", { showMoney: false }) ===
+    R.hiddenFieldCount("DryGoods & Lakeside", { showMoney: true }),
+  `staff ${R.hiddenFieldCount("DryGoods & Lakeside", { showMoney: false })}, money ${R.hiddenFieldCount("DryGoods & Lakeside", { showMoney: true })}`);
 
 // The form draws its labels from a key, before it has a field in hand.
 t("labelForKey speaks about technicians on maintenance",
@@ -117,6 +133,46 @@ t("labelForKey speaks about technicians on maintenance",
 t("labelForKey falls back to the plain label", R.labelForKey("rep_name", "Grocery") === "Rep name");
 t("labelForKey on an unknown key returns the key rather than crashing",
   R.labelForKey("nonsense", "Grocery") === "nonsense");
+
+// THE OWNER'S ANSWER, 2026-08-13. He marked up the table in the vendor questions document
+// and these are his ticks, transcribed. Asserting them here means a later edit to the map
+// cannot quietly walk away from what he actually said without a test going red.
+const OWNER = {
+  "DryGoods & Lakeside": ["name","status","phone","email","notes","rep_name","default_terms","products_we_carry","minimum_order","reorder","order_location","summer_order_timeline"],
+  "Hardware":            ["name","status","phone","email","notes","rep_name","default_terms","products_we_carry","minimum_order","reorder","order_location"],
+  "Grocery":             ["name","status","phone","email","notes","rep_name","default_terms","products_we_carry","minimum_order","reorder"],
+  "Property Maintenance":["name","status","phone","email","notes","rep_name","default_terms","specializes_in"],
+  "Bakery":              ["name","status","phone","email","notes"],
+  "Meat":                ["name","status","phone","email","notes"],
+  "Produce":             ["name","status","phone","email","notes"],
+  "Others":              ["name","status","phone","email","notes"]
+};
+for (const [dept, expected] of Object.entries(OWNER)) {
+  const got = R.fieldsForEntry(dept, { showMoney: true }).map(f => f.key).sort();
+  const want = [...expected].sort();
+  t(`owner's table: ${dept}`, JSON.stringify(got) === JSON.stringify(want),
+    got.join(",") === want.join(",") ? "" : `got ${got.join(",")} want ${want.join(",")}`);
+}
+
+// "Chip Stand follows Grocery, and Checkouts follows Others, unless you say otherwise."
+// Before his answer these matched nothing and were asked EVERY question, which is the
+// opposite of what he wanted.
+t("Chip Stand follows Grocery",
+  R.fieldsForEntry("Chip Stand", { showMoney: true }).map(f => f.key).sort().join(",") ===
+  R.fieldsForEntry("Grocery", { showMoney: true }).map(f => f.key).sort().join(","));
+t("Checkouts follows Others",
+  R.fieldsForEntry("Checkouts", { showMoney: true }).map(f => f.key).sort().join(",") ===
+  R.fieldsForEntry("Others", { showMoney: true }).map(f => f.key).sort().join(","));
+t("a genuinely unknown department is still asked everything",
+  R.fieldsForEntry("Garden Centre", { showMoney: true }).length === R.VENDOR_FIELDS.length);
+
+// Specializes in is the one NEW question, and it belongs to maintenance alone.
+t("Specializes in is asked of Property Maintenance",
+  R.asksFor("Property Maintenance", "specializes_in", { showMoney: true }) === true);
+for (const d of ["Grocery", "Hardware", "DryGoods & Lakeside", "Bakery"]) {
+  t(`Specializes in is NOT asked of ${d}`, R.asksFor(d, "specializes_in", { showMoney: true }) === false);
+}
+t("vendorSelect fetches the new column", R.vendorSelect().includes("specializes_in"));
 
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);
