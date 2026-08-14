@@ -78,7 +78,9 @@ The vendor form asks what the department asks, 2026-08-12:
 - What he added: "Specializes in" for Property Maintenance, the one genuinely new question.
   His MaintenancePayments tab has kept it for years; the app only had it on the invoice, so
   the trade was recorded every time somebody was paid and never against the person. There was
-  no way to answer "who is our electrician". Needs supabase/vendor_specializes_in.sql run.
+  no way to answer "who is our electrician". supabase/vendor_specializes_in.sql applies
+  itself when this merges: migrate.yml runs on any push to main touching supabase/**, and
+  SUPABASE_DB_URL has existed since 2026-08-09. Nobody opens the SQL editor.
 - What he settled by not objecting: Chip Stand follows Grocery, Checkouts follows Others.
   Both used to match nothing and were therefore asked EVERY question, the opposite of what he
   wanted. They keep their own names on every screen and only inherit the question set.
@@ -119,9 +121,11 @@ The health check names its own fix (SCRUM-12), 2026-08-07:
   has to click Compare and pull request on claude/auto-SCRUM-12. Turning that setting on
   (Settings, Actions, General, Workflow permissions) would fix it for every future ticket,
   and is worth doing once: a branch nobody opens is work that does not exist.
-- Still open and only the owner can do it: add SUPABASE_DB_URL as a repository secret. The
-  workflow that applies merged scripts has never applied one, because without the secret it
-  exits quietly, so every migration is still typed by hand in the SQL editor.
+- CORRECTED 2026-08-13: SUPABASE_DB_URL was added around 2026-08-09 and merged scripts DO
+  apply themselves now. This paragraph claimed the opposite for days, and I repeated it to
+  the developer as recently as this morning when telling him to run a migration by hand that
+  the pipeline would have run for him. Merging a change under supabase/ is enough.
+
 
 Owner round 6 (SCRUM-9 comments of 31 July and 5 August), shipped 2026-08-06:
 - **Validation messages now sit under the field they are about**, in red, instead of in one

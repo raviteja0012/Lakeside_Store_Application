@@ -155,10 +155,16 @@ OPEN (waiting on the owner):
   this file records what somebody believed on the day they wrote it, and a line that says
   "still broken" outlives the fix unless something checks. /api/health is the check for this
   one, so read it before repeating anything in this section.
-- Add SUPABASE_DB_URL as a repository secret so merged scripts apply themselves. The
-  workflow that was built for this on 2026-07-31 has never applied anything, because
-  without the secret it exits quietly, which is why the script above is still a manual job.
-  Instructions are at the top of docs/SUPABASE_SETUP.md.
+- DONE, verified 2026-08-13: SUPABASE_DB_URL exists as a repository secret, added around
+  2026-08-09. This line said for days that it was missing and that "the workflow has never
+  applied anything", so a merged migration was still being described as a manual job in the
+  Supabase editor. It is not. A push to main that touches supabase/** applies the ordered
+  list in supabase/run-order.txt on its own. FOURTH stale record found by checking rather
+  than reading, after the custom domain, the vendor columns and the mailbox quota. The
+  pattern is always the same: this file records what somebody believed on the day they wrote
+  it, and a line that says "still waiting on you" outlives the fix unless something checks.
+  For this one the check is the Actions tab: look at whether "Apply database scripts" ran.
+
 - DONE 2026-08-12: Jira is switched off, at the developer's instruction ("we dont use jira
   anymore", "remove if we are wasting credits in jira"), and the autopilot is PARKED rather
   than deleted at his follow-up ("we mighgt use new acount in future and we still would like
