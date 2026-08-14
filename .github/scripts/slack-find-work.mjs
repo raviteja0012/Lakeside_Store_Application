@@ -103,6 +103,13 @@ async function slack(method, params) {
   });
   const data = await res.json();
   if (!data.ok) throw new Error(`${method} failed: ${data.error}`);
+  // Same reasoning as slack-status.mjs: a run that finds nothing should say what it looked
+  // at, or "nothing waiting" is indistinguishable from "looked in the wrong place".
+  if (method === "conversations.history") {
+    console.log(`Slack ${method}: ok, ${Array.isArray(data.messages) ? data.messages.length : 0} messages read from ${CHANNEL}`);
+  } else if (method === "auth.test") {
+    console.log(`Slack auth.test: ok, I am ${data.user || "?"} (${data.user_id || "?"}) in ${data.team || "?"}`);
+  }
   return data;
 }
 
