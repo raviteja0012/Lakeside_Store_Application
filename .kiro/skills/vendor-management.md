@@ -151,4 +151,6 @@ Property Maintenance invoices add:
 - work_type (repair | upgrade)
 - work_description
 
-Detection: `isPropertyDept(vendor.department.name)` checks if the name contains "property".
+Detection: `asksInvoice(vendor.department.name, "property_work")` from `src/lib/invoiceFields.ts`.
+The old `isPropertyDept` helper was deleted on 2026-08-17; department matching now goes
+through `canonicalDepartment`, so Chip Stand and Checkouts resolve like everywhere else.

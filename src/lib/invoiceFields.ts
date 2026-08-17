@@ -24,15 +24,27 @@
 // WHY THE SCOPE RULES DIFFER FROM vendorFields.ts. The vendor registry fails OPEN: an
 // unknown department is asked everything, because losing a question means a fact cannot be
 // recorded. Here the acceptance criterion is different: these are live money screens nobody
-// asked to change, so the registry must reproduce the old booleans' behaviour EXACTLY,
-// including for departments they had never heard of. The old behaviour for an unknown
-// department was: delivery yes, freight yes, PO no, property work no. So this file has two
-// scope kinds:
+// asked to change, so the registry reproduces the old booleans' behaviour exactly for every
+// department name that matches at most ONE pattern, which is all fourteen departments the
+// store has ever seeded and every spelling in the owner's workbooks. The old behaviour for
+// an unknown department was: delivery yes, freight yes, PO no, property work no. This file
+// has two scope kinds:
 //
 //   { except: [...] }  everyone but these. Unknown departments are included, as the old
 //                      "not finance" tests included them.
 //   { only: [...] }    strictly these. Unknown departments are excluded, as the old
 //                      /hardware/i test excluded them.
+//
+// ONE DELIBERATE DIVERGENCE, found by the review that checked this file against the old
+// truth table: a department name matching TWO patterns, "Property Taxes" or "Lakeside
+// Hardware", resolves here to ONE department (the first match in the owner's ORDER), where
+// the old independent booleans would have applied two departments' shapes to the same
+// invoice at once, hiding delivery as finance while adding the contractor block as
+// property. No real department has ever had such a name, and the vendor questions already
+// resolve names this way, so a combined name now gets ONE coherent shape and the SAME
+// department on both its vendor form and its invoice form, instead of a blend no one
+// designed. The multi-pattern cases are pinned in scripts/invoicefields-check as chosen
+// behaviour, not an accident.
 //
 // A wrong guess is still recoverable, for the same reason as the vendor registry's rule 1:
 // the invoice DISPLAY never consults this file. A saved answer shows whatever the map says,
@@ -116,9 +128,9 @@ export function asksInvoice(departmentName: string | null | undefined, key: stri
   const canon = canonicalDepartment(departmentName);
   if ("only" in field.scope) {
     // Strict: a department this file cannot place does not get another department's special
-    // fields. This is the old /hardware/i behaviour kept exact, and it is safe to be strict
-    // because every field here is optional: nothing is lost by not being asked, and a saved
-    // answer still shows and still survives edits.
+    // fields. Matches the old /hardware/i behaviour for every single-pattern name, and it is
+    // safe to be strict because every field here is optional: nothing is lost by not being
+    // asked, and a saved answer still shows and still survives edits.
     return canon !== null && field.scope.only.includes(canon);
   }
   // except: unknown departments are included, as "not the finance department" always

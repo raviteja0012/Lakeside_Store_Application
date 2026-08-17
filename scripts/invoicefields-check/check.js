@@ -73,5 +73,23 @@ t("Property Maintenance keeps the freight charge", asks("Property Maintenance", 
 const cols = R.INVOICE_FIELDS.flatMap(f => f.columns);
 t("no column belongs to two fields", new Set(cols).size === cols.length, `${cols.length} columns`);
 
+// THE DELIBERATE DIVERGENCE, pinned. The old three regexes tested the raw name
+// independently, so "Property Taxes" was finance AND property at once: delivery hidden,
+// freight hidden, contractor block shown. The registry resolves a name ONCE, first match in
+// the owner's ORDER, the same way the vendor questions already did. A combined name now
+// gets one coherent shape, and the SAME department on its vendor form and its invoice form.
+// No seeded department has ever had a multi-pattern name; if one appears and these pins
+// fire, the answer is to rename the department or extend ORDER, not to blend shapes.
+//
+// "Property Taxes": /property/i is ORDER[3], /payroll|tax/i is ORDER[7], so property wins.
+t("'Property Taxes' resolves to Property Maintenance whole, not a finance-property blend",
+  !asks("Property Taxes", "delivery") && asks("Property Taxes", "freight") &&
+  asks("Property Taxes", "property_work") && !asks("Property Taxes", "po_number"),
+  ["delivery","freight","property_work","po_number"].map(k => `${k}=${asks("Property Taxes", k)}`).join(" "));
+// "Lakeside Hardware": /dry goods|lakeside/i is ORDER[0], beats hardware, so Dry Goods wins
+// and there is no PO question. The old code would have shown one.
+t("'Lakeside Hardware' resolves to Dry Goods whole, so no PO number",
+  asks("Lakeside Hardware", "delivery") && !asks("Lakeside Hardware", "po_number"));
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);
