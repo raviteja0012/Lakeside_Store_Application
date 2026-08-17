@@ -94,9 +94,9 @@ Ordered by value. None of these is adopted yet.
 | **Supabase Pro** | Six-year record keeping; the whole ledger | Risk 2. Nothing else on this list matters if the database is lost |
 | **Vercel Pro** | Availability of a system the store depends on | Risk 1 |
 | **AgentMail wired to intake** | "Email invoice intake", QUEUED in REQUIREMENTS.md | Fills the exact hole DOMAIN_EMAIL.md section 4 left open. Preferred over an IMAP poll because a scoped key cannot read info@ or drygoods@ if it leaks |
-| **Vercel WAF rate limit on `/login`** | Auth is enforced and the app is now on a public domain | It was not reachable by name last week; it is now. Hobby allows 3 custom rules, which is enough for one |
-| **GitHub secret scanning with push protection** | "Keep secrets out of the repo and out of chat" (skill) | Turns a convention into a control. Free on public repos, and this is exactly the class of mistake that is unrecoverable once pushed |
-| **Supabase Advisors** | Invariant 6: a new table needs RLS in schema.sql AND auth_setup.sql | The skill calls this "the most common way a new feature regresses auth". Advisors detects missing RLS automatically instead of relying on review |
+| **Vercel WAF rate limit on `/login`** | Auth is enforced and the app is now on a public domain | ADOPTED 2026-08-17: `.github/workflows/vercel-protect.yml` reads and writes the firewall by API (preview and apply modes, idempotent by rule name). Run apply once after any token change |
+| **GitHub secret scanning with push protection** | "Keep secrets out of the repo and out of chat" (skill) | Still open, and it is a repo setting no API in this session can flip: GitHub, repo Settings, Advanced Security, enable secret scanning and push protection. Two clicks by the developer |
+| **Supabase Advisors** | Invariant 6: a new table needs RLS in schema.sql AND auth_setup.sql | The RLS half is COVERED 2026-08-17 by `.github/workflows/rls-audit.yml`: weekly and on demand, lists public tables with RLS off or empty, tells Slack and goes red. The hosted Advisors page (performance lints and the rest) stays a dashboard visit |
 | **Deployment protection on the dev project** | ENVIRONMENTS.md: dev holds invented data but is publicly reachable | Low value while dev data is fake, real the moment anyone seeds it from production. Password protection is Pro |
 
 ## Available, deliberately not adopted
@@ -113,6 +113,7 @@ sidebar.
 | **Vercel Agent** | The AI work already runs through `src/app/api/*` against the Anthropic API. A second agent layer duplicates it |
 | **Vercel Flags** | The dev site plus the QA-to-Approved gate already answers "try it before it ships" |
 | **Vercel Image Optimization** | Thumbnails come from Supabase signed URLs, which expire; optimizing them is fiddly for little gain on department laptops |
+| **Vercel Toolbar comments (browser extension)** | Comments are visible only to signed-in members of the Vercel team, and this plan seats one. The owner would need a paid seat, a Vercel account, and a developer tool to say what the in-app Suggestions page already lets him say in plain words on his phone. The developer can install the extension for personal use any time; that needs no project change |
 | **Vercel Connect: Miro, Notion** | Those are the builder's tooling, not the store's app. A general store has no Miro requirement |
 | **Supabase Edge Functions** | The API routes on Vercel cover it; splitting server code across two runtimes doubles where to look when something breaks |
 | **Supabase Realtime** | The notification bell polls on navigation, focus, open and timer. Polling is enough for one store and has fewer states to get wrong |

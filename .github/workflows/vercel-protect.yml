@@ -1,0 +1,78 @@
+# Sets the store's Vercel firewall by API, so security config is repeatable and reviewed
+# here instead of clicked together in a dashboard nobody else can see.
+#
+# PLATFORM.md queued exactly one rule: rate limit /login, because auth is enforced and the
+# app now lives on a public domain. Hobby allows three custom rules; this uses one.
+#
+# Manual only. mode=preview reads the current config and changes nothing. mode=apply
+# enables the firewall, inserts the login rate limit if it is not already there, and
+# prints the config back. Safe to run twice: the rule is looked up by name first.
+# Requires VERCEL_TOKEN. The two ids are not secrets; Vercel prints them in its bot
+# comment on every pull request here.
+
+name: Set Vercel protection
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "preview reads, apply writes"
+        required: true
+        type: choice
+        options:
+          - preview
+          - apply
+        default: preview
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-protect
+  cancel-in-progress: false
+
+jobs:
+  protect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read, and in apply mode write, the firewall
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          TEAM_ID: team_Aj8Hn8jG6RAIKdixSLzls0BN
+          PROJECT_ID: prj_sDGCXtpmypc0d3qw0ylbO1rnWqeo
+          MODE: ${{ inputs.mode }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN is not set, nothing to do. See docs/PLATFORM.md."
+            exit 0
+          fi
+          auth="Authorization: Bearer $VERCEL_TOKEN"
+          base="https://api.vercel.com/v1/security/firewall/config?projectId=$PROJECT_ID&teamId=$TEAM_ID"
+
+          echo "=== Current firewall config ==="
+          before=$(curl -s -H "$auth" "$base")
+          echo "$before" | jq '{enabled: (.active.firewallEnabled // .firewallEnabled), rules: [((.active.rules // .rules // [])[]) | {name, active}], error}'
+
+          if [ "$MODE" = "preview" ]; then
+            echo "Preview only, nothing changed."
+            exit 0
+          fi
+
+          echo ""
+          echo "=== Enabling the firewall ==="
+          curl -s -X PATCH -H "$auth" -H "content-type: application/json" "$base" \
+            -d '{"action":"firewallEnabled","id":null,"value":true}' | jq '{error, done: (.error == null)}'
+
+          if echo "$before" | jq -e '[((.active.rules // .rules // [])[]).name] | index("Login rate limit")' > /dev/null; then
+            echo "The login rate limit already exists, not inserting it twice."
+          else
+            echo ""
+            echo "=== Inserting the login rate limit: 10 requests a minute per address, then denied ==="
+            curl -s -X PATCH -H "$auth" -H "content-type: application/json" "$base" -d @- <<'JSON' | jq '{error, done: (.error == null)}'
+          {"action":"rules.insert","id":null,"value":{"name":"Login rate limit","description":"Auth on a public domain. Ten requests a minute per address is generous for people and hostile to scripts.","active":true,"conditionGroup":[{"conditions":[{"type":"path","op":"eq","value":"/login"}]}],"action":{"mitigate":{"action":"rate_limit","rateLimit":{"algo":"fixed_window","window":60,"limit":10,"keys":["ip"],"action":"deny"},"actionDuration":null}}}}
+          JSON
+          fi
+
+          echo ""
+          echo "=== Config after ==="
+          curl -s -H "$auth" "$base" | jq '{enabled: (.active.firewallEnabled // .firewallEnabled), rules: [((.active.rules // .rules // [])[]) | {name, active}], error}'
