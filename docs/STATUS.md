@@ -39,6 +39,13 @@ Production deploys stopped on 2026-08-13, found 2026-08-17:
   workflow run, not a day of deduction. The production domain is
   app.robinsonsgeneralstore.ca; the vercel.app address also answers but is not the one
   the owner uses.
+- Same day, after the correction: the developer set Function Region to Montreal in the
+  dashboard and deleted the six dead branches, so the repo is down to main plus the one
+  working branch. A region change applies only to the NEXT deployment, so the merge
+  carrying this line is also the Montreal test; after it, the x-vercel-id curl should
+  finally say yul1 and mean it. Supabase Pro backups are DEFERRED by the developer until
+  production is live for the owner and a dev environment exists alongside it. The risk
+  stands recorded, not forgotten: until then the store's data has no backups.
 
 The invoice forms read one registry, 2026-08-17:
 - Ravi Maddipati proposed on 2026-08-13 that vendor, payment and purchase order fields be
