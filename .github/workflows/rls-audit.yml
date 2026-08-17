@@ -1,0 +1,57 @@
+# Asks the live database which public tables have no row level security, weekly and on
+# demand. This is the standing check behind invariant 6: every new table needs RLS in
+# schema.sql AND auth_setup.sql, and forgetting the second half is, per the project
+# skill, the most common way a new feature regresses auth. PLATFORM.md queued "Supabase
+# Advisors" for this; the RLS half is what matters here and this covers it with the
+# credential the repo already holds.
+#
+# Findings go to Slack and the run goes red, so a gap is visible in two places. A clean
+# run is green and silent. Costs seconds a week.
+
+name: Audit row level security
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Monday 12:23 UTC, once a week. Minute chosen off the hour like the other sweeps.
+    - cron: "23 12 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rls-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ask the database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "SUPABASE_DB_URL is not set, nothing to audit against."
+            exit 0
+          fi
+          # Two failure shapes, labeled: NO_RLS is a table anyone with the anon key can
+          # read; NO_POLICIES is RLS switched on with nothing allowed, which blocks the
+          # app instead of protecting it. Both mean auth_setup.sql was not finished.
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -X -q -t -A -F' ' \
+            -c "select 'NO_RLS', c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity order by 2" \
+            -c "select 'NO_POLICIES', c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace left join pg_policy p on p.polrelid=c.oid where n.nspname='public' and c.relkind='r' and c.relrowsecurity group by c.relname having count(p.oid)=0 order by 2" \
+            > findings.txt
+          if [ -s findings.txt ]; then
+            echo "Gaps found:"
+            cat findings.txt
+            count=$(wc -l < findings.txt | tr -d ' ')
+            tables=$(cut -d' ' -f2 findings.txt | paste -sd', ' -)
+            export TEXT="RLS audit: $count table(s) need attention: $tables. NO_RLS means the table is open to the anon key; NO_POLICIES means RLS is on but empty and the app is blocked from it. Finish the auth_setup.sql entry for each. Details: the Audit row level security run in GitHub Actions."
+            node .github/scripts/slack-say.mjs
+            echo "::error::RLS gaps found, listed above."
+            exit 1
+          fi
+          echo "Every public table has row level security and at least one policy."
