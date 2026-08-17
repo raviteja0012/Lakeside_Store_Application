@@ -63,6 +63,7 @@ Where the record lives:
 - The Anthropic API key absence makes extract, ask, and reorder report it instead of failing.
 
 ## Open verifications
+- Production deploys from main, stopped since 2026-08-13. Code and connection cleared (PR #47's preview went Ready); the Vercel dashboard's production branch setting was corrected by the developer on 2026-08-17 and the merge carrying this line is the trigger that tests it. Verify with: curl -sD- -o /dev/null https://robinsons-store.vercel.app/api/health | grep -i x-vercel-id. yul1 means fixed; iad1 means the setting is still wrong.
 - ~~vendor_ordering_fields.sql run against the live database~~ DONE, verified 2026-08-11: /api/health answers ok:true with "vendor columns present" passing, so the script has been run. Left visible rather than deleted, because this line said "still failing" for a day after it was fixed and that is the second stale record found this way. The health check is the thing to read before repeating it.
 - edit_delete.sql run against the live database (owner action; everything in PR #8 that touches voided_at depends on it).
 - Owner walkthrough of PR #8 preview: capture on a phone, edit and delete as manager, View as staff to confirm money stays hidden.

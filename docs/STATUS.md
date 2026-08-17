@@ -2,7 +2,23 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-08-17, on branch claude/pull-main-branches-atztoh (latest: the invoice field registry and the first automated migration, below; before it the owner's answer on the vendor question map; before it Jira switched off with its autopilot parked and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-08-17, on branch claude/pull-main-branches-atztoh (latest: production deploys found stopped and the test of the fix, below; before it the invoice field registry and the first automated migration, below; before it the owner's answer on the vendor question map; before it Jira switched off with its autopilot parked and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+
+Production deploys stopped on 2026-08-13, found 2026-08-17:
+- Pushes to main have produced no production deployment since 2026-08-13. The live site is
+  still serving the build from before the vendor and invoice registries, so every merge
+  since then is invisible to the owner until this is fixed.
+- The code is cleared. vercel.json holds only the alerts cron and no deploy settings, and
+  the preview deployment for PR #47 built and went Ready on 2026-08-17, which also clears
+  the GitHub connection. What remains is the project's production branch setting in the
+  Vercel dashboard, which nothing in this repository or this session can see or change.
+- The developer corrected the dashboard setting on 2026-08-17. Changing the setting deploys
+  nothing by itself, Vercel only acts on the next push to main, so the merge that carries
+  this very entry is the test.
+- The check, from any terminal:
+  curl -sD- -o /dev/null https://robinsons-store.vercel.app/api/health | grep -i x-vercel-id
+  An id starting with yul1 means production is deploying again. Still iad1 means the
+  setting still does not point at main.
 
 The invoice forms read one registry, 2026-08-17:
 - Ravi Maddipati proposed on 2026-08-13 that vendor, payment and purchase order fields be
