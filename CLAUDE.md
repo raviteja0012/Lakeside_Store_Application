@@ -28,3 +28,6 @@ Hard rules:
 - AI routes: grounded prompts, plain-text output (src/lib/aiText.ts strip), low temperature,
   default model claude-sonnet-5 (ANTHROPIC_MODEL overrides).
 - No em dashes in user-facing copy. Calm canvas; color = status only.
+- BLUF in everything written to people (chat, PRs, Slack, docs): answer in the first
+  sentence, then only facts that change the reader's next action. No recaps, no process
+  narration. Status updates five lines or fewer.

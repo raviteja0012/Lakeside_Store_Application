@@ -2,7 +2,7 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-08-17, on branch claude/pull-main-branches-atztoh (latest: production deploys found stopped and the test of the fix, below; before it the invoice field registry and the first automated migration, below; before it the owner's answer on the vendor question map; before it Jira switched off with its autopilot parked and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-08-17, on branch claude/pull-main-branches-atztoh (latest: the deploy scare, corrected the same day, below; before it the invoice field registry and the first automated migration, below; before it the owner's answer on the vendor question map; before it Jira switched off with its autopilot parked and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
 
 Production deploys stopped on 2026-08-13, found 2026-08-17:
 - Pushes to main have produced no production deployment since 2026-08-13. The live site is
@@ -19,6 +19,26 @@ Production deploys stopped on 2026-08-13, found 2026-08-17:
   curl -sD- -o /dev/null https://robinsons-store.vercel.app/api/health | grep -i x-vercel-id
   An id starting with yul1 means production is deploying again. Still iad1 means the
   setting still does not point at main.
+- CORRECTION, hours later the same day, and it is the fifth stale record: there was no
+  stoppage. The developer's dashboard showed the merge of PR #48 as the LIVE production
+  deployment, Ready, serving app.robinsonsgeneralstore.ca, and a static file fetched from
+  that domain is stamped with today's date. Production deploys work and the site is
+  current. The evidence for "stopped" was the x-vercel-id header still reading iad1, on
+  the theory that any build after 2026-08-12 would answer from Montreal. The theory was
+  the bug: the preferredRegion export in the nine API routes has never actually moved
+  these functions, so iad1 proves nothing about which build is serving, and the
+  capability round's "yul1, 9 routes, done" verdict is REOPENED. To actually run in
+  Montreal: Vercel dashboard, Project Settings, Functions, Function Region, Montreal
+  (yul1). One dropdown, available on the current plan. Until then the store's requests
+  are processed in Washington DC, and the Canada-data goal from the capability round is
+  not met.
+- What the scare cost and what it bought: three merges chased a problem that did not
+  exist, but .github/workflows/vercel-diagnose.yml now exists (manual run, needs
+  VERCEL_TOKEN in Actions secrets), which reads deployment states from Vercel's API
+  instead of inferring them from response headers. The next question like this is one
+  workflow run, not a day of deduction. The production domain is
+  app.robinsonsgeneralstore.ca; the vercel.app address also answers but is not the one
+  the owner uses.
 
 The invoice forms read one registry, 2026-08-17:
 - Ravi Maddipati proposed on 2026-08-13 that vendor, payment and purchase order fields be
