@@ -1,0 +1,66 @@
+# Reads what Vercel is actually doing with our deployments, because the dashboard is the
+# one place this project's automation cannot see. Born on 2026-08-17, the day a header
+# was trusted over the dashboard: a build that never left iad1 was read as "production
+# has been frozen since the 13th", three merges chased it, and the dashboard then showed
+# production Ready and current the whole time. This prints deployment FACTS into a run
+# log the automation can read, so the next such question is answered by Vercel and not
+# by inference.
+#
+# Manual only, no schedule, no model, no checkout: a run costs seconds and only happens
+# when someone asks. Needs one secret: VERCEL_TOKEN (vercel.com, Account Settings,
+# Tokens, scoped to the team). The two ids below are NOT secrets; Vercel prints them in
+# its bot comment on every pull request here.
+#
+# What it prints, and never the token itself:
+# - the project's production branch setting, whether the project is paused, and any
+#   rollback pinning production to an old deployment
+# - the last twenty deployments: when, which branch, preview or production, and state
+# - the last few PRODUCTION deployments specifically, which is the frozen leg
+
+name: Diagnose Vercel deploys
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-diagnose
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask Vercel what is going on
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          TEAM_ID: team_Aj8Hn8jG6RAIKdixSLzls0BN
+          PROJECT_ID: prj_sDGCXtpmypc0d3qw0ylbO1rnWqeo
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN is not set, so there is nothing to ask with."
+            echo "Create one at vercel.com, Account Settings, Tokens, then add it in"
+            echo "GitHub Settings, Secrets and variables, Actions, as VERCEL_TOKEN."
+            exit 0
+          fi
+          # Length only, same rule as migrate.yml: enough to spot a truncated paste,
+          # never the value.
+          echo "Token present, length ${#VERCEL_TOKEN}."
+          auth="Authorization: Bearer $VERCEL_TOKEN"
+
+          echo ""
+          echo "=== Project settings that decide what deploys ==="
+          curl -s -H "$auth" "https://api.vercel.com/v9/projects/$PROJECT_ID?teamId=$TEAM_ID" \
+            | jq '{name, paused, productionBranch: .link.productionBranch, repo: ((.link.org // "?") + "/" + (.link.repo // "?")), rollbackPin: .lastRollbackTarget, error}'
+
+          echo ""
+          echo "=== Last twenty deployments, newest first (when / target / state / branch / commit / message) ==="
+          curl -s -H "$auth" "https://api.vercel.com/v6/deployments?projectId=$PROJECT_ID&teamId=$TEAM_ID&limit=20" \
+            | jq -r 'if .error then .error.message else (.deployments[] | [(.createdAt/1000 | strftime("%m-%d %H:%M")), (.target // "preview"), .state, (.meta.githubCommitRef // "?"), ((.meta.githubCommitSha // "???????") | .[0:7]), ((.meta.githubCommitMessage // "?") | .[0:60])] | @tsv) end'
+
+          echo ""
+          echo "=== Production deployments specifically, the frozen leg ==="
+          curl -s -H "$auth" "https://api.vercel.com/v6/deployments?projectId=$PROJECT_ID&teamId=$TEAM_ID&target=production&limit=5" \
+            | jq -r 'if .error then .error.message else (.deployments[] | [(.createdAt/1000 | strftime("%m-%d %H:%M")), .state, ((.meta.githubCommitSha // "???????") | .[0:7]), .url] | @tsv) end'
