@@ -133,22 +133,11 @@ export const CREDIT_TYPES: { value: string; label: string }[] = [
   { value: "vendor_account", label: "Credit on vendor account" }
 ];
 
-// Hardware invoices carry the purchase order number (SCRUM-9 AC 2).
-export function isHardwareDept(name: string | null | undefined): boolean {
-  return !!name && /hardware/i.test(name);
-}
-
-// True when a department (by name) is the Property Maintenance payout category. The
-// vendor's category decides which invoice fields the forms show.
-export function isPropertyDept(name: string | null | undefined): boolean {
-  return !!name && /property/i.test(name);
-}
-
-// True for the Payrolls & Taxes payout category (payroll remittances, incorporation
-// taxes). Those payouts have no delivery or freight, so the forms drop that noise.
-export function isFinanceDept(name: string | null | undefined): boolean {
-  return !!name && /payroll|tax/i.test(name);
-}
+// Which invoice fields a department's forms show now lives in src/lib/invoiceFields.ts,
+// which replaced the three name-test helpers that used to sit here (isPropertyDept,
+// isFinanceDept, isHardwareDept). One registry answers for the form, the validation and
+// the save paths together, and department matching goes through canonicalDepartment so
+// aliases like Chip Stand resolve the same way everywhere.
 
 export function methodLabel(value: string | null | undefined): string {
   if (!value) return "Payment";

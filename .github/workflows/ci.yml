@@ -12,6 +12,18 @@ on:
   # from.
   workflow_dispatch:
 
+# The gates only read. A workflow that can write with the default token is a workflow whose
+# compromise can push, and CI runs on every pull request, which is the widest door in the
+# repository. CAPABILITIES.md item 6, the last Wave 1 code change left undone.
+permissions:
+  contents: read
+
+# One CI run per branch at a time; a superseded push cancels the stale run instead of
+# queueing behind it. Two pushes in a minute used to cost two full builds.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
