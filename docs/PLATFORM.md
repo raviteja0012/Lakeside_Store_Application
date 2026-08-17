@@ -113,6 +113,7 @@ sidebar.
 | **Vercel Agent** | The AI work already runs through `src/app/api/*` against the Anthropic API. A second agent layer duplicates it |
 | **Vercel Flags** | The dev site plus the QA-to-Approved gate already answers "try it before it ships" |
 | **Vercel Image Optimization** | Thumbnails come from Supabase signed URLs, which expire; optimizing them is fiddly for little gain on department laptops |
+| **Vercel Toolbar comments (browser extension)** | Comments are visible only to signed-in members of the Vercel team, and this plan seats one. The owner would need a paid seat, a Vercel account, and a developer tool to say what the in-app Suggestions page already lets him say in plain words on his phone. The developer can install the extension for personal use any time; that needs no project change |
 | **Vercel Connect: Miro, Notion** | Those are the builder's tooling, not the store's app. A general store has no Miro requirement |
 | **Supabase Edge Functions** | The API routes on Vercel cover it; splitting server code across two runtimes doubles where to look when something breaks |
 | **Supabase Realtime** | The notification bell polls on navigation, focus, open and timer. Polling is enough for one store and has fewer states to get wrong |
