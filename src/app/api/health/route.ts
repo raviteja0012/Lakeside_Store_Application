@@ -42,6 +42,7 @@ type Check = { name: string; ok: boolean; detail?: string; count?: number; fix?:
 // file that is actually missing instead of every file it could be.
 const REQUIRED_COLUMNS: Record<string, Record<string, string>> = {
   vendor: {
+    specializes_in: "vendor_specializes_in.sql",
     minimum_order_amount: "vendor_ordering_fields.sql",
     no_minimum_order: "vendor_ordering_fields.sql",
     summer_order_timeline: "vendor_ordering_fields.sql",

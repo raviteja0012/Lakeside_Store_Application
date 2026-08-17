@@ -145,6 +145,37 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: node .github/scripts/health-check.mjs
 
+      # A migration that half-applies against the store's ledger is the most expensive silent
+      # failure this repository can produce, and until now the only way to learn about it was
+      # to open the Actions tab and think to look. The watchdog has said for weeks that a
+      # problem nobody is told about is not monitored; this workflow was exempt from its own
+      # principle.
+      - name: Tell Slack it failed
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEXT: |
+            A database script did not apply cleanly to the ${{ steps.env.outputs.name }} database.
+
+            The database may be part way through a change. Nothing else will fix itself. Every
+            script here is safe to run again once the cause is fixed.
+
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node .github/scripts/slack-say.mjs
+
+      # Success is worth one line too, but only for production. A change reaching the store's
+      # live database is a real event somebody should be able to see happening without being
+      # asked to trust that it did.
+      - name: Tell Slack it worked
+        if: success() && steps.gate.outputs.ready == 'true' && inputs.dry_run != true && steps.env.outputs.name == 'production'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEXT: |
+            Database scripts applied to the store's live database, and the site answered healthy afterwards.
+
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node .github/scripts/slack-say.mjs
+
       - name: Say so when the database and the app disagree
         if: failure()
         run: |

@@ -32,11 +32,29 @@ export const DEPARTMENT_ORDER = ORDER.map((o) => o.label);
 // Null is meaningful and callers must handle it: Chip Stand and Checkouts match nothing
 // here and still exist in the store. Anything keying off this should fail OPEN for null,
 // never hide something because a department was not on a list.
+// Parts of the store that are not departments in their own right, but behave exactly like
+// one that is. The owner settled these on 2026-08-13 in the vendor questions document:
+// "Chip Stand follows Grocery, and Checkouts follows Others, unless you say otherwise."
+//
+// This is deliberately SEPARATE from ORDER. These two still sort and display under their own
+// names, because that is what people call them. All this decides is which set of questions
+// they inherit. Folding them into ORDER would rename them on every screen.
+const FOLLOWS: { match: RegExp; label: string }[] = [
+  { match: /chip\s*stand/i, label: "Grocery" },
+  { match: /checkout/i, label: "Others" }
+];
+
 export function canonicalDepartment(name: string | null | undefined): string | null {
   const n = (name || "").trim();
   if (!n) return null;
   const hit = ORDER.find((o) => o.match.test(n));
-  return hit ? hit.label : null;
+  if (hit) return hit.label;
+  // Before giving up and failing open, check whether this is one of the two the owner told
+  // us to treat as another department. Without this they match nothing, fall through to the
+  // unrecognised case, and are asked every question there is, which is the opposite of what
+  // he asked for.
+  const follows = FOLLOWS.find((f) => f.match.test(n));
+  return follows ? follows.label : null;
 }
 
 // Where a department sits in the owner's sequence. Unlisted departments share the last

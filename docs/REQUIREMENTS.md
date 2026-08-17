@@ -155,10 +155,16 @@ OPEN (waiting on the owner):
   this file records what somebody believed on the day they wrote it, and a line that says
   "still broken" outlives the fix unless something checks. /api/health is the check for this
   one, so read it before repeating anything in this section.
-- Add SUPABASE_DB_URL as a repository secret so merged scripts apply themselves. The
-  workflow that was built for this on 2026-07-31 has never applied anything, because
-  without the secret it exits quietly, which is why the script above is still a manual job.
-  Instructions are at the top of docs/SUPABASE_SETUP.md.
+- DONE, verified 2026-08-13: SUPABASE_DB_URL exists as a repository secret, added around
+  2026-08-09. This line said for days that it was missing and that "the workflow has never
+  applied anything", so a merged migration was still being described as a manual job in the
+  Supabase editor. It is not. A push to main that touches supabase/** applies the ordered
+  list in supabase/run-order.txt on its own. FOURTH stale record found by checking rather
+  than reading, after the custom domain, the vendor columns and the mailbox quota. The
+  pattern is always the same: this file records what somebody believed on the day they wrote
+  it, and a line that says "still waiting on you" outlives the fix unless something checks.
+  For this one the check is the Actions tab: look at whether "Apply database scripts" ran.
+
 - DONE 2026-08-12: Jira is switched off, at the developer's instruction ("we dont use jira
   anymore", "remove if we are wasting credits in jira"), and the autopilot is PARKED rather
   than deleted at his follow-up ("we mighgt use new acount in future and we still would like
@@ -198,11 +204,18 @@ OPEN (waiting on the owner):
   where the department is asked for it, or where somebody has answered it. That narrows the
   problem without reversing his rule, which src/lib/vendorOrdering.ts line 60 records as
   deliberate and asked for. OWNER DECISION STILL NEEDED, and neither blocks anything now:
-  (a) confirm or correct the department map, which is a starting position and not a claim to
-  be right; the two lines I am least sure of are whether Bakery, Meat and Produce suppliers
-  have payment terms, and whether Hardware wants the summer order timeline for garden stock.
-  (b) Does the minimum order stop being mandatory for the merchandise departments too, on an
-  edit that only meant to fix a phone number.
+  (a) ANSWERED 2026-08-13. He marked up the table in the vendor questions document and
+  confirmed every line, including the two I flagged as least certain: Bakery, Meat and
+  Produce do NOT carry payment terms, and Hardware does NOT get the summer order timeline.
+  The map already matched, so nothing changed there. He added one new question, "Specializes
+  in" for Property Maintenance, and let stand that Chip Stand follows Grocery and Checkouts
+  follows Others. Both built; his table is now asserted field by field in
+  scripts/vendorfields-check so a later edit cannot quietly depart from what he said.
+  (b) STILL OPEN. Does the minimum order stop being mandatory for the merchandise
+  departments too, on an edit that only meant to fix a phone number. The document offered him
+  Option A (keep asking every time) and Option B (only ask where the ordering questions are
+  on screen) and recommended B. He answered the table and did not answer this. Worth noting
+  that B is what is currently built, so nothing is broken either way, but he has not said so.
 - One vendor field list, so every screen shows the same vendor the same way (proposed
   2026-08-11, owner note sent the same day). The ordering profile saves correctly, but each
   screen was told separately which vendor columns to load and they disagree: the vendor page

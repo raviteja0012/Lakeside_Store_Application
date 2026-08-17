@@ -16,16 +16,21 @@
 //
 // HOW TO CHANGE THE MAP. The `departments` line on each field below is DATA, not structure.
 // If the owner says Hardware should be asked for a summer order timeline, that is one edit
-// to one array and nothing else moves. The map here is derived from his workbook census and
-// is a starting position, not a claim to be right.
+// to one array and nothing else moves.
+//
+// The map was seeded from his workbook census as a guess, and on 2026-08-13 he marked up the
+// table in docs/owner-notes/vendor-fields-requirement.html and confirmed every line of it,
+// including the two I flagged as least certain. It is now his answer, not my guess.
 //
 // TWO RULES THAT MAKE A WRONG GUESS SAFE:
 //   1. Hiding a question never hides an answer. `visibleFacts` returns anything with a value
 //      whatever the department map says, so a bakery vendor that already has a summer order
 //      timeline still shows it. Data never becomes unreachable because of a guess here.
-//   2. A department this file does not recognise gets EVERYTHING. Chip Stand and Checkouts
-//      match nothing in departments.ts and are real parts of the store; they must not lose
-//      fields for not being on a list.
+//   2. A department this file does not recognise gets EVERYTHING. Anything new somebody adds
+//      is a real part of the store and must not lose fields for not being on a list.
+//      (Chip Stand and Checkouts USED to be the example here. On 2026-08-13 the owner said
+//      they follow Grocery and Others, so departments.ts now recognises them and they are no
+//      longer the unrecognised case.)
 
 import type { Vendor } from "@/lib/types";
 import { canonicalDepartment } from "@/lib/departments";
@@ -129,7 +134,8 @@ export const VENDOR_FIELDS: VendorField[] = [
     group: "trade",
     money: false,
     // Terms appear on the owner's LocalVendors tab and on the merchandise tabs, not on the
-    // light form. This is a line to check with him: a meat supplier may well have terms.
+    // light form. CONFIRMED by the owner on 2026-08-13: he was asked directly whether a meat
+    // supplier has terms worth recording and left it unticked.
     columns: ["default_terms"],
     departments: [...MERCHANDISE, "Property Maintenance"],
     value: (v) => text(v.default_terms)
@@ -177,13 +183,28 @@ export const VENDOR_FIELDS: VendorField[] = [
     value: (v) => orderLocationLabel(v.order_location, v.order_location_other)
   },
   {
+    key: "specializes_in",
+    // His MaintenancePayments tab calls this SpecilizedOn.
+    label: "Specializes in",
+    group: "service",
+    money: false,
+    columns: ["specializes_in"],
+    // Property Maintenance only, ticked by the owner on 2026-08-13. Until now the trade was
+    // recorded on each invoice and never against the contractor, so there was no way to
+    // answer "who is our electrician", which is the question you ask when a freezer fails on
+    // a Saturday.
+    departments: ["Property Maintenance"],
+    value: (v) => text(v.specializes_in)
+  },
+  {
     key: "summer_order_timeline",
     label: "Summer order timeline",
     group: "ordering",
     money: false,
     columns: ["summer_order_timeline"],
-    // From the bookings workbook, which is the gift and clothing side. The line I am least
-    // sure of: Hardware buys garden stock seasonally and may want it too.
+    // From the bookings workbook, which is the gift and clothing side. CONFIRMED by the owner
+    // on 2026-08-13: he was asked directly whether Hardware should have it for garden stock
+    // and left it Dry Goods only.
     departments: ["DryGoods & Lakeside"],
     value: (v) => text(v.summer_order_timeline)
   }

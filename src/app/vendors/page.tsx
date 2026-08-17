@@ -11,6 +11,7 @@ import { canEdit, voidRow } from "@/lib/edit";
 import { FieldError, fieldInputClass, type FieldErrors } from "@/components/FieldError";
 import { VendorOrderingFields, type OrderingProfile } from "@/components/VendorOrderingFields";
 import { OTHER_LOCATION, validateMinimumOrder, validateReorder } from "@/lib/vendorOrdering";
+import { SERVICE_CATEGORIES } from "@/lib/payments";
 import { asksFor, hiddenFieldCount, labelForKey } from "@/lib/vendorFields";
 import type { Vendor, Department, AppUser } from "@/lib/types";
 
@@ -21,7 +22,7 @@ const ALL = "all";
 const NONE = "none";
 const EMPTY_FORM = {
   name: "", department_id: "", rep_name: "", phone: "", email: "", products_we_carry: "",
-  default_terms: "", status: "active", notes: "",
+  default_terms: "", status: "active", notes: "", specializes_in: "",
   // The ordering profile, in the owner's screen order: below Products, above Notes.
   minimum_order_amount: "", no_minimum_order: false,
   summer_order_timeline: "", order_location: [] as string[], order_location_other: "",
@@ -155,6 +156,7 @@ export default function Vendors() {
         email: form.email || null,
         products_we_carry: form.products_we_carry || null,
         default_terms: form.default_terms || null,
+        specializes_in: form.specializes_in || null,
         status: form.status,
         // No minimum and an amount are mutually exclusive, so the unused side is written as
         // null rather than left to whatever was typed before the tick box was ticked. Blank
@@ -394,6 +396,15 @@ export default function Vendors() {
                 <div><label className="label">Email</label><input className="input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
                 {asks("default_terms") && (
                   <div><label className="label">Payment terms</label><input className="input" placeholder="Net 30" value={form.default_terms} onChange={(e) => setForm({ ...form, default_terms: e.target.value })} /></div>
+                )}
+                {asks("specializes_in") && (
+                  <div><label className="label">{labelForKey("specializes_in", entryDeptName)}</label>
+                    <select className="input" value={form.specializes_in} onChange={(e) => setForm({ ...form, specializes_in: e.target.value })}>
+                      <option value="">Not said</option>
+                      {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <p className="help" style={{ margin: "4px 0 0" }}>The trade this contractor does, so you can find them when something breaks.</p>
+                  </div>
                 )}
                 <div><label className="label">Status</label>
                   <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>

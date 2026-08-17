@@ -49,6 +49,7 @@ jobs:
           node --check .github/scripts/slack-find-work.mjs
           node .github/scripts/slack-status.test.mjs
           node .github/scripts/slack-lifecycle-stage.test.mjs
+          node --check .github/scripts/slack-say.mjs
           node --check .github/scripts/slack-status.mjs
           node --check .github/scripts/slack-lifecycle-stage.mjs
           # seed_dev.sql must never reach a real database through the migration workflow.

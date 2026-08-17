@@ -131,10 +131,26 @@ async function slack(method, body, { retries = 2 } = {}) {
       continue;
     }
     const data = await res.json();
-    // already_reacted and no_reaction are not problems: find-work claims the message before
-    // the build starts, so the first card always finds its own reaction already there.
+    // SAY WHAT HAPPENED, EVERY TIME, SUCCESS INCLUDED.
+    //
+    // This used to log only on failure, which meant a successful run said nothing about what
+    // it had actually posted or where. When somebody reported seeing no reply, there was no
+    // way to tell from the log whether the message went to the wrong channel, went nowhere,
+    // or went exactly where it should and was simply missed. Silence on success is not
+    // efficiency, it is a missing witness.
+    //
+    // Slack returns the channel and timestamp it wrote to. Printing them turns "it says it
+    // worked" into "here is the message id, go and look at it".
     const expected = data.error === "already_reacted" || data.error === "no_reaction";
-    if (!data.ok && !expected) console.log(`::warning::Slack ${method} said: ${data.error}`);
+    if (data.ok) {
+      const where = data.channel ? ` channel=${data.channel}` : "";
+      const when = data.ts ? ` ts=${data.ts}` : "";
+      console.log(`Slack ${method}: ok${where}${when}`);
+    } else if (expected) {
+      console.log(`Slack ${method}: ${data.error} (normal, nothing to do)`);
+    } else {
+      console.log(`::warning::Slack ${method} FAILED: ${data.error}`);
+    }
     return data;
   }
   return { ok: false, error: "rate_limited" };
@@ -146,7 +162,12 @@ async function get(method, params) {
     headers: { authorization: `Bearer ${TOKEN}`, "user-agent": "robinsons-store-autopilot" }
   });
   const data = await res.json();
-  if (!data.ok) console.log(`::warning::Slack ${method} said: ${data.error}`);
+  if (data.ok) {
+    const n = Array.isArray(data.messages) ? ` (${data.messages.length} messages in the thread)` : "";
+    console.log(`Slack ${method}: ok${n}`);
+  } else {
+    console.log(`::warning::Slack ${method} FAILED: ${data.error}`);
+  }
   return data;
 }
 
@@ -180,8 +201,11 @@ async function main() {
   } else {
     await slack("chat.postMessage", { channel: CHANNEL, thread_ts: THREAD_TS, text, blocks });
   }
-  await setReaction((STAGES[STAGE] || STAGES.picked_up).reaction);
-  console.log(`Status is now "${STAGE}".`);
+  const want = (STAGES[STAGE] || STAGES.picked_up).reaction;
+  await setReaction(want);
+  // Names the channel and the message, so anybody reading this log can open exactly the
+  // thing it claims to have written and see for themselves.
+  console.log(`Status is now "${STAGE}" on ${CHANNEL} thread ${THREAD_TS}, reaction :${want}:`);
 }
 
 if (process.argv[1] && process.argv[1].endsWith("slack-status.mjs")) {

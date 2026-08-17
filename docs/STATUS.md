@@ -2,7 +2,7 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-08-12, on branch claude/pull-main-branches-atztoh (latest: Jira switched off with its autopilot parked and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-08-13, on branch claude/pull-main-branches-atztoh (latest: the owner's answer on the vendor question map, below; before it Jira switched off with its autopilot parked and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
 
 Jira is switched off, 2026-08-12:
 - The board is out of use and its autopilot is PARKED, not deleted. The workflow, its
@@ -47,15 +47,15 @@ The vendor form asks what the department asks, 2026-08-12:
   differ BY DEPARTMENT, the owner's core point". It was never triaged into a requirement, so
   for sixteen days his core point was not work. That is the process failure worth naming
   here, more than the code.
-- src/lib/vendorFields.ts now defines what a vendor IS, once, per department: twelve fields
+- src/lib/vendorFields.ts now defines what a vendor IS, once, per department: thirteen fields
   with a label, a group, a money flag, the columns they read, and the departments that are
   asked them. The display, both AI routes and both entry forms read from it. Before this,
   eight screens each decided for themselves which vendor columns to load and no two agreed,
   which is why Ask-the-store answered "not on file" for a summer order timeline that was on
   file.
 - What changes on screen: adding a bakery vendor asks five questions (name, status, phone,
-  email, notes) instead of about thirteen field groups and twenty controls. Dry Goods still
-  gets everything. Property Maintenance asks for a technician rather than a rep, which is
+  email, notes) instead of about thirteen field groups and twenty controls. Dry Goods keeps
+  the full merchandise shape. Property Maintenance asks for a technician rather than a rep, which is
   the word the owner's own tab uses.
 - The minimum order was mandatory on every save, so a phone-number correction could not be
   saved without answering it. It is now demanded only where the department is asked for it,
@@ -68,12 +68,27 @@ The vendor form asks what the department asks, 2026-08-12:
   punish the person who pressed it.
 - Nothing can be lost by a wrong guess. A saved answer still shows even when the department
   is no longer asked that question, and the edit form writes a hidden field's existing value
-  back untouched rather than nulling it. A department the app does not recognise (Chip Stand,
-  Checkouts) is asked everything. 30 assertions in scripts/vendorfields-check hold those
-  rules whatever the map says.
-- What the owner still decides: whether the map is right. The two lines least certain are
-  whether Bakery, Meat and Produce suppliers have payment terms, and whether Hardware wants
-  the summer order timeline for garden stock. Each is a one-array edit in the registry.
+  back untouched rather than nulling it. A department the app does not recognise is asked
+  everything. 48 assertions in scripts/vendorfields-check hold those rules whatever the map
+  says.
+- ANSWERED 2026-08-13, by the owner marking up the table: every line confirmed, including
+  both I was least sure of. Bakery, Meat and Produce carry no payment terms; Hardware gets no
+  summer order timeline. The map already matched what he wanted, so the twelve existing
+  questions did not change at all.
+- What he added: "Specializes in" for Property Maintenance, the one genuinely new question.
+  His MaintenancePayments tab has kept it for years; the app only had it on the invoice, so
+  the trade was recorded every time somebody was paid and never against the person. There was
+  no way to answer "who is our electrician". supabase/vendor_specializes_in.sql applies
+  itself when this merges: migrate.yml runs on any push to main touching supabase/**, and
+  SUPABASE_DB_URL has existed since 2026-08-09. Nobody opens the SQL editor.
+- What he settled by not objecting: Chip Stand follows Grocery, Checkouts follows Others.
+  Both used to match nothing and were therefore asked EVERY question, the opposite of what he
+  wanted. They keep their own names on every screen and only inherit the question set.
+- His table is now asserted department by department in scripts/vendorfields-check, so a
+  later edit to the map cannot quietly walk away from what he actually said.
+- Still not answered by him: whether the minimum order stays mandatory on every save for the
+  merchandise departments. Option B, only asking where the ordering questions appear, is what
+  is built. He has not confirmed it.
 
 The health check names its own fix (SCRUM-12), 2026-08-07:
 - The live site has failed its post-deploy health check on "vendor columns present" after
@@ -106,9 +121,11 @@ The health check names its own fix (SCRUM-12), 2026-08-07:
   has to click Compare and pull request on claude/auto-SCRUM-12. Turning that setting on
   (Settings, Actions, General, Workflow permissions) would fix it for every future ticket,
   and is worth doing once: a branch nobody opens is work that does not exist.
-- Still open and only the owner can do it: add SUPABASE_DB_URL as a repository secret. The
-  workflow that applies merged scripts has never applied one, because without the secret it
-  exits quietly, so every migration is still typed by hand in the SQL editor.
+- CORRECTED 2026-08-13: SUPABASE_DB_URL was added around 2026-08-09 and merged scripts DO
+  apply themselves now. This paragraph claimed the opposite for days, and I repeated it to
+  the developer as recently as this morning when telling him to run a migration by hand that
+  the pipeline would have run for him. Merging a change under supabase/ is enough.
+
 
 Owner round 6 (SCRUM-9 comments of 31 July and 5 August), shipped 2026-08-06:
 - **Validation messages now sit under the field they are about**, in red, instead of in one
