@@ -1,0 +1,35 @@
+# Says one message in the store's Slack channel, on demand.
+#
+# The webhook already speaks for migrations and the health watchdog; this puts the same
+# write-only credential behind a button, so the automation, or a person in the Actions
+# tab, can announce something to the team without a code change. Born for "tell the
+# owner the update is ready to test".
+#
+# Same rules as every speaking workflow here: write-only webhook, the message arrives as
+# an input and reaches the script through env (never interpolated into the shell), no
+# schedule, no model, near-zero cost per run. The request autopilot skips bot posts, so
+# nothing announced here can ever be picked up as a build request.
+
+name: Say something in Slack
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "What to say, exactly as it should appear in the channel"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  say:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Say it
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEXT: ${{ inputs.message }}
+        run: node .github/scripts/slack-say.mjs
