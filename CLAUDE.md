@@ -31,3 +31,7 @@ Hard rules:
 - BLUF in everything written to people (chat, PRs, Slack, docs): answer in the first
   sentence, then only facts that change the reader's next action. No recaps, no process
   narration. Status updates five lines or fewer.
+- Anything the developer shares as personal reference (whose accounts are whose, employers,
+  private services) is context only. Never write it into the repo, docs, commit messages,
+  or pull requests. The store communicates only through its own automation, never through
+  any account attached to a Claude session.
