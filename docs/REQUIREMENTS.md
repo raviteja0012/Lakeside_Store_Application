@@ -123,6 +123,17 @@ SHIPPED (see VERIFICATION.md for sign-off):
   reveals a question without making it mandatory. No schema change, no migration, no backfill.
   Checks: scripts/vendorfields-check (30 assertions).
 
+- Invoice fields per department, one registry (Ravi Maddipati, 2026-08-13, WhatsApp: fields
+  "selected by department and subdivision ... would eliminate the need to develop each
+  department's payment screen individually"). BUILT 2026-08-17 as src/lib/invoiceFields.ts,
+  replacing the three hand-coded booleans whose call sites had drifted into nulling saved
+  answers on edit. One correction to the framing, recorded in the file: the payment recording
+  screens are the engine's shape and identical everywhere by design; the registry covers
+  invoice fields and must never grow into the payment forms. PO fields are uniform today, so
+  the registry is the waiting pattern for the first per-department PO ask. His second point,
+  that future field assignments become one-line data edits, is exactly right and is the
+  point.
+
 QUEUED (agreed, not built):
 - Department photo tiles and knowledge-note photo attachments, sourced from the owner's
   walkthrough (one photo per department from his phone; website photos ruled out).

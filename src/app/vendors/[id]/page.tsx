@@ -11,7 +11,6 @@ import { canEdit, voidRow } from "@/lib/edit";
 import {
   PAYMENT_METHODS, CONFIRMATION_FILING, DELIVERY_STATUS, WORK_TYPES, SERVICE_CATEGORIES, CREDIT_TYPES,
   TAX_MODES, ORDER_FILING, orderStatusOptions, needsDigitalLocation, taxWorking,
-  isPropertyDept, isFinanceDept, isHardwareDept,
   methodLabel, referenceLabel, referenceHelp, invoiceTotal as invTotal, hstInside, isFutureDate,
   recordPaymentRpc, voidPaymentRpc, editPaymentRpc, fetchSettlements,
   remainingOwed, remainingToAllocate, type InvoiceSettlement
@@ -26,6 +25,7 @@ import {
   validateMinimumOrder, validateReorder
 } from "@/lib/vendorOrdering";
 import { asksFor, hiddenFieldCount, labelForKey, vendorSelect, visibleFacts } from "@/lib/vendorFields";
+import { asksInvoice } from "@/lib/invoiceFields";
 import type { Vendor, PurchaseOrder, Invoice, Payment, AppUser, CreditNote } from "@/lib/types";
 
 const ACTOR_KEY = "rgs_actor";
@@ -121,12 +121,13 @@ export default function VendorDetail() {
   // Effective role and actor: in enforced auth the signed-in member, else the dropdown.
   const { effectiveActorId, role } = useEffectiveActor(users, actorId);
   const showMoney = canSeeMoney(role);
-  // Property Maintenance vendors get the estimate / work fields on their invoices.
-  const isProperty = isPropertyDept(vendor?.department?.name);
-  // Payrolls & Taxes vendors (CRA remittances and the like) have no delivery or freight.
-  const isFinance = isFinanceDept(vendor?.department?.name);
-  // Hardware invoices carry the purchase order number.
-  const isHardware = isHardwareDept(vendor?.department?.name);
+  // Which invoice questions this vendor's department gets. One predicate, from the invoice
+  // field registry, replacing the three hand-coded booleans (isPropertyDept, isFinanceDept,
+  // isHardwareDept) that had already drifted: the edit path was nulling a saved PO number
+  // and service category on any invoice whose vendor was not the matching department, while
+  // preserving the estimate number beside them. The registry answers once, and the form,
+  // the validation and the save paths all read the same answer.
+  const asksInv = (key: string) => asksInvoice(vendor?.department?.name, key);
 
   // Which questions this vendor's department is asked. The joined name is used as it stands:
   // a vendor filed under a SECTION (Gifts, say, rather than DryGoods) matches nothing in
@@ -369,7 +370,7 @@ export default function VendorDetail() {
     const errs: FieldErrors = {};
     // Delivery notes matter most on the invoices nobody re-reads: a short shipment recorded
     // as blank is indistinguishable from a delivery nobody checked.
-    if (!isProperty && !isFinance && !invForm.delivery_comments.trim()) {
+    if (asksInv("delivery") && !invForm.delivery_comments.trim()) {
       errs["inv.delivery_comments"] = "Delivery comments are required. Type N/A if nothing was short or damaged.";
     }
     if (needsDigitalLocation(invForm.invoice_filing) && !invForm.digital_file_location.trim()) {
@@ -398,16 +399,16 @@ export default function VendorDetail() {
         hst_amount: hstFromMode(invForm.tax_mode, invForm.hst_amount),
         tax_mode: invForm.tax_mode,
         freight_charges: num(invForm.freight_charges),
-        po_number: isHardware ? invForm.po_number.trim() || null : null,
+        po_number: asksInv("po_number") ? invForm.po_number.trim() || null : null,
         delivery_status: invForm.delivery_status || null,
         delivered_date: invForm.delivered_date || null,
         delivery_comments: invForm.delivery_comments.trim() || null,
         invoice_filing: invForm.invoice_filing || null,
         digital_file_location: invForm.digital_file_location.trim() || null,
-        estimate_number: isProperty ? invForm.estimate_number || null : null,
-        work_type: isProperty ? invForm.work_type || null : null,
-        service_category: isProperty ? svcCat || null : null,
-        work_description: isProperty ? invForm.work_description || null : null,
+        estimate_number: asksInv("property_work") ? invForm.estimate_number || null : null,
+        work_type: asksInv("property_work") ? invForm.work_type || null : null,
+        service_category: asksInv("property_work") ? svcCat || null : null,
+        work_description: asksInv("property_work") ? invForm.work_description || null : null,
         terms: invForm.terms || null,
         due_date: invForm.due_date || null,
         status: "unpaid"
@@ -476,7 +477,7 @@ export default function VendorDetail() {
   async function saveInvoice() {
     if (!editInvId) return;
     const errs: FieldErrors = {};
-    if (!isProperty && !isFinance && !editInvForm.delivery_comments.trim()) {
+    if (asksInv("delivery") && !editInvForm.delivery_comments.trim()) {
       errs["editInv.delivery_comments"] = "Delivery comments are required. Type N/A if nothing was short or damaged.";
     }
     if (needsDigitalLocation(editInvForm.invoice_filing) && !editInvForm.digital_file_location.trim()) {
@@ -495,7 +496,11 @@ export default function VendorDetail() {
         hst_amount: hstFromMode(editInvForm.tax_mode, editInvForm.hst_amount),
         tax_mode: editInvForm.tax_mode,
         freight_charges: num(editInvForm.freight_charges),
-        po_number: isHardware ? editInvForm.po_number.trim() || null : null,
+        // Written from the form state, which startEditInvoice seeded from the row. When the
+        // department is not asked for a PO number the box is not drawn, the seeded value
+        // rides through untouched, and a saved PO number survives an amount correction.
+        // The old code nulled it here, which is how fixing a typo could erase a fact.
+        po_number: editInvForm.po_number.trim() || null,
         delivery_status: editInvForm.delivery_status || null,
         delivered_date: editInvForm.delivered_date || null,
         delivery_comments: editInvForm.delivery_comments.trim() || null,
@@ -503,7 +508,9 @@ export default function VendorDetail() {
         digital_file_location: editInvForm.digital_file_location.trim() || null,
         estimate_number: editInvForm.estimate_number || null,
         work_type: editInvForm.work_type || null,
-        service_category: isProperty ? svcCat || null : null,
+        // Same preservation rule as po_number above. estimate_number and work_type beside
+        // this were already written unconditionally, which is the drift the registry ends.
+        service_category: svcCat || null,
         work_description: editInvForm.work_description || null,
         terms: editInvForm.terms || null,
         due_date: editInvForm.due_date || null
@@ -1162,7 +1169,7 @@ export default function VendorDetail() {
         {showMoney && showInv && (
           <div className="card" style={{ padding: 14, marginBottom: 10, display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-              {!isProperty && !isFinance && (
+              {asksInv("delivery") && (
                 <>
                   <div><label className="label">Delivery status</label>
                     <select className="input" value={invForm.delivery_status} onChange={(e) => setInvForm({ ...invForm, delivery_status: e.target.value })}>
@@ -1189,7 +1196,7 @@ export default function VendorDetail() {
                   )}
                 </div>
               )}
-              {!isFinance && <div><label className="label">Freight charge</label><input className="input tabular" type="number" step="0.01" value={invForm.freight_charges} onChange={(e) => setInvForm({ ...invForm, freight_charges: e.target.value })} /></div>}
+              {asksInv("freight") && <div><label className="label">Freight charge</label><input className="input tabular" type="number" step="0.01" value={invForm.freight_charges} onChange={(e) => setInvForm({ ...invForm, freight_charges: e.target.value })} /></div>}
               <div><label className="label">Due date</label><input className="input" type="date" value={invForm.due_date} onChange={(e) => setInvForm({ ...invForm, due_date: e.target.value })} /></div>
               <div><label className="label">Payment status</label>
                 <select className="input" value={invForm.status} onChange={(e) => setInvForm({ ...invForm, status: e.target.value })}>
@@ -1199,9 +1206,9 @@ export default function VendorDetail() {
               </div>
               <div><label className="label">Invoice date</label><input className="input" type="date" value={invForm.invoice_date} onChange={(e) => setInvForm({ ...invForm, invoice_date: e.target.value })} /></div>
               <div><label className="label">Terms</label><input className="input" value={invForm.terms} onChange={(e) => setInvForm({ ...invForm, terms: e.target.value })} /></div>
-              {isHardware && <div><label className="label">PO number</label><input className="input" value={invForm.po_number} onChange={(e) => setInvForm({ ...invForm, po_number: e.target.value })} /></div>}
+              {asksInv("po_number") && <div><label className="label">PO number</label><input className="input" value={invForm.po_number} onChange={(e) => setInvForm({ ...invForm, po_number: e.target.value })} /></div>}
             </div>
-            {!isProperty && !isFinance && (
+            {asksInv("delivery") && (
               <div><label className="label">Delivery comments</label><input className={fieldInputClass(fieldErrors, "inv.delivery_comments")} placeholder="Anything short-shipped or damaged, or N/A" value={invForm.delivery_comments} onChange={(e) => { setInvForm({ ...invForm, delivery_comments: e.target.value }); clearField("inv.delivery_comments"); }} />
                 <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
                 <FieldError errors={fieldErrors} name="inv.delivery_comments" />
@@ -1224,7 +1231,7 @@ export default function VendorDetail() {
             {showMoney && formTotal(invForm) > 0 && (
               <p className="help" style={{ margin: 0 }}>Total owed {formatCAD(round2(formTotal(invForm)))}</p>
             )}
-            {isProperty && (
+            {asksInv("property_work") && (
               <div style={{ display: "grid", gap: 10, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
                 <div className="help">Property Maintenance work</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
@@ -1315,7 +1322,7 @@ export default function VendorDetail() {
                 {canEdit(role) && editInvId === i.id && (
                   <div style={{ borderTop: "1px solid var(--border)", marginTop: 10, paddingTop: 10, display: "grid", gap: 10 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-                      {!isProperty && !isFinance && (
+                      {asksInv("delivery") && (
                         <>
                           <div><label className="label">Delivery status</label>
                             <select className="input" value={editInvForm.delivery_status} onChange={(e) => setEditInvForm({ ...editInvForm, delivery_status: e.target.value })}>
@@ -1340,7 +1347,7 @@ export default function VendorDetail() {
                           )}
                         </div>
                       )}
-                      {!isFinance && <div><label className="label">Freight charge</label><input className="input tabular" type="number" step="0.01" value={editInvForm.freight_charges} onChange={(e) => setEditInvForm({ ...editInvForm, freight_charges: e.target.value })} /></div>}
+                      {asksInv("freight") && <div><label className="label">Freight charge</label><input className="input tabular" type="number" step="0.01" value={editInvForm.freight_charges} onChange={(e) => setEditInvForm({ ...editInvForm, freight_charges: e.target.value })} /></div>}
                       <div><label className="label">Due date</label><input className="input" type="date" value={editInvForm.due_date} onChange={(e) => setEditInvForm({ ...editInvForm, due_date: e.target.value })} /></div>
                       <div><label className="label">Payment status</label>
                         <div style={{ paddingTop: 6 }}>
@@ -1350,9 +1357,9 @@ export default function VendorDetail() {
                       </div>
                       <div><label className="label">Invoice date</label><input className="input" type="date" value={editInvForm.invoice_date} onChange={(e) => setEditInvForm({ ...editInvForm, invoice_date: e.target.value })} /></div>
                       <div><label className="label">Terms</label><input className="input" value={editInvForm.terms} onChange={(e) => setEditInvForm({ ...editInvForm, terms: e.target.value })} /></div>
-                      {isHardware && <div><label className="label">PO number</label><input className="input" value={editInvForm.po_number} onChange={(e) => setEditInvForm({ ...editInvForm, po_number: e.target.value })} /></div>}
+                      {asksInv("po_number") && <div><label className="label">PO number</label><input className="input" value={editInvForm.po_number} onChange={(e) => setEditInvForm({ ...editInvForm, po_number: e.target.value })} /></div>}
                     </div>
-                    {!isProperty && !isFinance && (
+                    {asksInv("delivery") && (
                       <div><label className="label">Delivery comments</label><input className={fieldInputClass(fieldErrors, "editInv.delivery_comments")} placeholder="Anything short-shipped or damaged, or N/A" value={editInvForm.delivery_comments} onChange={(e) => { setEditInvForm({ ...editInvForm, delivery_comments: e.target.value }); clearField("editInv.delivery_comments"); }} />
                         <p className="help" style={{ margin: "4px 0 0" }}>Required. If there is nothing to note, type N/A.</p>
                         <FieldError errors={fieldErrors} name="editInv.delivery_comments" />
@@ -1371,7 +1378,7 @@ export default function VendorDetail() {
                         </div>
                       )}
                     </div>
-                    {isProperty && (
+                    {asksInv("property_work") && (
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
                         <div><label className="label">Estimate #</label><input className="input" value={editInvForm.estimate_number} onChange={(e) => setEditInvForm({ ...editInvForm, estimate_number: e.target.value })} /></div>
                         <div><label className="label">Type of work</label>

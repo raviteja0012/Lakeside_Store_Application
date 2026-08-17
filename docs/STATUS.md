@@ -2,7 +2,33 @@
 
 Single source for the current state of the build: what is done, what is verified, and what remains. The full vision is in robinsons_store_build_spec.md, setup is in RUNBOOK.md, and the per-feature sign-off record is in docs/VERIFICATION.md. Update this file and VERIFICATION.md in the same pull request as the work itself; if it is not recorded there, it is not done.
 
-Last updated: 2026-08-13, on branch claude/pull-main-branches-atztoh (latest: the owner's answer on the vendor question map, below; before it Jira switched off with its autopilot parked and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+Last updated: 2026-08-17, on branch claude/pull-main-branches-atztoh (latest: the invoice field registry and the first automated migration, below; before it the owner's answer on the vendor question map; before it Jira switched off with its autopilot parked and the watchdog moved to Slack, below; before it the vendor field registry; before it the platform capability round, the health check naming its own fix, owner round 6, owner round 5, the domain and email integration round in docs/DOMAIN_EMAIL.md, the vetting round, the Jira backlog round, the live-demo round, and owner feedback round 3).
+
+The invoice forms read one registry, 2026-08-17:
+- Ravi Maddipati proposed on 2026-08-13 that vendor, payment and purchase order fields be
+  selectable per department, estimating it covers about 95 percent of the department screens.
+  Reviewed and largely right, with one correction recorded: what varies by department is the
+  INVOICE, never the payment. Recording a payment is the engine's shape, identical
+  everywhere, and the registry deliberately has no reach into it.
+- The proof of his point was already in the code: the invoice forms varied by department
+  through three hand-coded booleans across nineteen call sites, and they had drifted. The
+  edit path nulled a saved PO number and service category on any invoice whose vendor was
+  not the matching department, while preserving the estimate number beside them. Fixing an
+  amount could silently erase a filing fact.
+- src/lib/invoiceFields.ts now answers "is this department asked this invoice question"
+  once, for the form, the validation and the save paths together. Department matching goes
+  through canonicalDepartment, so Chip Stand takes Grocery's invoice shape the same way it
+  takes its vendor questions.
+- Asking-side behaviour is preserved EXACTLY, pinned by scripts/invoicefields-check (19
+  assertions, full department matrix). The one deliberate change is on the saving side: the
+  edit path now writes a hidden question's seeded answer back instead of nulling it.
+- Purchase order fields are uniform across departments today, so there is nothing for a PO
+  registry to hold yet; the invoice registry is the pattern waiting for the first
+  per-department PO ask.
+- The first automated migration also completed this round: merging PR #46 applied
+  vendor_specializes_in.sql to the live database, the health check passed, and the
+  production-success message posted to Slack, proving the webhook path the watchdog could
+  never exercise while the site stayed healthy.
 
 Jira is switched off, 2026-08-12:
 - The board is out of use and its autopilot is PARKED, not deleted. The workflow, its
