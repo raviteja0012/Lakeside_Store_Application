@@ -192,7 +192,7 @@ break:
 Phases 1-6 plus property, HR, compliance, multi-store, the auth cutover, signed-URL document storage, and the hard low-confidence gate are shipped; see docs/STATUS.md. Deferred: pgvector at scale, ML reorder, SMS, integer-cents money.
 
 ## Output and communication rules for this project
-- Lead with the answer, then context. Short and direct. No hedging or caveats unless asked.
+- BLUF, bottom line up front, the military reporting standard (Army AR 25-50): the answer, result, or ask in the FIRST sentence, then only facts that change what the reader does next. Cut recaps, process narration, and anything already said once. Short and direct. No hedging or caveats unless asked. A status update is five lines or fewer; if it needs more, the extra lines must each earn a decision.
 - No em dashes anywhere.
 - No AI buzzwords such as significantly, dramatically, meaningful, comprehensive, noticeably.
 - Never invent or inflate metrics about the store. Use only real numbers from the bookings sheet or the owner.
