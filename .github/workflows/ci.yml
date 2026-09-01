@@ -54,6 +54,7 @@ jobs:
           # longer works by the time somebody needs it.
           node .github/scripts/jira-find-work.test.mjs
           node .github/scripts/jira-transition.test.mjs
+          node .github/scripts/distinct-databases.test.mjs
           node --check .github/scripts/jira-comment.mjs
           node --check .github/scripts/jira-find-work.mjs
           node --check .github/scripts/jira-transition.mjs

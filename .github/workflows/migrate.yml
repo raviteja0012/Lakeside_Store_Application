@@ -92,6 +92,19 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # The one hazard docs/ENVIRONMENTS.md names: the dev connection pointing at the live
+      # database. That is a clipboard mistake, not a subtle one, and its failure is silent
+      # and total: seed_dev.sql would insert eight invented vendors into the store's real
+      # directory and nothing would look wrong until somebody saw them. Being careful is not
+      # a control, so this is the control. It compares which Supabase project each string
+      # belongs to, and prints only that, never a password.
+      - name: Refuse to treat production as dev
+        if: steps.gate.outputs.ready == 'true' && github.ref_name == 'develop'
+        env:
+          DEV_CONN: ${{ secrets.SUPABASE_DB_URL_DEV }}
+          PROD_CONN: ${{ secrets.SUPABASE_DB_URL }}
+        run: node .github/scripts/distinct-databases.mjs
+
       - name: Apply the scripts in order
         if: steps.gate.outputs.ready == 'true'
         env:
